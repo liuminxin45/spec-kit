@@ -102,6 +102,14 @@ or historical process documents unless the current task needs them.
 
 ## DesktopShell CDP Target Gate
 
+- Before declaring host/CDP validation unavailable, run
+  `ensure-desktop-shell-cdp-host` or equivalent probes. Reuse an existing
+  valid DesktopShell target when one is running. If CDP is unreachable and
+  no process owns the port, start the host with `npm run debug` and rerun the
+  probe. If another process owns the port, identify it and stop with a real
+  blocker unless the user explicitly approves a destructive recovery action.
+  A running process or occupied port is not enough reason to skip to manual
+  acceptance.
 - Before host UI CDP evidence, inspect `/json/list` or run
   `inspect-desktop-shell-cdp-target`.
 - Record all page target `id/title/url/webSocketDebuggerUrl` values and the

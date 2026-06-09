@@ -27,3 +27,6 @@
 ## Verify Before Use
 
 Confirm DesktopShell is running with the expected remote debugging port.
+Run `ensure-desktop-shell-cdp-host` before giving up on validation: reuse a
+valid running target, start the host when no process owns the CDP port, or
+identify the port owner and report a blocker before manual acceptance.

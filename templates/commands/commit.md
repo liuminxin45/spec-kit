@@ -3,6 +3,8 @@ description: Prepare and create confirmed multi-repository commits with the Core
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -IncludeTasks
+  preflight_sh: scripts/bash/validate-feature-artifacts.sh --json --stage commit --feature-dir <feature-dir>
+  preflight_ps: scripts/powershell/validate-feature-artifacts.ps1 -Json -Stage commit -FeatureDir <feature-dir>
   validate_message_sh: scripts/bash/validate-commit-message.sh --json --message-file <message-file>
   validate_message_ps: scripts/powershell/validate-commit-message.ps1 -Json -MessageFile <message-file>
 ---
@@ -55,6 +57,12 @@ history only after explicit user confirmation.
    - `FEATURE_DIR/promotion-report.md` when present
    - `FEATURE_DIR/lessons.md` when present
 3. Confirm acceptance, quick acceptance, and retrospective are passed.
+   First run `validate-feature-artifacts` with `--stage commit` /
+   `-Stage commit` for the active `FEATURE_DIR`. Treat missing
+   `workflow-record.md`, missing `improvement-candidates.md`, or
+   `workflow-state.json` `retrospective.status` not equal to `completed` as a
+   hard blocker. Return to `speckit.retrospective`; do not inspect, stage, or
+   commit repository files until this preflight passes.
    If any of them is missing, stop and return to the required stage.
    Require `workflow-record.md` and `improvement-candidates.md` before commit.
    If retrospective artifacts are missing, stop and return to
@@ -94,8 +102,9 @@ history only after explicit user confirmation.
    - Treat Conventional Commit subjects, wrapped/multiline subjects, missing
      `<Module>: <concise English summary>` subject format, missing Chinese
      summary line, `【提交类型】` without `<类型> - <范围或问题域>`, missing
-     `相关测试通过，自测通过` final self-test conclusion, or obvious split
-     technical tokens as hard blockers.
+     `相关测试通过，自测通过` final self-test conclusion, obvious split
+     technical tokens, or deterministic too-generic commit types such as
+     `修复 - UI 交互` as hard blockers.
 9. Ask for explicit user confirmation before staging or committing.
    - The early confirmation does not count when it happened before the scope,
      exclusions, spec-doc decision, and commit-message validation plan were

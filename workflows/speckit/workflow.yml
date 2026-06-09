@@ -80,7 +80,7 @@ steps:
     command: speckit.implement
     integration: "{{ inputs.integration }}"
     input:
-      args: "Implement from plan slices, tasks.md when present, or micro-fix evidence. Keep searches bounded to affected repos. Update progress.md. Required validation belongs here. If a first UI/CSS/layout patch fails, stop and collect/request runtime DOM/CSS/computed style/box metrics before a second patch. Product and plugin fixes must target repository source, not installed runtime plugin directories or built artifacts. For host-embedded frontend plugin source edits, follow source edit -> frontend build -> direct runtime replacement -> real host CDP verification. For native plugin source edits, build the .plugin artifact because native output cannot hot update. Do not commit, push, merge, or delete branches."
+      args: "Implement from plan slices, tasks.md when present, or micro-fix evidence. Keep searches bounded to affected repos. Update progress.md. Required validation belongs here. If a first UI/CSS/layout patch fails, stop and collect/request runtime DOM/CSS/computed style/box metrics before a second patch. Product and plugin fixes must target repository source, not installed runtime plugin directories or built artifacts. For host-embedded frontend plugin source edits, follow source edit -> frontend build -> direct runtime replacement -> real host CDP verification, first running ensure-desktop-shell-cdp-host to reuse, launch, or diagnose the real host instead of jumping to manual acceptance. For native plugin source edits, build the .plugin artifact because native output cannot hot update. Do not commit, push, merge, or delete branches."
 
   - id: acceptance
     command: speckit.acceptance
@@ -151,6 +151,9 @@ stage_gate_policy:
   desktop_shell_cdp_target:
     command: "inspect-desktop-shell-cdp-target"
     rule: "Before host-embedded UI CDP evidence, list /json/list page targets and record selected target id/title/url/webSocketDebuggerUrl. Product UI validation rejects Plugin Workbench, base-win.html, DevTools, blank, and unrelated targets."
+  desktop_shell_cdp_host_recovery:
+    command: "ensure-desktop-shell-cdp-host"
+    rule: "Before giving up on AI-owned host/CDP validation, reuse an existing valid DesktopShell target, launch the host when no process owns the CDP port, or identify the port owner and report a blocker. A running process or occupied port is not by itself a reason to skip to manual acceptance."
   frontend_runtime_delivery_chain:
     command: "sync-ui-runtime-artifacts"
     rule: "After frontend plugin source edits, build source output, mirror it into the explicit host runtime plugin directory, then verify the real host target through CDP and record loaded resource evidence."

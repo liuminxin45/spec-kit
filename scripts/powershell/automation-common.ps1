@@ -636,6 +636,52 @@ function Invoke-ValidateFeatureArtifacts {
         Set-Blocked $result ("unfinished placeholders in: " + ($todos -join ", "))
     }
 
+    $retrospectiveGate = [ordered]@{
+        checked = $false
+        gate_status = "not_checked"
+        status = ""
+        workflow_record = ""
+        improvement_candidates = ""
+    }
+    if ($Stage -eq "commit") {
+        $retrospectiveGate.checked = $true
+        $retrospectiveGate.gate_status = "ok"
+        $workflowStatePath = Join-Path $FeatureDir "workflow-state.json"
+        if (-not (Test-Path -LiteralPath $workflowStatePath)) {
+            $retrospectiveGate.gate_status = "blocked"
+            Set-Blocked $result "workflow-state.json missing; commit requires completed retrospective state"
+        } else {
+            try {
+                $workflowState = Get-Content -LiteralPath $workflowStatePath -Raw | ConvertFrom-Json
+                $retroState = $workflowState.retrospective
+                if ($null -eq $retroState) {
+                    $retrospectiveGate.gate_status = "blocked"
+                    Set-Blocked $result "workflow-state.json missing retrospective state"
+                } else {
+                    $retrospectiveGate.status = [string]$retroState.status
+                    $retrospectiveGate.workflow_record = [string]$retroState.workflow_record
+                    $retrospectiveGate.improvement_candidates = [string]$retroState.improvement_candidates
+                    if ($retrospectiveGate.status -ne "completed") {
+                        $retrospectiveGate.gate_status = "blocked"
+                        Set-Blocked $result "retrospective.status must be completed before commit"
+                    }
+                    if ([string]::IsNullOrWhiteSpace($retrospectiveGate.workflow_record)) {
+                        $retrospectiveGate.gate_status = "blocked"
+                        Set-Blocked $result "retrospective.workflow_record must reference workflow-record.md before commit"
+                    }
+                    if ([string]::IsNullOrWhiteSpace($retrospectiveGate.improvement_candidates)) {
+                        $retrospectiveGate.gate_status = "blocked"
+                        Set-Blocked $result "retrospective.improvement_candidates must reference improvement-candidates.md before commit"
+                    }
+                }
+            }
+            catch {
+                $retrospectiveGate.gate_status = "blocked"
+                Set-Blocked $result "workflow-state.json is not valid JSON"
+            }
+        }
+    }
+
     $result.facts.feature_dir = $FeatureDir
     $result.facts.stage = $Stage
     $result.facts.delivery_profile = $DeliveryProfile
@@ -648,6 +694,7 @@ function Invoke-ValidateFeatureArtifacts {
     $result.facts.required_source = $requiredSource
     $result.facts.layer_manifest = $manifestPath
     $result.facts.missing_sections = $missingSections
+    $result.facts.retrospective_gate = $retrospectiveGate
     return $result
 }
 
@@ -673,9 +720,9 @@ function Invoke-ValidateGeneratedContext {
     if ($contextFile -eq "CLAUDE.md" -and $canonicalContextFile -eq $contextFile) {
         $canonicalContextFile = "AGENTS.md"
     }
-    $skillsDir = ".agents/skills"
-    if ($contextFile -eq "CLAUDE.md") {
-        $skillsDir = ".claude/skills"
+    $skillsDirs = @(".agents/skills")
+    if (Test-Path -LiteralPath (Join-Path $RepoRoot ".claude/skills")) {
+        $skillsDirs += ".claude/skills"
     }
     $workflowPath = "tools/spec-kit/workflows/speckit/workflow.yml"
     if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot $workflowPath)) -and
@@ -692,7 +739,7 @@ function Invoke-ValidateGeneratedContext {
     $checks += @(
         [ordered]@{
             path = $canonicalContextFile
-            phrases = @("Project Path Categories", "source-to-runtime copy", "best-effort self-validation", "direct runtime replacement", "DesktopShell CDP validation", "stale/current-feature hint", "read the current plan only", "select-knowledge", "validate-knowledge-index")
+            phrases = @("Project Path Categories", "source-to-runtime copy", "best-effort self-validation", "direct runtime replacement", "DesktopShell CDP validation", "ensure-desktop-shell-cdp-host", "stale/current-feature hint", "read the current plan only", "select-knowledge", "validate-knowledge-index")
         },
         [ordered]@{
             path = ".specify/memory/repository-map.md"
@@ -704,30 +751,41 @@ function Invoke-ValidateGeneratedContext {
         },
         [ordered]@{
             path = "ai/workflows/task-routing.md"
-            phrases = @("tasks -> analyze -> checklist", "validate-generated-context", "validate-knowledge-index", "select-knowledge", "artifact_sections", "Stage Continuation", "inspect-desktop-shell-cdp-target", "do not apply stale feature risk flags")
+            phrases = @("tasks -> analyze -> checklist", "validate-generated-context", "validate-knowledge-index", "select-knowledge", "artifact_sections", "Stage Continuation", "inspect-desktop-shell-cdp-target", "ensure-desktop-shell-cdp-host", "do not apply stale feature risk flags")
         },
         [ordered]@{
             path = "ai/rules/ai-coding-rules.md"
-            phrases = @("Generated Context Drift", "analysis.md", "validate-generated-context", "validate-knowledge-index", "Stage Continuation Contract", "Host Frontend Delivery Chain", "Retrospective/留痕 is mandatory before commit")
+            phrases = @("Generated Context Drift", "analysis.md", "validate-generated-context", "validate-knowledge-index", "Stage Continuation Contract", "Host Frontend Delivery Chain", "ensure-desktop-shell-cdp-host", "Retrospective/留痕 is mandatory before commit")
         },
         [ordered]@{
             path = $workflowPath
-            phrases = @("id: retrospective", "id: commit", "Require workflow-record.md and improvement-candidates.md before commit", "automatic_stage_continuation", "inspect-desktop-shell-cdp-target", "validate-knowledge-index", "current-feature state only")
+            phrases = @("id: retrospective", "id: commit", "Require workflow-record.md and improvement-candidates.md before commit", "automatic_stage_continuation", "inspect-desktop-shell-cdp-target", "ensure-desktop-shell-cdp-host", "validate-knowledge-index", "current-feature state only")
         },
         [ordered]@{
             path = "tools/spec-kit/TEAM-README.md"
             optional = $true
             phrases = @("retrospective/留痕 -> commit", "commit 前强制 retrospective", "source edit -> frontend build -> direct runtime replacement -> real host CDP verification", "select-knowledge", "full-text/BM25 search")
-        },
-        [ordered]@{
+        }
+    )
+    foreach ($skillsDir in $skillsDirs) {
+        if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot $skillsDir))) { continue }
+        $checks += [ordered]@{
             path = "$skillsDir/speckit-commit/SKILL.md"
-            phrases = @("Confirm acceptance, quick acceptance, and retrospective are passed", "workflow-record.md", "improvement-candidates.md")
-        },
-        [ordered]@{
+            phrases = @("validate-feature-artifacts", "Stage commit", "workflow-record.md", "improvement-candidates.md", "retrospective.status")
+        }
+        $checks += [ordered]@{
+            path = "$skillsDir/speckit-implement/SKILL.md"
+            phrases = @("ensure-desktop-shell-cdp-host", "CDP host recovery ladder", "manual acceptance")
+        }
+        $checks += [ordered]@{
+            path = "$skillsDir/speckit-retrospective/SKILL.md"
+            phrases = @("Existing Constraint Audit", "AI workflow self-check", "Team knowledge candidates", "retrospective.status")
+        }
+        $checks += [ordered]@{
             path = "$skillsDir/speckit-tasks/SKILL.md"
             phrases = @("Run mandatory", "speckit.retrospective", "after quick acceptance and before", "optional test-hardening, retrospective/留痕")
         }
-    )
+    }
 
     $details = @()
     foreach ($check in $checks) {

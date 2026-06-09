@@ -429,6 +429,10 @@ def test_host_frontend_delivery_chain_and_cdp_target_gate_are_enforced():
     assert "source edit -> `.plugin` build" in validation
     assert "Native plugin source edits use source edit -> `.plugin` build" in compact_text(validation)
     assert "sync-ui-runtime-artifacts" in implement
+    assert "ensure-desktop-shell-cdp-host" in implement
+    assert "ensure-desktop-shell-cdp-host" in validation
+    assert "CDP host recovery ladder" in implement
+    assert "CDP host recovery ladder" in validation
     assert "removed stale" in implement.lower()
     assert "Implementation completion gate" in implement
     assert "宿主运行时验证待执行" in implement
@@ -443,6 +447,8 @@ def test_host_frontend_delivery_chain_and_cdp_target_gate_are_enforced():
         assert "devtools://" in text
         assert "webSocketDebuggerUrl" in text
     assert "desktop_shell_cdp_target" in stage_policy
+    assert "desktop_shell_cdp_host_recovery" in stage_policy
+    assert stage_policy["desktop_shell_cdp_host_recovery"]["command"] == "ensure-desktop-shell-cdp-host"
     assert "frontend_runtime_delivery_chain" in stage_policy
     assert "wrong-target / insufficient" in validation
 

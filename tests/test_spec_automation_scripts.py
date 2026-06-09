@@ -31,6 +31,7 @@ AUTOMATION_TOOLS = [
     "validate-commit-message",
     "sync-ui-runtime-artifacts",
     "inspect-desktop-shell-cdp-target",
+    "ensure-desktop-shell-cdp-host",
 ]
 
 
@@ -327,6 +328,75 @@ def test_inspect_desktop_shell_cdp_target_blocks_when_only_workbench_exists():
     assert "No matching DesktopShell CDP target found" in "\n".join(output["blockers"])
 
 
+def test_ensure_desktop_shell_cdp_host_reuses_valid_running_target():
+    targets = json.dumps(
+        [
+            {
+                "id": "workbench",
+                "type": "page",
+                "title": "Plugin Workbench",
+                "url": "file:///C:/ExampleWorkspace/DesktopShell/DesktopShell/src/plugin-host/devtools/plugin-workbench.html#build",
+                "webSocketDebuggerUrl": "ws://127.0.0.1/workbench",
+            },
+            {
+                "id": "business",
+                "type": "page",
+                "title": "ExampleCorp",
+                "url": "http://host.example.invalid/frontend/static/index.html#/product-homepage/productHome",
+                "webSocketDebuggerUrl": "ws://127.0.0.1/business",
+            },
+        ]
+    )
+
+    output = run_ps("ensure-desktop-shell-cdp-host", "-TargetsJson", targets)
+
+    assert_standard_shape(output, "ensure-desktop-shell-cdp-host")
+    assert output["status"] == "ok"
+    assert output["facts"]["endpoint_reachable"] is True
+    assert output["facts"]["selected_target"]["id"] == "business"
+    assert output["facts"]["selected_target"]["reason"] == "host-app"
+    assert output["facts"]["rejected_targets"][0]["reason"] == "workbench"
+
+
+def test_ensure_desktop_shell_cdp_host_blocks_before_manual_acceptance_when_target_missing():
+    targets = json.dumps(
+        [
+            {
+                "id": "workbench",
+                "type": "page",
+                "title": "Plugin Workbench",
+                "url": "file:///C:/ExampleWorkspace/DesktopShell/DesktopShell/src/plugin-host/devtools/plugin-workbench.html#build",
+                "webSocketDebuggerUrl": "ws://127.0.0.1/workbench",
+            }
+        ]
+    )
+
+    result = subprocess.run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(REPO_ROOT / "scripts" / "powershell" / "ensure-desktop-shell-cdp-host.ps1"),
+            "-TargetsJson",
+            targets,
+            "-Json",
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    output = json.loads(result.stdout)
+    assert_standard_shape(output, "ensure-desktop-shell-cdp-host")
+    assert output["status"] == "blocked"
+    assert "before manual acceptance" in "\n".join(output["blockers"])
+    assert "Do not switch to human acceptance" in "\n".join(output["hints"])
+
+
 def test_command_templates_define_script_fact_llm_contract():
     command_paths = sorted((REPO_ROOT / "templates" / "commands").glob("*.md"))
     assert command_paths
@@ -487,6 +557,59 @@ def test_validate_commit_message_blocks_truncated_template(tmp_path):
     assert "【提交类型】 must use '<类型> - <范围或问题域>'" in blockers
     assert "【自测结果】 must end with '相关测试通过，自测通过'" in blockers
     assert "Technical token appears split across lines" in blockers
+
+    generic_type_message = "\n".join(
+        [
+            "DeviceMenu: fix context menu disabled item hover",
+            "",
+            "修复设备菜单不可用条目的悬浮样式",
+            "",
+            "【提交类型】",
+            "修复 - UI 交互",
+            "",
+            "【问题描述】",
+            "1. 不可用菜单项 hover 样式不符合预期",
+            "",
+            "【修改方案】",
+            "1. 调整菜单项 CSS 状态样式",
+            "",
+            "【影响评估】",
+            "影响轻微，仅影响菜单显示",
+            "",
+            "【兼容性分析】",
+            "1. 不涉及接口或数据结构变化",
+            "",
+            "【需要同时入库的提交】",
+            "无",
+            "",
+            "【自测结果】",
+            "1. 相关测试通过，自测通过",
+            "",
+        ]
+    )
+    generic_type_file = tmp_path / "generic-type-commit-message.txt"
+    generic_type_file.write_text(generic_type_message, encoding="utf-8")
+    result = subprocess.run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(REPO_ROOT / "scripts" / "powershell" / "validate-commit-message.ps1"),
+            "-MessageFile",
+            str(generic_type_file),
+            "-Json",
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    payload = json.loads(result.stdout)
+    assert "scope is too generic" in "\n".join(payload["blockers"])
+    assert "修复 - UI 交互" in payload["facts"]["generic_type_blocklist"]
 
 
 def test_validate_feature_artifacts_blocks_missing_commit_stage_files(tmp_path):
@@ -703,6 +826,8 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
     (repo / "ai" / "rules").mkdir(parents=True)
     (repo / "tools" / "spec-kit" / "workflows" / "speckit").mkdir(parents=True)
     (repo / ".agents" / "skills" / "speckit-commit").mkdir(parents=True)
+    (repo / ".agents" / "skills" / "speckit-implement").mkdir(parents=True)
+    (repo / ".agents" / "skills" / "speckit-retrospective").mkdir(parents=True)
     (repo / ".agents" / "skills" / "speckit-tasks").mkdir(parents=True)
     (repo / "AGENTS.md").write_text("# old agents\n", encoding="utf-8")
     (repo / ".specify" / "memory" / "repository-map.md").write_text("# old map\n", encoding="utf-8")
@@ -736,6 +861,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
     (repo / "AGENTS.md").write_text(
         "Project Path Categories\nsource-to-runtime copy\nbest-effort self-validation\n"
         "direct runtime replacement\nDesktopShell CDP validation\n"
+        "ensure-desktop-shell-cdp-host\n"
         "stale/current-feature hint\nread the current plan only\n"
         "select-knowledge\nvalidate-knowledge-index\n",
         encoding="utf-8",
@@ -754,18 +880,21 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         "tasks -> analyze -> checklist\nvalidate-generated-context\nvalidate-knowledge-index\n"
         "select-knowledge\nartifact_sections\n"
         "Stage Continuation\ninspect-desktop-shell-cdp-target\n"
+        "ensure-desktop-shell-cdp-host\n"
         "do not apply stale feature risk flags\n",
         encoding="utf-8",
     )
     (repo / "ai" / "rules" / "ai-coding-rules.md").write_text(
         "Generated Context Drift\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
         "Stage Continuation Contract\nHost Frontend Delivery Chain\n"
+        "ensure-desktop-shell-cdp-host\n"
         "Retrospective/留痕 is mandatory before commit\n",
         encoding="utf-8",
     )
     (repo / "tools" / "spec-kit" / "workflows" / "speckit" / "workflow.yml").write_text(
         "id: retrospective\nid: commit\nRequire workflow-record.md and improvement-candidates.md before commit\n"
         "automatic_stage_continuation\ninspect-desktop-shell-cdp-target\n"
+        "ensure-desktop-shell-cdp-host\n"
         "validate-knowledge-index\ncurrent-feature state only\n",
         encoding="utf-8",
     )
@@ -776,8 +905,16 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         encoding="utf-8",
     )
     (repo / ".agents" / "skills" / "speckit-commit" / "SKILL.md").write_text(
-        "Confirm acceptance, quick acceptance, and retrospective are passed\n"
-        "Require `workflow-record.md` and `improvement-candidates.md` before commit\n",
+        "validate-feature-artifacts\nStage commit\nworkflow-record.md\n"
+        "improvement-candidates.md\nretrospective.status\n",
+        encoding="utf-8",
+    )
+    (repo / ".agents" / "skills" / "speckit-implement" / "SKILL.md").write_text(
+        "ensure-desktop-shell-cdp-host\nCDP host recovery ladder\nmanual acceptance\n",
+        encoding="utf-8",
+    )
+    (repo / ".agents" / "skills" / "speckit-retrospective" / "SKILL.md").write_text(
+        "Existing Constraint Audit\nAI workflow self-check\nTeam knowledge candidates\nretrospective.status\n",
         encoding="utf-8",
     )
     (repo / ".agents" / "skills" / "speckit-tasks" / "SKILL.md").write_text(
@@ -798,6 +935,8 @@ def test_validate_generated_context_uses_init_options_context_file(tmp_path):
     (repo / "ai" / "rules").mkdir(parents=True)
     (repo / "tools" / "spec-kit" / "workflows" / "speckit").mkdir(parents=True)
     (repo / ".claude" / "skills" / "speckit-commit").mkdir(parents=True)
+    (repo / ".claude" / "skills" / "speckit-implement").mkdir(parents=True)
+    (repo / ".claude" / "skills" / "speckit-retrospective").mkdir(parents=True)
     (repo / ".claude" / "skills" / "speckit-tasks").mkdir(parents=True)
     (repo / ".specify" / "init-options.json").write_text(
         json.dumps({"context_file": "CLAUDE.md", "canonical_context_file": "AGENTS.md"}),
@@ -811,6 +950,7 @@ def test_validate_generated_context_uses_init_options_context_file(tmp_path):
     (repo / "AGENTS.md").write_text(
         "Project Path Categories\nsource-to-runtime copy\nbest-effort self-validation\n"
         "direct runtime replacement\nDesktopShell CDP validation\n"
+        "ensure-desktop-shell-cdp-host\n"
         "stale/current-feature hint\nread the current plan only\n"
         "select-knowledge\nvalidate-knowledge-index\n",
         encoding="utf-8",
@@ -829,18 +969,21 @@ def test_validate_generated_context_uses_init_options_context_file(tmp_path):
         "tasks -> analyze -> checklist\nvalidate-generated-context\nvalidate-knowledge-index\n"
         "select-knowledge\nartifact_sections\n"
         "Stage Continuation\ninspect-desktop-shell-cdp-target\n"
+        "ensure-desktop-shell-cdp-host\n"
         "do not apply stale feature risk flags\n",
         encoding="utf-8",
     )
     (repo / "ai" / "rules" / "ai-coding-rules.md").write_text(
         "Generated Context Drift\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
         "Stage Continuation Contract\nHost Frontend Delivery Chain\n"
+        "ensure-desktop-shell-cdp-host\n"
         "Retrospective/留痕 is mandatory before commit\n",
         encoding="utf-8",
     )
     (repo / "tools" / "spec-kit" / "workflows" / "speckit" / "workflow.yml").write_text(
         "id: retrospective\nid: commit\nRequire workflow-record.md and improvement-candidates.md before commit\n"
         "automatic_stage_continuation\ninspect-desktop-shell-cdp-target\n"
+        "ensure-desktop-shell-cdp-host\n"
         "validate-knowledge-index\ncurrent-feature state only\n",
         encoding="utf-8",
     )
@@ -851,8 +994,16 @@ def test_validate_generated_context_uses_init_options_context_file(tmp_path):
         encoding="utf-8",
     )
     (repo / ".claude" / "skills" / "speckit-commit" / "SKILL.md").write_text(
-        "Confirm acceptance, quick acceptance, and retrospective are passed\n"
-        "Require `workflow-record.md` and `improvement-candidates.md` before commit\n",
+        "validate-feature-artifacts\nStage commit\nworkflow-record.md\n"
+        "improvement-candidates.md\nretrospective.status\n",
+        encoding="utf-8",
+    )
+    (repo / ".claude" / "skills" / "speckit-implement" / "SKILL.md").write_text(
+        "ensure-desktop-shell-cdp-host\nCDP host recovery ladder\nmanual acceptance\n",
+        encoding="utf-8",
+    )
+    (repo / ".claude" / "skills" / "speckit-retrospective" / "SKILL.md").write_text(
+        "Existing Constraint Audit\nAI workflow self-check\nTeam knowledge candidates\nretrospective.status\n",
         encoding="utf-8",
     )
     (repo / ".claude" / "skills" / "speckit-tasks" / "SKILL.md").write_text(
@@ -936,9 +1087,39 @@ def test_validate_feature_artifacts_blocks_commit_without_retrospective(tmp_path
     blocker_text = "\n".join(blocked["blockers"])
     assert "workflow-record.md" in blocker_text
     assert "improvement-candidates.md" in blocker_text
+    assert "retrospective.status must be completed before commit" in blocker_text
+    assert blocked["facts"]["retrospective_gate"]["gate_status"] == "blocked"
+    assert blocked["facts"]["retrospective_gate"]["status"] == ""
 
     (feature_dir / "workflow-record.md").write_text("# Workflow Record\n", encoding="utf-8")
     (feature_dir / "improvement-candidates.md").write_text("# Improvement Candidates\n", encoding="utf-8")
+    still_blocked = run_ps(
+        "validate-feature-artifacts",
+        "-FeatureDir",
+        str(feature_dir),
+        "-Stage",
+        "commit",
+    )
+    assert still_blocked["status"] == "blocked"
+    assert "retrospective.status must be completed before commit" in "\n".join(still_blocked["blockers"])
+
+    (feature_dir / "workflow-state.json").write_text(
+        json.dumps(
+            {
+                "attempts": [],
+                "validations": [],
+                "fact_layer": {},
+                "acceptance": {},
+                "retrospective": {
+                    "status": "completed",
+                    "workflow_record": "workflow-record.md",
+                    "improvement_candidates": "improvement-candidates.md",
+                },
+                "promotion": {},
+            }
+        ),
+        encoding="utf-8",
+    )
     ok = run_ps(
         "validate-feature-artifacts",
         "-FeatureDir",
@@ -947,6 +1128,8 @@ def test_validate_feature_artifacts_blocks_commit_without_retrospective(tmp_path
         "commit",
     )
     assert ok["status"] == "ok"
+    assert ok["facts"]["retrospective_gate"]["gate_status"] == "ok"
+    assert ok["facts"]["retrospective_gate"]["status"] == "completed"
 
 
 def test_suggest_validation_emits_candidates_without_sufficiency_claim(tmp_path):

@@ -80,6 +80,15 @@ runtime sync.
   http://127.0.0.1:9222/json/list
   ```
 
+- Before declaring host/CDP unavailable, run
+  `ensure-desktop-shell-cdp-host`. Reuse an existing valid
+  DesktopShell target when one is already running. If CDP is unreachable
+  and no process owns `9222`, start `<host-app-root>` with `npm run debug` and
+  rerun the probe. If another process owns the port, identify the owner and
+  report a blocker unless the user explicitly approves a destructive recovery
+  action. Do not move primary technical validation to manual acceptance merely
+  because a process is already running or the port is occupied.
+
 - Preferred real DesktopShell page target patterns for host app or
   frontend-plugin validation:
 

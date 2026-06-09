@@ -59,7 +59,11 @@ Create or update these evidence artifacts:
   links in `validation.md`.
 - For host-embedded UI validation, prefer real DesktopShell Electron CDP at
   `http://127.0.0.1:9222` after source build and source-to-runtime sync. First
-  run `inspect-desktop-shell-cdp-target` or inspect `/json/list`; record all
+  run `ensure-desktop-shell-cdp-host` to reuse an existing valid host, start
+  the host when no process owns the port, or identify a port owner before
+  declaring a blocker. Do not turn a running process or occupied port into
+  manual acceptance until this CDP host recovery ladder has concrete evidence. Then run
+  `inspect-desktop-shell-cdp-target` or inspect `/json/list`; record all
   page target `id/title/url/webSocketDebuggerUrl`, the selected target id, and
   the selected target URL. A note that `9222` is connected is not validation
   evidence. For host app or frontend-plugin validation, select targets matching

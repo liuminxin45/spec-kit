@@ -106,6 +106,15 @@ if len(non_empty) >= 2 and not non_empty[1].startswith("【") and not contains_c
 type_lines = section_content("【提交类型】")
 if type_lines and " - " not in type_lines[0]:
     blockers.append(f"【提交类型】 must use '<类型> - <范围或问题域>': {type_lines[0]}")
+generic_type_blocklist = [
+    "修复 - UI 交互",
+    "修复 - 代码",
+    "修复 - 逻辑",
+    "缺陷修复 - UI",
+    "缺陷修复 - 前端",
+]
+if type_lines and type_lines[0].strip() in generic_type_blocklist:
+    blockers.append(f"【提交类型】 scope is too generic; name the concrete module or problem domain: {type_lines[0]}")
 
 self_test_lines = section_content("【自测结果】")
 if self_test_lines and "相关测试通过，自测通过" not in self_test_lines[-1]:
@@ -127,6 +136,7 @@ payload = {
     "facts": {
         "required_sections": required,
         "non_empty_line_count": len(non_empty),
+        "generic_type_blocklist": generic_type_blocklist,
     },
     "blockers": blockers,
     "unknowns": [],

@@ -93,6 +93,20 @@ promote lessons into long-term policy.
    - Local artifact visibility: whether `workflow-record.md`,
      `improvement-candidates.md`, acceptance artifacts, or spec artifacts are
      intentionally local-only or ignored by `.gitignore`.
+   - AI workflow self-check: expected stage path, actual stage path, mismatch,
+     evidence, and the smallest repair location when the workflow diverged.
+   - Existing Constraint Audit: before recommending any new durable rule,
+     inspect the relevant existing constraints first, including
+     `ai/workflows/task-routing.md`, stage command templates, `workflow.yml`,
+     scripts, tests, generated skill copies, and selected knowledge guides.
+     Classify the failure as missing constraint, weak wording, contradictory
+     wording, script/preflight not wired, generated-context drift, unavailable
+     tool, or LLM execution miss. Prefer strengthening or wiring an existing
+     constraint before proposing a new one.
+   - Team knowledge candidates: stable facts that required broad or repeated
+     source reading, are likely long-lived, and can be expressed without
+     machine-specific paths. Record evidence and the proposed knowledge-map or
+     guide location, but keep the candidate pending until human approval.
 6. Create or update `FEATURE_DIR/improvement-candidates.md`.
    - If no reusable lesson exists, write `status: no-candidates` and do not
      invent broad advice.
@@ -120,12 +134,24 @@ promote lessons into long-term policy.
      a script, validation command, template gate, checklist item, or generated
      fact, recommend that landing place before memory or team norm. In short,
      do not outsource a deterministic check to LLM judgment.
-8. Do not modify tools/spec-kit, `.specify/memory`, team governance files, or
+   - Use rules or automation only for conditions that are nearly deterministic.
+     If a check requires semantic judgment, tradeoff analysis, quality
+     evaluation, or context-sensitive interpretation, keep it as an LLM-owned
+     review item with evidence instead of forcing weak automation that lowers
+     quality.
+8. Update `FEATURE_DIR/workflow-state.json` retrospective state:
+   - Set `retrospective.status` to `completed`.
+   - Set `retrospective.workflow_record` to `workflow-record.md`.
+   - Set `retrospective.improvement_candidates` to
+     `improvement-candidates.md`.
+   - Preserve attempts, validations, fact-layer, acceptance, and promotion
+     fields.
+9. Do not modify tools/spec-kit, `.specify/memory`, team governance files, or
    generated global rules from this stage. High-value lessons require human
    approval before promotion.
-9. Update `review.md` when present so the human navigation page links to
+10. Update `review.md` when present so the human navigation page links to
    `workflow-record.md` and `improvement-candidates.md`.
-10. Continue to `speckit.promote-lessons` only when there are human-approved
+11. Continue to `speckit.promote-lessons` only when there are human-approved
     improvement candidates; otherwise continue to `speckit.commit`.
 
 ## Workflow Record Template
@@ -186,12 +212,30 @@ promote lessons into long-term policy.
 - 可新增 workflow gate:
 - automation-first 判断:
 
-## 8. Accepted Gaps
+## 8. 现有约束审计
+- 相关已有约束:
+- 约束状态:
+- 失败归因:
+- 优先修复位置:
+
+## 9. 团队知识候选
+- 候选事实:
+- 稳定性判断:
+- 来源证据:
+- 推荐落盘位置:
+- 审核状态:
+
+## 10. 自动化 / LLM 分工判断
+- 适合规则化/脚本化:
+- 保留 LLM 判断:
+- 避免自动化的原因:
+
+## 11. Accepted Gaps
 - 已接受缺口:
 - 接受依据:
 - 后续范围:
 
-## 9. 质量判断
+## 12. 质量判断
 - 任务输出质量:
 - Spec Kit 流程质量:
 - AI 执行质量:
@@ -260,6 +304,7 @@ Report in Chinese:
 
 - `workflow-record.md` path.
 - `improvement-candidates.md` path.
+- `workflow-state.json` retrospective status update.
 - Acceptance evidence used.
 - Highest-value improvement candidates.
 - Confirmation that this stage did not modify tools/spec-kit, memory, team

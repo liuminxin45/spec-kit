@@ -9,6 +9,8 @@ scripts:
   select_knowledge_ps: scripts/powershell/select-knowledge.ps1 -Json -Stage implement -FeatureDir <feature-dir>
   sync_ui_runtime_sh: scripts/bash/sync-ui-runtime-artifacts.sh --json --source-dir <source-dist> --runtime-dir <host-runtime-dir> --plugin-id <plugin-id> [--refresh-command <command>]
   sync_ui_runtime_ps: scripts/powershell/sync-ui-runtime-artifacts.ps1 -Json -SourceDir <source-dist> -RuntimeDir <host-runtime-dir> -PluginId <plugin-id> [-RefreshCommand <command>]
+  ensure_cdp_host_sh: scripts/bash/ensure-desktop-shell-cdp-host.sh --json --target-kind host-app
+  ensure_cdp_host_ps: scripts/powershell/ensure-desktop-shell-cdp-host.ps1 -Json -TargetKind host-app
   inspect_cdp_target_sh: scripts/bash/inspect-desktop-shell-cdp-target.sh --json --target-kind host-app
   inspect_cdp_target_ps: scripts/powershell/inspect-desktop-shell-cdp-target.ps1 -Json -TargetKind host-app
 ---
@@ -175,8 +177,15 @@ evidence discipline: root cause, blast radius, validation, and acceptance-lite.
    - For UI/UX-affecting slices, perform best-effort AI self-validation after
      implementation when the local host, MCP/CDP/browser automation, or
      equivalent UI test tool is available. For host-embedded frontend plugins,
-     prefer the real DesktopShell Electron host: run or reuse
-     `<host-app-root>` `npm run debug`, confirm CDP at
+     prefer the real DesktopShell Electron host: first run
+     `ensure-desktop-shell-cdp-host` or perform the equivalent probe. Reuse
+     an already-running valid DesktopShell target instead of treating it
+     as a blocker. If CDP is unreachable and no process owns the port, start
+     `<host-app-root>` `npm run debug` and rerun the probe. If another process
+     owns the port, identify the owner and try a safe recovery path; destructive
+     process termination requires explicit human approval. Only after this
+     CDP host recovery ladder proves host/CDP unavailable may the stage stop with
+     `blockers` and `next_required_human_action`. Then confirm CDP at
      `http://127.0.0.1:9222`, run `inspect-desktop-shell-cdp-target` or
      inspect `/json/list`, and record all page target `id/title/url/webSocketDebuggerUrl`
      plus the selected target id and URL before DOM/screenshot collection.
@@ -210,7 +219,8 @@ evidence discipline: root cause, blast radius, validation, and acceptance-lite.
    - For real-device, connection, acquisition, permission, status, SDK/Biz, or
      host-embedded runtime fixes, do not delegate the primary smoke to human
      acceptance when local tools can run it. Run or reuse DesktopShell from
-     `<host-app-root>` with `npm run debug`, confirm CDP at
+     `<host-app-root>` with `npm run debug` after first probing/reusing any
+     existing CDP host with `ensure-desktop-shell-cdp-host`, confirm CDP at
      `http://127.0.0.1:9222`, select a DesktopShell target, perform the
      operation through CDP/browser automation or an equivalent host/API path,
      then verify process liveness, latest SDK/Biz logs, console errors, and the
@@ -379,7 +389,8 @@ evidence discipline: root cause, blast radius, validation, and acceptance-lite.
      "CDP 验证待执行", "需启动 DesktopShell Electron", or an equivalent
      pending runtime check as a normal residual risk is non-compliant.
    - If the host, CDP endpoint, runtime target, device, permission, or
-     automation path is unavailable after evidence-backed probing, stop with
+     automation path is unavailable after evidence-backed probing and the CDP
+     host recovery ladder, stop with
      `blockers` and `next_required_human_action`; do not present the stage as
      complete and do not ask the user to perform primary technical validation
      as acceptance.

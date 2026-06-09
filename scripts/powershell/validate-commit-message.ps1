@@ -138,6 +138,18 @@ $typeLines = @(Get-SectionContentLines -AllLines $lines -Section "【提交类�
 if ($typeLines.Count -gt 0 -and $typeLines[0] -notmatch '\s-\s') {
     $blockers += "【提交类型】 must use '<类型> - <范围或问题域>': $($typeLines[0])"
 }
+if ($typeLines.Count -gt 0) {
+    $genericTypes = @(
+        "修复 - UI 交互",
+        "修复 - 代码",
+        "修复 - 逻辑",
+        "缺陷修复 - UI",
+        "缺陷修复 - 前端"
+    )
+    if ($genericTypes -contains $typeLines[0].Trim()) {
+        $blockers += "【提交类型】 scope is too generic; name the concrete module or problem domain: $($typeLines[0])"
+    }
+}
 
 $selfTestLines = @(Get-SectionContentLines -AllLines $lines -Section "【自测结果】" -SectionNames $requiredSections)
 if ($selfTestLines.Count -gt 0) {
@@ -168,6 +180,7 @@ $payload = [PSCustomObject]@{
     facts = [PSCustomObject]@{
         required_sections = $requiredSections
         non_empty_line_count = $nonEmptyLines.Count
+        generic_type_blocklist = @("修复 - UI 交互", "修复 - 代码", "修复 - 逻辑", "缺陷修复 - UI", "缺陷修复 - 前端")
     }
     blockers = $blockers
     unknowns = $unknowns

@@ -456,6 +456,44 @@ if feature.exists():
 if todos:
     blockers.append("unfinished placeholders in: " + ", ".join(todos))
 
+retrospective_gate = {
+    "checked": False,
+    "gate_status": "not_checked",
+    "status": "",
+    "workflow_record": "",
+    "improvement_candidates": "",
+}
+if stage == "commit":
+    retrospective_gate["checked"] = True
+    retrospective_gate["gate_status"] = "ok"
+    workflow_state_path = feature / "workflow-state.json"
+    if not workflow_state_path.is_file():
+        retrospective_gate["gate_status"] = "blocked"
+        blockers.append("workflow-state.json missing; commit requires completed retrospective state")
+    else:
+        try:
+            workflow_state = json.loads(workflow_state_path.read_text(encoding="utf-8"))
+            retro = workflow_state.get("retrospective")
+            if not isinstance(retro, dict):
+                retrospective_gate["gate_status"] = "blocked"
+                blockers.append("workflow-state.json missing retrospective state")
+            else:
+                retrospective_gate["status"] = str(retro.get("status", ""))
+                retrospective_gate["workflow_record"] = str(retro.get("workflow_record", ""))
+                retrospective_gate["improvement_candidates"] = str(retro.get("improvement_candidates", ""))
+                if retrospective_gate["status"] != "completed":
+                    retrospective_gate["gate_status"] = "blocked"
+                    blockers.append("retrospective.status must be completed before commit")
+                if not retrospective_gate["workflow_record"].strip():
+                    retrospective_gate["gate_status"] = "blocked"
+                    blockers.append("retrospective.workflow_record must reference workflow-record.md before commit")
+                if not retrospective_gate["improvement_candidates"].strip():
+                    retrospective_gate["gate_status"] = "blocked"
+                    blockers.append("retrospective.improvement_candidates must reference improvement-candidates.md before commit")
+        except json.JSONDecodeError:
+            retrospective_gate["gate_status"] = "blocked"
+            blockers.append("workflow-state.json is not valid JSON")
+
 result = {
     "tool": tool,
     "status": "blocked" if blockers else "ok",
@@ -472,6 +510,7 @@ result = {
         "required_source": required_source,
         "layer_manifest": str(manifest) if manifest else "",
         "missing_sections": missing_sections,
+        "retrospective_gate": retrospective_gate,
     },
     "blockers": blockers,
     "unknowns": routing_unknowns,
@@ -491,7 +530,7 @@ repo = Path(repo_root)
 checks = [
     {
         "path": "AGENTS.md",
-        "phrases": ["Project Path Categories", "source-to-runtime copy", "best-effort self-validation", "direct runtime replacement", "DesktopShell CDP validation", "stale/current-feature hint", "read the current plan only", "select-knowledge", "validate-knowledge-index"],
+        "phrases": ["Project Path Categories", "source-to-runtime copy", "best-effort self-validation", "direct runtime replacement", "DesktopShell CDP validation", "ensure-desktop-shell-cdp-host", "stale/current-feature hint", "read the current plan only", "select-knowledge", "validate-knowledge-index"],
     },
     {
         "path": ".specify/memory/repository-map.md",
@@ -503,27 +542,19 @@ checks = [
     },
     {
         "path": "ai/workflows/task-routing.md",
-        "phrases": ["tasks -> analyze -> checklist", "validate-generated-context", "validate-knowledge-index", "select-knowledge", "artifact_sections", "Stage Continuation", "inspect-desktop-shell-cdp-target", "do not apply stale feature risk flags"],
+        "phrases": ["tasks -> analyze -> checklist", "validate-generated-context", "validate-knowledge-index", "select-knowledge", "artifact_sections", "Stage Continuation", "inspect-desktop-shell-cdp-target", "ensure-desktop-shell-cdp-host", "do not apply stale feature risk flags"],
     },
     {
         "path": "ai/rules/ai-coding-rules.md",
-        "phrases": ["Generated Context Drift", "analysis.md", "validate-generated-context", "validate-knowledge-index", "Stage Continuation Contract", "Host Frontend Delivery Chain", "Retrospective/留痕 is mandatory before commit"],
+        "phrases": ["Generated Context Drift", "analysis.md", "validate-generated-context", "validate-knowledge-index", "Stage Continuation Contract", "Host Frontend Delivery Chain", "ensure-desktop-shell-cdp-host", "Retrospective/留痕 is mandatory before commit"],
     },
     {
         "path": "tools/spec-kit/workflows/speckit/workflow.yml",
-        "phrases": ["id: retrospective", "id: commit", "Require workflow-record.md and improvement-candidates.md before commit", "automatic_stage_continuation", "inspect-desktop-shell-cdp-target", "validate-knowledge-index", "current-feature state only"],
+        "phrases": ["id: retrospective", "id: commit", "Require workflow-record.md and improvement-candidates.md before commit", "automatic_stage_continuation", "inspect-desktop-shell-cdp-target", "ensure-desktop-shell-cdp-host", "validate-knowledge-index", "current-feature state only"],
     },
     {
         "path": "tools/spec-kit/TEAM-README.md",
         "phrases": ["retrospective/留痕 -> commit", "commit 前强制 retrospective", "source edit -> frontend build -> direct runtime replacement -> real host CDP verification", "select-knowledge", "full-text/BM25 search"],
-    },
-    {
-        "path": ".agents/skills/speckit-commit/SKILL.md",
-        "phrases": ["Confirm acceptance, quick acceptance, and retrospective are passed", "workflow-record.md", "improvement-candidates.md"],
-    },
-    {
-        "path": ".agents/skills/speckit-tasks/SKILL.md",
-        "phrases": ["Run mandatory", "speckit.retrospective", "after quick acceptance and before", "optional test-hardening, retrospective/留痕"],
     },
 ]
 
@@ -551,8 +582,28 @@ if context_file == "CLAUDE.md":
         "phrases": ["@AGENTS.md", ".claude/skills", "/speckit-specify", "/speckit-plan", "/speckit-tasks", "/speckit-implement"],
     })
 checks[0]["path"] = canonical_context_file
+for candidate_skills_dir in [".agents/skills", ".claude/skills"]:
+    if not (repo / candidate_skills_dir).exists():
+        continue
+    checks.extend([
+        {
+            "path": f"{candidate_skills_dir}/speckit-commit/SKILL.md",
+            "phrases": ["validate-feature-artifacts", "Stage commit", "workflow-record.md", "improvement-candidates.md", "retrospective.status"],
+        },
+        {
+            "path": f"{candidate_skills_dir}/speckit-implement/SKILL.md",
+            "phrases": ["ensure-desktop-shell-cdp-host", "CDP host recovery ladder", "manual acceptance"],
+        },
+        {
+            "path": f"{candidate_skills_dir}/speckit-retrospective/SKILL.md",
+            "phrases": ["Existing Constraint Audit", "AI workflow self-check", "Team knowledge candidates", "retrospective.status"],
+        },
+        {
+            "path": f"{candidate_skills_dir}/speckit-tasks/SKILL.md",
+            "phrases": ["Run mandatory", "speckit.retrospective", "after quick acceptance and before", "optional test-hardening, retrospective/留痕"],
+        },
+    ])
 checks = context_checks + checks
-skills_dir = ".claude/skills" if context_file == "CLAUDE.md" else ".agents/skills"
 workflow_path = repo / "tools/spec-kit/workflows/speckit/workflow.yml"
 if not workflow_path.is_file() and (repo / ".specify/workflows/speckit/workflow.yml").is_file():
     for check in checks:
@@ -561,10 +612,6 @@ if not workflow_path.is_file() and (repo / ".specify/workflows/speckit/workflow.
 for check in checks:
     if check["path"] == "tools/spec-kit/TEAM-README.md":
         check["optional"] = True
-    elif check["path"].endswith("/speckit-commit/SKILL.md"):
-        check["path"] = f"{skills_dir}/speckit-commit/SKILL.md"
-    elif check["path"].endswith("/speckit-tasks/SKILL.md"):
-        check["path"] = f"{skills_dir}/speckit-tasks/SKILL.md"
 details = []
 for check in checks:
     path = repo / check["path"]

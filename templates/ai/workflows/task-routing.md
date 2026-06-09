@@ -84,6 +84,12 @@ flags, not separate default workflows.
   runtime replacement -> real host CDP verification. Native plugin source edits
   use source edit -> `.plugin` build because native output cannot be hot
   replaced safely.
+- DesktopShell host/CDP recovery: before giving up on AI-owned CDP
+  validation, run `ensure-desktop-shell-cdp-host` or equivalent probes.
+  Reuse an already-running valid DesktopShell target, start the host when
+  no process owns the CDP port, or identify the owner of an occupied port and
+  report a real blocker. Do not skip to manual acceptance merely because a host
+  process is already running or the CDP port is occupied.
 - DesktopShell CDP validation: run `inspect-desktop-shell-cdp-target`
   or inspect `/json/list` first and record page target
   `id/title/url/webSocketDebuggerUrl`. Select targets matching

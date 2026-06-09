@@ -70,6 +70,11 @@ This avoids stale knowledge and keeps AI coding context bounded.
   all page target `id/title/url/webSocketDebuggerUrl` values plus the selected
   target id/URL. Product UI validation rejects Plugin Workbench, `base-win.html`,
   `devtools://`, blank, and unrelated targets as wrong-target evidence.
+  Before giving up on AI-owned host validation, run
+  `ensure-desktop-shell-cdp-host` or equivalent probes to reuse a valid
+  running target, start the host when no process owns the CDP port, or identify
+  a port owner as a real blocker; a running process or occupied port is not by
+  itself a reason to skip to manual acceptance.
 - Qt-to-frontend UI parity work should read
   `.specify/memory/qt-source-behavior-map.md` or
   `ai/knowledge/qt-source-behavior-map.md` before broad workspace search.
