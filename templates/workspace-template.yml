@@ -1,0 +1,62 @@
+workspace:
+  root: ".."
+  primary_repo: "CoreServicesLib"
+  default_base_branch: "master"
+
+branch_policy:
+  local_only: true
+  push_remote: false
+  same_branch_across_repos: true
+  require_clean_worktree: true
+  complete_by_cherry_picking_to_base: true
+  require_user_confirmation_before_cherry_pick: true
+  delete_local_spec_branch_after_cherry_pick: false
+  keep_local_spec_branch_after_cherry_pick: true
+  # Legacy compatibility keys retained for older commands/tests. Current
+  # complete-branch behavior is cherry-pick, not merge.
+  complete_by_merging_to_base: false
+  require_user_confirmation_before_merge: true
+  require_user_confirmation_before_commit: true
+  delete_local_spec_branch_after_merge: false
+  keep_local_spec_branch_after_merge: true
+
+repositories:
+  - name: "CoreServicesLib"
+    path: "CoreServicesLib"
+    role: "sdk-biz-core"
+    required: true
+
+  - name: "DeviceSdk"
+    path: "DeviceSdk"
+    role: "sdk-consumer"
+    required: true
+
+  - name: "ProductJSPlugin"
+    path: "ProductJSPlugin"
+    role: "product-js-plugin"
+    required: true
+
+  - name: "ProductNativePlugin"
+    path: "ProductNativePlugin"
+    role: "product-native-plugin-and-biz"
+    required: true
+
+  - name: "SharedPluginCommon"
+    path: "SharedPluginCommon"
+    role: "shared-plugin-common"
+    required: true
+
+  - name: "ProductUIPlugin"
+    path: "ProductUIPlugin"
+    role: "frontend-plugin-targets"
+    required: true
+
+  - name: "WindowsDeps"
+    path: "WindowsDeps"
+    role: "windows-dependencies"
+    required: true
+
+  - name: "DesktopShell"
+    path: "DesktopShell"
+    role: "host-and-frontend-plugins"
+    required: true

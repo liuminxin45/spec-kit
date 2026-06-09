@@ -1,0 +1,117 @@
+schema_version: "1.0"
+purpose: "Deterministic, load-on-demand team knowledge index for Spec Kit agents."
+policy:
+  default_context: false
+  no_full_text_search_required: true
+  repository_map_authority: ".specify/memory/repository-map.md"
+  selection_rule: "Match affected repositories, risk flags, capability tags, stage, and explicit task terms; read only the smallest useful guide set."
+  max_selected_guides: 3
+  forbidden:
+    - "Do not override repository ownership from repository-map.md."
+    - "Do not store machine-specific absolute paths."
+    - "Do not load every knowledge file by default."
+
+workspace:
+  overview:
+    guide: "workspace/overview.md"
+    tags: ["workspace", "product", "example-platform", "multi-repo"]
+    load_when:
+      - "Need a compact product/workspace overview after reading repository-map.md."
+  architecture-map:
+    guide: "workspace/architecture-map.md"
+    tags: ["architecture", "layers", "electron", "plugin", "sdk"]
+    load_when:
+      - "Need cross-layer architecture before planning a multi-layer change."
+  cross-repo-routing:
+    guide: "workspace/cross-repo-routing.md"
+    tags: ["routing", "repos.config", "cross-repo", "branch"]
+    load_when:
+      - "Need cross-repository routing or dependency context."
+
+repositories:
+  CoreServicesLib:
+    guide: "repositories/core-services-lib.md"
+    tags: ["sdk-biz-core", "device-tree", "property", "services", "uuid", "cmake", "gtest"]
+    load_when:
+      - "affected_repositories includes CoreServicesLib"
+      - "Task touches reusable business/runtime facts, DeviceManager, DeviceTree, properties, or public facade."
+  DeviceSdk:
+    guide: "repositories/device-sdk.md"
+    tags: ["sdk", "device", "protocolc", "virtual-device", "api-test", "cmake"]
+    load_when:
+      - "affected_repositories includes DeviceSdk"
+      - "Task mentions SDK API, ProtocolC, virtual device, device discovery, or SDK tests."
+  DesktopShell:
+    guide: "repositories/desktop-shell.md"
+    tags: ["electron", "plugin-host", "rpc", "cdp", "app-data", "frontend-runtime"]
+    load_when:
+      - "affected_repositories includes DesktopShell"
+      - "Task mentions Electron host, plugin host, RPC, CDP, app-data, or runtime plugin install."
+  ProductUIPlugin:
+    guide: "repositories/product-ui-plugin.md"
+    tags: ["frontend-plugin", "vue", "rpc", "front-meta", "build", "mock"]
+    load_when:
+      - "affected_repositories includes ProductUIPlugin"
+      - "Task touches frontend plugin source, visible UI, mock data, or plugin build output."
+  ProductNativePlugin:
+    guide: "repositories/product-native-plugin.md"
+    tags: ["native-plugin", "napi", "native-bridge", "bridge", "uuid", "facade-test"]
+    load_when:
+      - "affected_repositories includes ProductNativePlugin"
+      - "Task touches NativeBridge, NAPI exports, native bridge, or facade tests."
+  SharedPluginCommon:
+    guide: "repositories/shared-plugin-common.md"
+    tags: ["napi", "cmake-modules", "native-addon", "native-exports", "proto"]
+    load_when:
+      - "affected_repositories includes SharedPluginCommon"
+      - "Task touches NAPI helper macros, CMake native addon modules, or native export generation."
+  WindowsDeps:
+    guide: "repositories/windows-deps.md"
+    tags: ["windows-deps", "qt", "qse", "native-ui", "windows", "setup"]
+    load_when:
+      - "affected_repositories includes WindowsDeps"
+      - "Task needs Qt widget, QSE, Windows UI, setup, or shared Windows helper context."
+
+domains:
+  device-identity-boundary:
+    guide: "domains/device-identity-boundary.md"
+    tags: ["uuid", "identity", "state-boundary", "api-boundary", "biz-forwarding"]
+    load_when:
+      - "Task touches device identity, UUID, SDK handles, node ids, Biz bridge, RPC, or frontend operations."
+  native-plugin-bridge:
+    guide: "domains/native-plugin-bridge.md"
+    tags: ["napi", "native-bridge", "json", "rpc", "event-forwarder"]
+    load_when:
+      - "Task touches native addon exports, NAPI JSON payloads, event forwarding, or bridge facade tests."
+  frontend-plugin-runtime:
+    guide: "domains/frontend-plugin-runtime.md"
+    tags: ["frontend-plugin", "runtime-sync", "vue", "host-rpc", "host-validation"]
+    load_when:
+      - "Task touches frontend plugin build, runtime deployment, visible UI, or host-served plugin resources."
+  electron-host-cdp:
+    guide: "domains/electron-host-cdp.md"
+    tags: ["electron", "cdp", "debug", "target-selection", "screenshots"]
+    load_when:
+      - "Task requires DesktopShell host validation, screenshots, DOM, console, box metrics, or CDP target selection."
+  virtual-device-and-sdk-tests:
+    guide: "domains/virtual-device-and-sdk-tests.md"
+    tags: ["virtual-device", "sdk-test", "api-test", "unit-test", "protocolc"]
+    load_when:
+      - "Task mentions virtual devices, SDK test enable flags, API tests, unit tests, or ProtocolC validation."
+  qt-source-behavior-map:
+    guide: "qt-source-behavior-map.md"
+    tags: ["qt", "ui-parity", "migration", "behavior-map", "frontend-plugin"]
+    load_when:
+      - "Task needs Qt-to-frontend behavior parity before broad source search."
+
+build:
+  command-matrix:
+    guide: "build/command-matrix.yml"
+    tags: ["build", "cmake", "npm", "node", "msbuild"]
+    load_when:
+      - "Need candidate build commands for affected repositories."
+  validation-matrix:
+    guide: "build/validation-matrix.yml"
+    tags: ["validation", "test", "ctest", "pytest", "npm", "cdp"]
+    load_when:
+      - "Need candidate validation commands or smoke routes."

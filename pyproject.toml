@@ -1,0 +1,82 @@
+[project]
+name = "specify-cli"
+version = "0.8.11"
+description = "CoreServicesLib team Specify CLI for Spec-Driven Development (SDD)."
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.24.0",
+    "click>=8.2.1",
+    "rich",
+    "platformdirs",
+    "readchar",
+    "pyyaml>=6.0",
+    "packaging>=23.0",
+    "pathspec>=0.12.0",
+    "json5>=0.13.0",
+]
+
+[project.scripts]
+specify = "specify_cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/specify_cli"]
+
+[tool.hatch.build.targets.wheel.force-include]
+# Bundle core assets so `specify init` works without network access (air-gapped / enterprise)
+# Page templates (exclude commands/ — bundled separately below to avoid duplication)
+"templates/agents-template.md" = "specify_cli/core_pack/templates/agents-template.md"
+"templates/checklist-template.md" = "specify_cli/core_pack/templates/checklist-template.md"
+"templates/constitution-template.md" = "specify_cli/core_pack/templates/constitution-template.md"
+"templates/fact-pack-template.md" = "specify_cli/core_pack/templates/fact-pack-template.md"
+"templates/intake-template.md" = "specify_cli/core_pack/templates/intake-template.md"
+"templates/layer-manifest.yml" = "specify_cli/core_pack/templates/layer-manifest.yml"
+"templates/pitfalls-template.md" = "specify_cli/core_pack/templates/pitfalls-template.md"
+"templates/plan-template.md" = "specify_cli/core_pack/templates/plan-template.md"
+"templates/repository-map-template.md" = "specify_cli/core_pack/templates/repository-map-template.md"
+"templates/spec-template.md" = "specify_cli/core_pack/templates/spec-template.md"
+"templates/tasks-template.md" = "specify_cli/core_pack/templates/tasks-template.md"
+"templates/workflow-state-template.json" = "specify_cli/core_pack/templates/workflow-state-template.json"
+"templates/workspace-template.yml" = "specify_cli/core_pack/templates/workspace-template.yml"
+"templates/vscode-settings.json" = "specify_cli/core_pack/templates/vscode-settings.json"
+# Command templates
+"templates/commands" = "specify_cli/core_pack/commands"
+"templates/ai" = "specify_cli/core_pack/templates/ai"
+"templates/subskills" = "specify_cli/core_pack/subskills"
+"scripts/bash" = "specify_cli/core_pack/scripts/bash"
+"scripts/powershell" = "specify_cli/core_pack/scripts/powershell"
+"checklist-rules" = "specify_cli/core_pack/checklist-rules"
+"config" = "specify_cli/core_pack/config"
+# Bundled workflows (auto-installed during `specify init`)
+"workflows/speckit" = "specify_cli/core_pack/workflows/speckit"
+# Bundled presets (installable via `specify preset add <name>` or `specify init --preset <name>`)
+"presets/lean" = "specify_cli/core_pack/presets/lean"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false

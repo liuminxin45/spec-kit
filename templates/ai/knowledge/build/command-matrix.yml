@@ -1,0 +1,36 @@
+schema_version: "1.0"
+purpose: "Candidate build commands. Verify current scripts before execution."
+commands:
+  CoreServicesLib:
+    - scope: "library"
+      command: 'cmake -B build -S . -G "Visual Studio 17 2022" -A x64'
+    - scope: "library"
+      command: "cmake --build build --config Debug"
+  DeviceSdk:
+    - scope: "sdk"
+      command: 'cmake -B cmake-build-Release -G "Visual Studio 17 2022" -A x64'
+    - scope: "sdk"
+      command: "cmake --build cmake-build-Release --config Release"
+  DesktopShell:
+    - scope: "host"
+      command: "npm run bootstrap"
+    - scope: "host"
+      command: "npm run debug"
+    - scope: "host"
+      command: "npm run build-builtin-plugins"
+  ProductUIPlugin:
+    - scope: "frontend-plugin"
+      command: "npm run build"
+    - scope: "frontend-plugin"
+      command: "npm run lint"
+  ProductNativePlugin:
+    - scope: "NativeBridge"
+      command: 'cmake -B build/VS2022 -G "Visual Studio 17 2022" -A x64'
+    - scope: "NativeBridge"
+      command: "cmake --build build/VS2022 --config Debug"
+  SharedPluginCommon:
+    - scope: "shared-native"
+      command: 'cmake -B build -S . -G "Visual Studio 17 2022" -A x64'
+  WindowsDeps:
+    - scope: "consumer-integrated"
+      command: "Build through the consuming product project."

@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-05-21T00:00:00Z",
+  "catalog_url": "project-local",
+  "workflows": {
+    "speckit": {
+      "id": "speckit",
+      "name": "CoreServicesLib SDD Cycle",
+      "description": "Runs a risk-aware Spec Kit loop through implementation slices, user acceptance, simplification, optional test hardening, commit, retrospective trace, and local branch completion",
+      "author": "CoreServicesLib Team",
+      "version": "1.4.0",
+      "url": "project-local:workflows/speckit/workflow.yml",
+      "tags": ["sdd", "generic-workspace", "team", "full-cycle"]
+    }
+  }
+}

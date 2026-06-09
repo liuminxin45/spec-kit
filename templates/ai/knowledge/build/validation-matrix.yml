@@ -1,0 +1,38 @@
+schema_version: "1.0"
+purpose: "Candidate validation routes. Verify current scripts before execution."
+validations:
+  CoreServicesLib:
+    - kind: "unit"
+      command: "cmake --build build --config Debug --target run_tests"
+    - kind: "ctest"
+      command: "cd build && ctest -C Debug --output-on-failure"
+  DeviceSdk:
+    - kind: "api-test"
+      command: "Build with DEVICE_SDK_API_TEST_ENABLE=ON, then run the API test executable."
+    - kind: "unit-test"
+      command: "Build with DEVICE_SDK_UNIT_TEST_ENABLE=ON, then run the unit test executable."
+  DesktopShell:
+    - kind: "plugin-host"
+      command: "npm test"
+    - kind: "host-cdp"
+      command: "npm run debug, then inspect CDP /json/list and select a real host target."
+  ProductUIPlugin:
+    - kind: "frontend"
+      command: "npm run build"
+    - kind: "lint"
+      command: "npm run lint"
+    - kind: "host-embedded-ui"
+      command: "Build, sync runtime artifacts, then validate through DesktopShell CDP."
+  ProductNativePlugin:
+    - kind: "facade"
+      command: "node scripts/run-facade-tests.js --mvc-biz-native-dir <build-dir>"
+    - kind: "ctest"
+      command: "ctest -C Debug --output-on-failure from the configured build directory."
+  SharedPluginCommon:
+    - kind: "parser"
+      command: "node js-lib/src/__tests__/parse-napi-comments.test.js"
+    - kind: "proto"
+      command: "node js-lib/src/__tests__/proto-generator.test.js"
+  WindowsDeps:
+    - kind: "source-behavior"
+      command: "Validate through the consuming product or use source/QSE inspection for parity evidence."

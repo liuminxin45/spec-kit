@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-05-19T00:00:00Z",
+  "catalog_url": "project-local",
+  "presets": {
+    "lean": {
+      "name": "CoreServicesLib Lean Workflow",
+      "id": "lean",
+      "version": "1.3.0",
+      "description": "Minimal team workflow for small scoped CoreServicesLib changes with intake routing, validation, and test-case closure",
+      "author": "CoreServicesLib Team",
+      "repository": "project-local",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 5,
+        "templates": 0
+      },
+      "tags": [
+        "lean",
+        "generic-workspace",
+        "team",
+        "minimal"
+      ]
+    }
+  }
+}
