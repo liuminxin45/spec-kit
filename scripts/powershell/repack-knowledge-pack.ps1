@@ -19,19 +19,49 @@ $ErrorActionPreference = "Stop"
 
 $result = New-KnowledgePackResult "repack-knowledge-pack"
 
-function Resolve-FirstExistingCapabilityDir {
+function Copy-RepackItemToStage {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationRoot
+    )
+    if (-not (Test-Path -LiteralPath $SourcePath)) { return $false }
+    New-Item -ItemType Directory -Force -Path $DestinationRoot | Out-Null
+    $destination = Join-Path $DestinationRoot (Split-Path -Leaf $SourcePath)
+    if (Test-Path -LiteralPath $destination) {
+        Remove-KnowledgePackDirectorySafe -Root $DestinationRoot -Path $destination
+    }
+    if (Test-Path -LiteralPath $SourcePath -PathType Container) {
+        Copy-KnowledgePackDirectory -Source $SourcePath -Destination $destination
+    } else {
+        Copy-Item -LiteralPath $SourcePath -Destination $destination -Force
+    }
+    return $true
+}
+
+function Copy-RepackChildrenToStage {
     param(
         [string]$Root,
-        [string[]]$Candidates
+        [string]$RelativePath,
+        [string]$DestinationRoot,
+        [string]$DirectoryNamePattern = "*",
+        [switch]$DirectoriesOnly
     )
-    foreach ($candidate in $Candidates) {
-        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-        $path = Join-Path $Root $candidate
-        if (Test-Path -LiteralPath $path -PathType Container) {
-            return $path
+    $sourceRoot = Join-Path $Root $RelativePath
+    if (-not (Test-Path -LiteralPath $sourceRoot -PathType Container)) { return @() }
+    $items = if ($DirectoriesOnly) {
+        @(Get-ChildItem -LiteralPath $sourceRoot -Directory -Force -Filter $DirectoryNamePattern)
+    } else {
+        @(Get-ChildItem -LiteralPath $sourceRoot -Force | Where-Object {
+            $_.PSIsContainer -or -not $DirectoriesOnly
+        })
+    }
+    $copied = @()
+    foreach ($item in $items) {
+        if (Copy-RepackItemToStage -SourcePath $item.FullName -DestinationRoot $DestinationRoot) {
+            $copied += $item.FullName
         }
     }
-    return ""
+    return $copied
 }
 
 try {
@@ -66,41 +96,39 @@ try {
     }
 
     $capabilityArgs = @{}
+    $capabilitySourceSummary = [ordered]@{}
+    $capabilityStagingRoot = ""
     if ($IncludeCapabilities) {
-        $capabilityArgs.SkillsDir = Resolve-FirstExistingCapabilityDir -Root $root -Candidates @(
-            ".specify\capabilities\overlays\local\skills",
-            ".agents\spec-kit\skills",
-            ".specify\capabilities\materialized\skills"
+        $capabilityStagingRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("speckit-repack-capabilities-" + [guid]::NewGuid().ToString("N"))
+        $layerSpecs = @(
+            @{ key = "SkillsDir"; name = "skills"; published = @(@{ path = ".agents\spec-kit\skills"; pattern = "*__*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\skills") },
+            @{ key = "ToolsDir"; name = "tools"; published = @(@{ path = "ai\tools"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\tools") },
+            @{ key = "ScriptsDir"; name = "scripts"; published = @(@{ path = ".specify\scripts\packs"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\scripts") },
+            @{ key = "CommandsDir"; name = "commands"; published = @(@{ path = ".specify\capabilities\commands"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\commands") },
+            @{ key = "PromptsDir"; name = "prompts"; published = @(@{ path = ".specify\capabilities\prompts"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\prompts") },
+            @{ key = "ResourcesDir"; name = "resources"; published = @(@{ path = ".specify\capabilities\resources"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\resources") },
+            @{ key = "TemplatesDir"; name = "templates"; published = @(@{ path = ".specify\capabilities\templates"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\templates") }
         )
-        $capabilityArgs.ToolsDir = Resolve-FirstExistingCapabilityDir -Root $root -Candidates @(
-            ".specify\capabilities\overlays\local\tools",
-            "ai\tools"
-        )
-        $capabilityArgs.ScriptsDir = Resolve-FirstExistingCapabilityDir -Root $root -Candidates @(
-            ".specify\capabilities\overlays\local\scripts",
-            ".specify\capabilities\materialized\scripts",
-            ".specify\scripts\packs"
-        )
-        $capabilityArgs.CommandsDir = Resolve-FirstExistingCapabilityDir -Root $root -Candidates @(
-            ".specify\capabilities\overlays\local\commands",
-            ".specify\capabilities\materialized\commands",
-            ".specify\capabilities\commands"
-        )
-        $capabilityArgs.PromptsDir = Resolve-FirstExistingCapabilityDir -Root $root -Candidates @(
-            ".specify\capabilities\overlays\local\prompts",
-            ".specify\capabilities\materialized\prompts",
-            ".specify\capabilities\prompts"
-        )
-        $capabilityArgs.ResourcesDir = Resolve-FirstExistingCapabilityDir -Root $root -Candidates @(
-            ".specify\capabilities\overlays\local\resources",
-            ".specify\capabilities\materialized\resources",
-            ".specify\capabilities\resources"
-        )
-        $capabilityArgs.TemplatesDir = Resolve-FirstExistingCapabilityDir -Root $root -Candidates @(
-            ".specify\capabilities\overlays\local\templates",
-            ".specify\capabilities\materialized\templates",
-            ".specify\capabilities\templates"
-        )
+        foreach ($spec in $layerSpecs) {
+            $stage = Join-Path $capabilityStagingRoot $spec.name
+            $copied = @()
+            foreach ($published in $spec.published) {
+                $copied += @(Copy-RepackChildrenToStage -Root $root -RelativePath $published.path -DestinationRoot $stage -DirectoryNamePattern $published.pattern -DirectoriesOnly:([bool]$published.dirsOnly))
+            }
+            foreach ($overlay in $spec.overlays) {
+                $copied += @(Copy-RepackChildrenToStage -Root $root -RelativePath $overlay -DestinationRoot $stage)
+            }
+            if (Test-Path -LiteralPath $stage -PathType Container) {
+                $capabilityArgs[$spec.key] = $stage
+                $capabilitySourceSummary[$spec.name] = @($copied | ForEach-Object {
+                    try {
+                        [System.IO.Path]::GetRelativePath($root, $_).Replace('\', '/')
+                    } catch {
+                        $_
+                    }
+                })
+            }
+        }
     }
 
     if ($result.status -ne "blocked") {
@@ -132,7 +160,7 @@ try {
         $result.facts.mode = $Mode
         $result.facts.pack_id = $PackId
         $result.facts.include_capabilities = $IncludeCapabilities
-        $result.facts.capability_sources = $capabilityArgs
+        $result.facts.capability_sources = $capabilitySourceSummary
         $result.facts.export = $export
         if ($export.status -eq "ok") {
             $result.facts.pack_root = $export.facts.pack_root
@@ -141,6 +169,10 @@ try {
     }
 } catch {
     Set-KnowledgePackBlocked $result $_.Exception.Message
+} finally {
+    if (-not [string]::IsNullOrWhiteSpace($capabilityStagingRoot) -and (Test-Path -LiteralPath $capabilityStagingRoot)) {
+        Remove-KnowledgePackDirectorySafe -Root (Split-Path -Parent $capabilityStagingRoot) -Path $capabilityStagingRoot
+    }
 }
 
 if ($Json) { Write-KnowledgePackJson $result } else { $result }

@@ -768,6 +768,19 @@ def test_capability_pack_exports_materializes_and_repacks_layers(tmp_path):
     assert selected_capabilities["facts"]["auto_run_scripts"] is False
     assert selected_capabilities["facts"]["selected"][0]["path"] == ".agents/spec-kit/skills/capability-demo__runtime-debug"
 
+    core_skill = workspace / ".agents" / "spec-kit" / "skills" / "speckit-core"
+    core_skill.mkdir(parents=True)
+    (core_skill / "SKILL.md").write_text(
+        "---\nname: speckit-core\ndescription: Core skill should not be repacked.\n---\n",
+        encoding="utf-8",
+    )
+    local_skill = workspace / ".specify" / "capabilities" / "overlays" / "local" / "skills" / "local-runtime"
+    local_skill.mkdir(parents=True)
+    (local_skill / "SKILL.md").write_text(
+        "---\nname: local-runtime\ndescription: Local runtime overlay.\n---\n\n# Local Runtime\n",
+        encoding="utf-8",
+    )
+
     repacked_dir = tmp_path / "packs" / "capability-demo-repacked"
     repacked = run_ps(
         "repack-knowledge-pack",
@@ -785,6 +798,8 @@ def test_capability_pack_exports_materializes_and_repacks_layers(tmp_path):
     assert repacked["facts"]["mode"] == "full-snapshot"
     assert (repacked_dir / "knowledge-pack.yml").exists()
     assert (repacked_dir / "skills" / "capability-demo__runtime-debug" / "SKILL.md").exists()
+    assert (repacked_dir / "skills" / "local-runtime" / "SKILL.md").exists()
+    assert not (repacked_dir / "skills" / "speckit-core" / "SKILL.md").exists()
     assert (repacked_dir / "tools" / "capability-demo" / "runtime-tools.md").exists()
     assert repacked["facts"]["export"]["facts"]["capability_layers"]["skills"] is True
 
