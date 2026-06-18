@@ -115,11 +115,37 @@ pwsh -NoProfile -File .specify/scripts/powershell/generate-knowledge-pack.ps1 -R
 When `-ReviewedKnowledgeDir` is supplied, the generator enforces the quality
 score and pack equivalence gates before treating the pack as ready to mount.
 
-## Knowledge Pack Boundary
+## Capability Pack Boundary
 
 The open source core ships framework assets: templates, validators, selectors,
 workflow scripts, and generic starter knowledge. Project-specific facts belong
-in workspace-local `ai/knowledge/` or portable knowledge packs.
+in workspace-local `ai/knowledge/` or portable capability packs.
+
+A capability pack may include:
+
+```text
+ai/knowledge/          layered project knowledge
+skills/                namespaced Codex skills loaded by progressive disclosure
+tools/                 tool policies and MCP/tool usage guidance
+scripts/               explicit scripts that return facts/blockers/unknowns/hints
+commands/              pack-specific command prompts
+prompts/               reusable prompt templates
+resources/             large docs, examples, diagrams, and generated maps
+profiles/              workspace.yml and repository-map.md
+evaluation/            routing canaries and semantic eval inputs
+capabilities/index.yml progressive-disclosure registry
+```
+
+Pack scripts are never auto-run during install or compose. Applying a pack
+publishes behavioral layers under namespaced workspace-local paths such as
+`.agents/spec-kit/skills/<pack-id>__<skill>`, `ai/tools/<pack-id>/`, and
+`.specify/scripts/packs/<pack-id>/`.
+
+Pack lifecycle operations preserve the current active pack set. Updating a
+mounted pack replaces the installed pack, clears stale published layers for the
+same pack id, then re-composes the active set. Uninstalling a mounted pack
+removes its installed source and namespaced published layers, then re-composes
+remaining active packs or restores the base knowledge snapshot.
 
 Useful pack commands:
 
@@ -127,7 +153,11 @@ Useful pack commands:
 pwsh -NoProfile -File .specify/scripts/powershell/generate-knowledge-pack.ps1 -RepoRoot . -PackId <id> -IncludeProfiles -Json
 pwsh -NoProfile -File .specify/scripts/powershell/evaluate-knowledge-pack-synthesis.ps1 -RepoRoot . -KnowledgeDir .specify/knowledge-pack-generation/ai-synthesis/ai/knowledge -MinimumScore 70 -FailBelowMinimum -Json
 pwsh -NoProfile -File .specify/scripts/powershell/bootstrap-knowledge.ps1 -RepoRoot . -PackPath <pack-dir> -Force -Json
+pwsh -NoProfile -File .specify/scripts/powershell/update-knowledge-pack.ps1 -RepoRoot . -PackPath <pack-dir> -Json
+pwsh -NoProfile -File .specify/scripts/powershell/uninstall-knowledge-pack.ps1 -RepoRoot . -PackId <id> -Json
+pwsh -NoProfile -File .specify/scripts/powershell/select-capability.ps1 -RepoRoot . -Layer skills -Json
 pwsh -NoProfile -File .specify/scripts/powershell/export-knowledge-pack.ps1 -SourceKnowledgeDir ai/knowledge -PackId <id> -OutputDir <pack-dir> -Force -Json
+pwsh -NoProfile -File .specify/scripts/powershell/repack-knowledge-pack.ps1 -RepoRoot . -PackId <id> -Mode full-snapshot -IncludeProfiles -Force -Json
 pwsh -NoProfile -File .specify/scripts/powershell/validate-knowledge-pack.ps1 -PackRoot <pack-dir> -Json
 pwsh -NoProfile -File .specify/scripts/powershell/compare-knowledge-pack-equivalence.ps1 -SourceKnowledgeDir ai/knowledge -PackRoot <pack-dir> -Json
 ```

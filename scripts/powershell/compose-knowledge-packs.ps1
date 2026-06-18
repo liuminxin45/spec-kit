@@ -24,7 +24,7 @@ try {
         } else {
             if ($PackId.Count -eq 0) {
                 $PackId = @(Get-ChildItem -LiteralPath $packsRoot -Directory | Where-Object {
-                    Test-Path -LiteralPath (Join-Path $_.FullName "knowledge-pack.yml") -PathType Leaf
+                    Test-Path -LiteralPath (Get-KnowledgePackManifestPath -PackRoot $_.FullName) -PathType Leaf
                 } | ForEach-Object { $_.Name })
             }
             if ($PackId.Count -eq 0) {
@@ -47,11 +47,17 @@ try {
         $baseKnowledgeIncluded = $false
 
         $applied = @()
+        $capabilityApplied = @()
         $aliases = [ordered]@{}
+        $capabilitiesRoot = Join-Path $root ".specify\capabilities"
+        $capabilityMaterialized = Join-Path $capabilitiesRoot "materialized"
+        Remove-KnowledgePackDirectorySafe -Root $capabilitiesRoot -Path $capabilityMaterialized
+        New-Item -ItemType Directory -Force -Path $capabilityMaterialized | Out-Null
         foreach ($id in $PackId) {
             $slug = ConvertTo-KnowledgePackSlug -Value $id
             $packRoot = Join-Path $root ".specify\knowledge\packs\$slug"
-            if (-not (Test-Path -LiteralPath (Join-Path $packRoot "knowledge-pack.yml") -PathType Leaf)) {
+            $packManifest = Get-KnowledgePackManifestPath -PackRoot $packRoot
+            if (-not (Test-Path -LiteralPath $packManifest -PathType Leaf)) {
                 Set-KnowledgePackBlocked $result "Installed pack not found: $slug"
                 continue
             }
@@ -78,6 +84,18 @@ try {
                 $materializedInitialized = $true
             }
             Copy-KnowledgePackDirectory -Source $packKnowledge -Destination $materialized
+            $layers = Get-KnowledgePackCapabilityLayers -PackRoot $packRoot
+            foreach ($layerName in @("skills", "tools", "scripts", "commands", "prompts", "resources", "templates")) {
+                $layer = $layers[$layerName]
+                if (-not $layer.present) { continue }
+                $layerDestination = Join-Path $capabilityMaterialized "$layerName\$($info.id)"
+                Copy-KnowledgePackDirectory -Source $layer.path -Destination $layerDestination
+                $capabilityApplied += [ordered]@{
+                    pack_id = $info.id
+                    layer = $layerName
+                    materialized_path = ".specify/capabilities/materialized/$layerName/$($info.id)"
+                }
+            }
             $packAliases = Read-KnowledgeToolAliases -PackRoot $packRoot
             foreach ($key in $packAliases.Keys) { $aliases[$key] = $packAliases[$key] }
             $applied += [ordered]@{
@@ -96,6 +114,64 @@ try {
                 Remove-KnowledgePackDirectorySafe -Root (Join-Path $root "ai") -Path $activeKnowledge
             }
             Copy-KnowledgePackDirectory -Source $materialized -Destination $activeKnowledge
+
+            $removedPublishedCapabilities = @()
+            $previousCapabilityLockPath = Join-Path $capabilitiesRoot "lock.yml"
+            $packIdsToClean = @()
+            $packIdsToClean += @(Get-KnowledgePackLockPackIds -LockPath $previousCapabilityLockPath)
+            $packIdsToClean += @($applied | ForEach-Object { $_.id })
+            foreach ($packIdToClean in @($packIdsToClean | Select-Object -Unique)) {
+                $removedPublishedCapabilities += @(Remove-KnowledgePackPublishedArtifactsForPackId -RepoRoot $root -PackId $packIdToClean)
+            }
+
+            $publishedCapabilities = @()
+            foreach ($pack in $applied) {
+                $packIdForPublish = $pack.id
+                $skillsStage = Join-Path $capabilityMaterialized "skills\$packIdForPublish"
+                if (Test-Path -LiteralPath $skillsStage -PathType Container) {
+                    $skillsTargetRoot = Join-Path $root ".agents\spec-kit\skills"
+                    New-Item -ItemType Directory -Force -Path $skillsTargetRoot | Out-Null
+                    foreach ($skillDir in Get-ChildItem -LiteralPath $skillsStage -Directory -Force) {
+                        $targetName = "${packIdForPublish}__$($skillDir.Name)"
+                        $target = Join-Path $skillsTargetRoot $targetName
+                        if (Test-Path -LiteralPath $target) {
+                            Remove-KnowledgePackDirectorySafe -Root $skillsTargetRoot -Path $target
+                        }
+                        Copy-KnowledgePackDirectory -Source $skillDir.FullName -Destination $target
+                        $publishedCapabilities += [ordered]@{
+                            layer = "skills"
+                            pack_id = $packIdForPublish
+                            path = ".agents/spec-kit/skills/$targetName"
+                        }
+                    }
+                }
+
+                $layerTargets = [ordered]@{
+                    tools = "ai\tools\$packIdForPublish"
+                    scripts = ".specify\scripts\packs\$packIdForPublish"
+                    commands = ".specify\capabilities\commands\$packIdForPublish"
+                    prompts = ".specify\capabilities\prompts\$packIdForPublish"
+                    resources = ".specify\capabilities\resources\$packIdForPublish"
+                    templates = ".specify\capabilities\templates\$packIdForPublish"
+                }
+                foreach ($layerName in $layerTargets.Keys) {
+                    $stage = Join-Path $capabilityMaterialized "$layerName\$packIdForPublish"
+                    if (-not (Test-Path -LiteralPath $stage -PathType Container)) { continue }
+                    $targetRelative = $layerTargets[$layerName]
+                    $target = Join-Path $root $targetRelative
+                    $targetRoot = Split-Path -Parent $target
+                    New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null
+                    if (Test-Path -LiteralPath $target) {
+                        Remove-KnowledgePackDirectorySafe -Root $targetRoot -Path $target
+                    }
+                    Copy-KnowledgePackDirectory -Source $stage -Destination $target
+                    $publishedCapabilities += [ordered]@{
+                        layer = $layerName
+                        pack_id = $packIdForPublish
+                        path = $targetRelative.Replace('\', '/')
+                    }
+                }
+            }
 
             $lockPath = Join-Path $root ".specify\knowledge\lock.yml"
             $lock = @(
@@ -121,12 +197,42 @@ try {
             }
             $lock | Set-Content -LiteralPath $lockPath -Encoding utf8
 
+            $capabilityLockPath = Join-Path $root ".specify\capabilities\lock.yml"
+            $capabilityLock = @(
+                'schema_version: "1.0"',
+                'generated_by: "compose-knowledge-packs"',
+                'materialized: ".specify/capabilities/materialized"',
+                'auto_run_scripts: false',
+                "packs:"
+            )
+            foreach ($pack in $applied) {
+                $capabilityLock += "  - id: `"$($pack.id)`""
+                $capabilityLock += "    version: `"$($pack.version)`""
+                $capabilityLock += "    installed_path: `"$($pack.installed_path)`""
+            }
+            $capabilityLock += "published:"
+            if ($publishedCapabilities.Count -eq 0) {
+                $capabilityLock += "  []"
+            } else {
+                foreach ($capability in $publishedCapabilities) {
+                    $capabilityLock += "  - layer: `"$($capability.layer)`""
+                    $capabilityLock += "    pack_id: `"$($capability.pack_id)`""
+                    $capabilityLock += "    path: `"$($capability.path)`""
+                }
+            }
+            $capabilityLock | Set-Content -LiteralPath $capabilityLockPath -Encoding utf8
+
             $result.facts.repo_root = $root
             $result.facts.materialized_knowledge_dir = $activeKnowledge
             $result.facts.staging_dir = $materialized
+            $result.facts.capability_materialized_dir = $capabilityMaterialized
             $result.facts.backup_dir = $backupRoot
             $result.facts.lock = $lockPath
+            $result.facts.capability_lock = $capabilityLockPath
             $result.facts.applied_packs = $applied
+            $result.facts.capability_layers_applied = $capabilityApplied
+            $result.facts.removed_published_capabilities = $removedPublishedCapabilities
+            $result.facts.published_capabilities = $publishedCapabilities
             $result.facts.base_knowledge_included = $baseKnowledgeIncluded
             $result.facts.aliases_applied = $aliases
             $result.facts.alias_changed_files = @($aliasChanged | ForEach-Object {

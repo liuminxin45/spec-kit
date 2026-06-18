@@ -55,9 +55,18 @@ function Get-KnowledgePackManifestValue {
     return $match.Groups[1].Value.Trim().Trim('"').Trim("'")
 }
 
+function Get-KnowledgePackManifestPath {
+    param([string]$PackRoot)
+    $packManifest = Join-Path $PackRoot "pack.yml"
+    if (Test-Path -LiteralPath $packManifest -PathType Leaf) {
+        return $packManifest
+    }
+    return (Join-Path $PackRoot "knowledge-pack.yml")
+}
+
 function Get-KnowledgePackInfo {
     param([string]$PackRoot)
-    $manifest = Join-Path $PackRoot "knowledge-pack.yml"
+    $manifest = Get-KnowledgePackManifestPath -PackRoot $PackRoot
     [ordered]@{
         root = $PackRoot
         manifest = $manifest
@@ -70,7 +79,7 @@ function Get-KnowledgePackInfo {
 
 function Get-KnowledgePackComposeStrategy {
     param([string]$PackRoot)
-    $manifest = Join-Path $PackRoot "knowledge-pack.yml"
+    $manifest = Get-KnowledgePackManifestPath -PackRoot $PackRoot
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
         return "overlay-active-knowledge"
     }
@@ -89,6 +98,104 @@ function Get-KnowledgePackComposeStrategy {
         }
     }
     return "overlay-active-knowledge"
+}
+
+function Get-KnowledgePackLockPackIds {
+    param([string]$LockPath)
+    $ids = @()
+    if (-not (Test-Path -LiteralPath $LockPath -PathType Leaf)) { return $ids }
+
+    $inPacks = $false
+    foreach ($line in Get-Content -LiteralPath $LockPath) {
+        if ($line -match "^\s*packs:\s*$") {
+            $inPacks = $true
+            continue
+        }
+        if (-not $inPacks) { continue }
+        if ($line -match "^\s*-\s+id:\s*['""]?(.+?)['""]?\s*$") {
+            $ids += (ConvertTo-KnowledgePackSlug -Value $Matches[1].Trim().Trim('"').Trim("'"))
+            continue
+        }
+        if ($line -match "^\S" -and $line -notmatch "^\s*packs:\s*$") {
+            break
+        }
+    }
+    return $ids
+}
+
+function Get-KnowledgePackCapabilityLayers {
+    param([string]$PackRoot)
+    $layers = [ordered]@{}
+    foreach ($name in @("skills", "tools", "scripts", "commands", "prompts", "resources", "templates")) {
+        $path = Join-Path $PackRoot $name
+        $layers[$name] = [ordered]@{
+            present = (Test-Path -LiteralPath $path -PathType Container)
+            path = $path
+        }
+    }
+    return $layers
+}
+
+function Test-KnowledgePackSafeRelativePath {
+    param([string]$RelativePath)
+    if ([string]::IsNullOrWhiteSpace($RelativePath)) { return $false }
+    if ([System.IO.Path]::IsPathRooted($RelativePath)) { return $false }
+    $normalized = $RelativePath.Replace('\', '/')
+    if ($normalized -match '(^|/)\.\.($|/)') { return $false }
+    if ($normalized -match '^[A-Za-z]:') { return $false }
+    return $true
+}
+
+function Get-KnowledgePackFileHash {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return "" }
+    return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+}
+
+function Copy-KnowledgePackLayerIfPresent {
+    param(
+        [string]$Source,
+        [string]$Destination
+    )
+    if ([string]::IsNullOrWhiteSpace($Source)) { return $false }
+    if (-not (Test-Path -LiteralPath $Source -PathType Container)) { return $false }
+    Copy-KnowledgePackDirectory -Source $Source -Destination $Destination
+    return $true
+}
+
+function Write-KnowledgePackCapabilityIndex {
+    param(
+        [string]$PackRoot,
+        $Layers,
+        [string]$PackId,
+        [string]$Version,
+        [string]$RepackMode = ""
+    )
+
+    $capabilityDir = Join-Path $PackRoot "capabilities"
+    New-Item -ItemType Directory -Force -Path $capabilityDir | Out-Null
+    $lines = @(
+        'schema_version: "1.0"',
+        "pack_id: `"$PackId`"",
+        "version: `"$Version`"",
+        'progressive_disclosure: true',
+        'default_context: false',
+        'auto_run_scripts: false',
+        "layers:"
+    )
+    foreach ($name in @("knowledge", "skills", "tools", "scripts", "commands", "prompts", "resources", "templates")) {
+        $present = $false
+        if ($Layers.Contains($name)) { $present = [bool]$Layers[$name] }
+        $path = if ($name -eq "knowledge") { "ai/knowledge" } else { $name }
+        $lines += "  ${name}:"
+        $lines += "    present: $($present.ToString().ToLowerInvariant())"
+        $lines += "    path: `"$path`""
+    }
+    if (-not [string]::IsNullOrWhiteSpace($RepackMode)) {
+        $lines += "repack:"
+        $lines += "  mode: `"$RepackMode`""
+    }
+    $lines | Set-Content -LiteralPath (Join-Path $capabilityDir "index.yml") -Encoding utf8
 }
 
 function Copy-KnowledgePackDirectory {
@@ -129,6 +236,45 @@ function Remove-KnowledgePackDirectorySafe {
         throw "Refusing to remove path outside root. Root: $Root Path: $Path"
     }
     Remove-Item -LiteralPath $Path -Recurse -Force
+}
+
+function Remove-KnowledgePackPublishedArtifactsForPackId {
+    param(
+        [string]$RepoRoot,
+        [string]$PackId
+    )
+
+    $root = Resolve-KnowledgePackPath -Path $RepoRoot
+    $slug = ConvertTo-KnowledgePackSlug -Value $PackId
+    $removed = @()
+
+    $skillsRoot = Join-Path $root ".agents\spec-kit\skills"
+    if (Test-Path -LiteralPath $skillsRoot -PathType Container) {
+        foreach ($skillDir in Get-ChildItem -LiteralPath $skillsRoot -Directory -Force -Filter "${slug}__*") {
+            Remove-KnowledgePackDirectorySafe -Root $skillsRoot -Path $skillDir.FullName
+            $removed += ".agents/spec-kit/skills/$($skillDir.Name)"
+        }
+    }
+
+    $targets = [ordered]@{
+        tools = "ai\tools\$slug"
+        scripts = ".specify\scripts\packs\$slug"
+        commands = ".specify\capabilities\commands\$slug"
+        prompts = ".specify\capabilities\prompts\$slug"
+        resources = ".specify\capabilities\resources\$slug"
+        templates = ".specify\capabilities\templates\$slug"
+    }
+
+    foreach ($layerName in $targets.Keys) {
+        $relative = $targets[$layerName]
+        $target = Join-Path $root $relative
+        if (-not (Test-Path -LiteralPath $target)) { continue }
+        $targetRoot = Split-Path -Parent $target
+        Remove-KnowledgePackDirectorySafe -Root $targetRoot -Path $target
+        $removed += $relative.Replace('\', '/')
+    }
+
+    return $removed
 }
 
 function Get-KnowledgePackIndexEntries {

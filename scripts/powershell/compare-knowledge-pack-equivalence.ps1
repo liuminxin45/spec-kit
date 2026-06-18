@@ -181,8 +181,8 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $source "index.yml") -PathType Leaf)) {
         Set-KnowledgePackBlocked $result "SourceKnowledgeDir must contain index.yml: $source"
     }
-    if (-not (Test-Path -LiteralPath (Join-Path $pack "knowledge-pack.yml") -PathType Leaf)) {
-        Set-KnowledgePackBlocked $result "PackRoot must contain knowledge-pack.yml: $pack"
+    if (-not (Test-Path -LiteralPath (Get-KnowledgePackManifestPath -PackRoot $pack) -PathType Leaf)) {
+        Set-KnowledgePackBlocked $result "PackRoot must contain knowledge-pack.yml or pack.yml: $pack"
     }
 
     if ($result.status -ne "blocked") {

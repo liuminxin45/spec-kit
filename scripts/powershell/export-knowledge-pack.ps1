@@ -8,6 +8,15 @@ param(
     [string]$OutputDir = "",
     [ValidateSet("overlay-active-knowledge", "replace-active-knowledge")]
     [string]$ComposeStrategy = "overlay-active-knowledge",
+    [ValidateSet("none", "full-snapshot", "delta-overlay", "promote-reviewed")]
+    [string]$RepackMode = "none",
+    [string]$SkillsDir = "",
+    [string]$ToolsDir = "",
+    [string]$ScriptsDir = "",
+    [string]$CommandsDir = "",
+    [string]$PromptsDir = "",
+    [string]$ResourcesDir = "",
+    [string]$TemplatesDir = "",
     [string]$EvaluationScenariosFile = "",
     [string[]]$ToolAlias = @(),
     [switch]$Force,
@@ -47,6 +56,37 @@ try {
             }
             New-Item -ItemType Directory -Force -Path $out | Out-Null
             Copy-KnowledgePackDirectory -Source $source -Destination (Join-Path $out "ai\knowledge")
+            $capabilityLayers = [ordered]@{
+                knowledge = $true
+                skills = $false
+                tools = $false
+                scripts = $false
+                commands = $false
+                prompts = $false
+                resources = $false
+                templates = $false
+            }
+
+            $layerSources = [ordered]@{
+                skills = $SkillsDir
+                tools = $ToolsDir
+                scripts = $ScriptsDir
+                commands = $CommandsDir
+                prompts = $PromptsDir
+                resources = $ResourcesDir
+                templates = $TemplatesDir
+            }
+            foreach ($layerName in $layerSources.Keys) {
+                $layerSource = $layerSources[$layerName]
+                if ([string]::IsNullOrWhiteSpace($layerSource)) { continue }
+                $resolvedLayerSource = Resolve-KnowledgePackPath -Path $layerSource
+                if (Test-Path -LiteralPath $resolvedLayerSource -PathType Container) {
+                    Copy-KnowledgePackDirectory -Source $resolvedLayerSource -Destination (Join-Path $out $layerName)
+                    $capabilityLayers[$layerName] = $true
+                } else {
+                    $result.unknowns += "Capability layer source not found: ${layerName}=$resolvedLayerSource"
+                }
+            }
 
             $profiles = Join-Path $out "profiles"
             New-Item -ItemType Directory -Force -Path $profiles | Out-Null
@@ -105,24 +145,42 @@ try {
                 "id: `"$PackId`"",
                 "title: `"$Title`"",
                 "version: `"$Version`"",
-                'kind: "workspace-pack"',
-                'description: "Portable Spec Kit knowledge pack. Install and compose into a workspace-local ai/knowledge layer."',
+                'kind: "capability-pack"',
+                'description: "Portable Spec Kit capability pack. Install and compose knowledge, skills, tools, scripts, prompts, resources, and profiles into a workspace-local capability layer."',
                 "provides:",
                 "  knowledge: true",
+                "  skills: $($capabilityLayers['skills'].ToString().ToLowerInvariant())",
+                "  tools: $($capabilityLayers['tools'].ToString().ToLowerInvariant())",
+                "  scripts: $($capabilityLayers['scripts'].ToString().ToLowerInvariant())",
+                "  commands: $($capabilityLayers['commands'].ToString().ToLowerInvariant())",
+                "  prompts: $($capabilityLayers['prompts'].ToString().ToLowerInvariant())",
+                "  resources: $($capabilityLayers['resources'].ToString().ToLowerInvariant())",
+                "  templates: $($capabilityLayers['templates'].ToString().ToLowerInvariant())",
                 "  workspace_profile: $($hasWorkspaceProfile.ToString().ToLowerInvariant())",
                 "  repository_map_profile: $($hasRepositoryMapProfile.ToString().ToLowerInvariant())",
                 "  command_aliases: $((($ToolAlias.Count -gt 0)).ToString().ToLowerInvariant())",
                 "  evaluation_scenarios: $($hasEvaluationScenarios.ToString().ToLowerInvariant())",
                 "activation:",
                 "  mode: `"$(@{ 'overlay-active-knowledge' = 'overlay'; 'replace-active-knowledge' = 'replace' }[$ComposeStrategy])`"",
+                '  progressive_disclosure: true',
+                '  auto_run_scripts: false',
+                "  skills: `"namespaced`"",
+                "  tools: `"namespaced-overlay`"",
+                "  scripts: `"namespaced-bin`"",
                 "authority:",
                 '  default: "generated"',
                 "  source_refs_required: false",
+                "ancestry:",
+                "  repack_mode: `"$RepackMode`"",
+                "  base_packs: []",
                 "compose:",
                 "  strategy: `"$ComposeStrategy`"",
                 "  apply_tool_aliases: true"
             )
-            $manifest | Set-Content -LiteralPath (Join-Path $out "knowledge-pack.yml") -Encoding utf8
+            $manifestPath = Join-Path $out "knowledge-pack.yml"
+            $manifest | Set-Content -LiteralPath $manifestPath -Encoding utf8
+            Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $out "pack.yml") -Force
+            Write-KnowledgePackCapabilityIndex -PackRoot $out -Layers $capabilityLayers -PackId $PackId -Version $Version -RepackMode $RepackMode
 
             $validationRaw = & "$PSScriptRoot\validate-knowledge-pack.ps1" -PackRoot $out -Json
             $validation = $validationRaw | ConvertFrom-Json
@@ -137,6 +195,8 @@ try {
             $result.facts.workspace_profile = $hasWorkspaceProfile
             $result.facts.repository_map_profile = $hasRepositoryMapProfile
             $result.facts.evaluation_scenarios = $hasEvaluationScenarios
+            $result.facts.capability_layers = $capabilityLayers
+            $result.facts.capability_index = Join-Path $out "capabilities\index.yml"
             $result.facts.validation = $validation
             $result.hints += "Install this pack with install-knowledge-pack.ps1, then materialize it with apply-knowledge-pack.ps1."
         }

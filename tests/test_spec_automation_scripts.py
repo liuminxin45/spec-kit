@@ -15,6 +15,7 @@ AUTOMATION_TOOLS = [
     "select-knowledge",
     "select-gates",
     "validate-knowledge-index",
+    "select-capability",
     "validate-context-budget",
     "suggest-validation",
     "inspect-commit-scope",
@@ -54,6 +55,9 @@ AUTOMATION_TOOLS = [
     "install-knowledge-pack",
     "compose-knowledge-packs",
     "apply-knowledge-pack",
+    "update-knowledge-pack",
+    "uninstall-knowledge-pack",
+    "repack-knowledge-pack",
     "validate-knowledge-pack",
     "compare-knowledge-pack-equivalence",
 ]
@@ -639,6 +643,262 @@ def test_knowledge_pack_exports_installs_and_materializes_with_aliases(tmp_path)
     assert (workspace / ".specify" / "knowledge" / "lock.yml").exists()
     assert applied["facts"]["validation"]["status"] == "ok"
     assert applied["facts"]["profiles_applied"] == []
+
+
+def test_capability_pack_exports_materializes_and_repacks_layers(tmp_path):
+    source = tmp_path / "source-knowledge"
+    (source / "workspace").mkdir(parents=True)
+    (source / "build").mkdir()
+    (source / "index.yml").write_text(
+        '\n'.join(
+            [
+                'schema_version: "1.0"',
+                "policy:",
+                "  default_context: false",
+                "  no_full_text_search_required: true",
+                '  repository_map_authority: ".specify/memory/repository-map.md"',
+                "  max_selected_guides: 3",
+                "workspace:",
+                "  overview:",
+                '    guide: "workspace/overview.md"',
+                '    tags: ["workspace"]',
+                "build:",
+                "  command-matrix:",
+                '    guide: "build/command-matrix.yml"',
+                '    tags: ["build"]',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (source / "workspace" / "overview.md").write_text("Capability pack overview.\n", encoding="utf-8")
+    (source / "build" / "command-matrix.yml").write_text(
+        'schema_version: "1.0"\ncommands: []\n',
+        encoding="utf-8",
+    )
+
+    capability_source = tmp_path / "capability-source"
+    skill = capability_source / "skills" / "runtime-debug"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: runtime-debug\ndescription: Debug runtime issues.\n---\n\n# Runtime Debug\n",
+        encoding="utf-8",
+    )
+    (capability_source / "tools").mkdir()
+    (capability_source / "tools" / "runtime-tools.md").write_text("Use readonly inspectors first.\n", encoding="utf-8")
+    (capability_source / "scripts").mkdir()
+    (capability_source / "scripts" / "inspect-runtime.ps1").write_text(
+        "param([switch]$Json)\n@{ facts = @{} } | ConvertTo-Json\n",
+        encoding="utf-8",
+    )
+    (capability_source / "commands").mkdir()
+    (capability_source / "commands" / "debug-runtime.md").write_text("# Debug Runtime\n", encoding="utf-8")
+    (capability_source / "prompts").mkdir()
+    (capability_source / "prompts" / "runtime-prompt.md").write_text("# Runtime Prompt\n", encoding="utf-8")
+    (capability_source / "resources").mkdir()
+    (capability_source / "resources" / "runtime-notes.md").write_text("# Runtime Notes\n", encoding="utf-8")
+
+    pack = tmp_path / "packs" / "capability-demo"
+    exported = run_ps(
+        "export-knowledge-pack",
+        "-SourceKnowledgeDir",
+        str(source),
+        "-PackId",
+        "capability-demo",
+        "-OutputDir",
+        str(pack),
+        "-SkillsDir",
+        str(capability_source / "skills"),
+        "-ToolsDir",
+        str(capability_source / "tools"),
+        "-ScriptsDir",
+        str(capability_source / "scripts"),
+        "-CommandsDir",
+        str(capability_source / "commands"),
+        "-PromptsDir",
+        str(capability_source / "prompts"),
+        "-ResourcesDir",
+        str(capability_source / "resources"),
+        "-Force",
+    )
+
+    assert_standard_shape(exported, "export-knowledge-pack")
+    assert exported["status"] == "ok"
+    assert exported["facts"]["capability_layers"]["skills"] is True
+    assert (pack / "capabilities" / "index.yml").exists()
+    assert (pack / "skills" / "runtime-debug" / "SKILL.md").exists()
+    assert (pack / "scripts" / "inspect-runtime.ps1").exists()
+    validation = exported["facts"]["validation"]["facts"]
+    assert validation["kind"] == "capability-pack"
+    assert validation["capability_layers"]["skills"]["present"] is True
+    assert validation["capability_layers"]["scripts"]["file_count"] == 1
+    assert validation["script_hashes"][0]["path"] == "scripts/inspect-runtime.ps1"
+
+    workspace = tmp_path / "workspace"
+    (workspace / ".specify").mkdir(parents=True)
+    applied = run_ps(
+        "apply-knowledge-pack",
+        "-RepoRoot",
+        str(workspace),
+        "-PackPath",
+        str(pack),
+        "-Force",
+    )
+
+    assert_standard_shape(applied, "apply-knowledge-pack")
+    assert applied["status"] == "ok"
+    assert (workspace / ".agents" / "spec-kit" / "skills" / "capability-demo__runtime-debug" / "SKILL.md").exists()
+    assert (workspace / "ai" / "tools" / "capability-demo" / "runtime-tools.md").exists()
+    assert (workspace / ".specify" / "scripts" / "packs" / "capability-demo" / "inspect-runtime.ps1").exists()
+    assert (workspace / ".specify" / "capabilities" / "commands" / "capability-demo" / "debug-runtime.md").exists()
+    assert (workspace / ".specify" / "capabilities" / "prompts" / "capability-demo" / "runtime-prompt.md").exists()
+    capability_lock = (workspace / ".specify" / "capabilities" / "lock.yml").read_text(encoding="utf-8")
+    assert 'auto_run_scripts: false' in capability_lock
+    assert 'capability-demo__runtime-debug' in capability_lock
+
+    selected_capabilities = run_ps(
+        "select-capability",
+        "-RepoRoot",
+        str(workspace),
+        "-Layer",
+        "skills",
+    )
+    assert_standard_shape(selected_capabilities, "select-capability")
+    assert selected_capabilities["status"] == "ok"
+    assert selected_capabilities["facts"]["progressive_disclosure"] is True
+    assert selected_capabilities["facts"]["auto_run_scripts"] is False
+    assert selected_capabilities["facts"]["selected"][0]["path"] == ".agents/spec-kit/skills/capability-demo__runtime-debug"
+
+    repacked_dir = tmp_path / "packs" / "capability-demo-repacked"
+    repacked = run_ps(
+        "repack-knowledge-pack",
+        "-RepoRoot",
+        str(workspace),
+        "-PackId",
+        "capability-demo-repacked",
+        "-OutputDir",
+        str(repacked_dir),
+        "-Force",
+    )
+
+    assert_standard_shape(repacked, "repack-knowledge-pack")
+    assert repacked["status"] == "ok"
+    assert repacked["facts"]["mode"] == "full-snapshot"
+    assert (repacked_dir / "knowledge-pack.yml").exists()
+    assert (repacked_dir / "skills" / "capability-demo__runtime-debug" / "SKILL.md").exists()
+    assert (repacked_dir / "tools" / "capability-demo" / "runtime-tools.md").exists()
+    assert repacked["facts"]["export"]["facts"]["capability_layers"]["skills"] is True
+
+    source_v2 = tmp_path / "source-knowledge-v2"
+    (source_v2 / "workspace").mkdir(parents=True)
+    (source_v2 / "build").mkdir()
+    (source_v2 / "index.yml").write_text(
+        '\n'.join(
+            [
+                'schema_version: "1.0"',
+                "policy:",
+                "  default_context: false",
+                "  no_full_text_search_required: true",
+                '  repository_map_authority: ".specify/memory/repository-map.md"',
+                "  max_selected_guides: 3",
+                "workspace:",
+                "  overview:",
+                '    guide: "workspace/overview.md"',
+                '    tags: ["workspace"]',
+                "build:",
+                "  command-matrix:",
+                '    guide: "build/command-matrix.yml"',
+                '    tags: ["build"]',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (source_v2 / "workspace" / "overview.md").write_text("Capability pack overview v2.\n", encoding="utf-8")
+    (source_v2 / "build" / "command-matrix.yml").write_text(
+        'schema_version: "1.0"\ncommands: []\n',
+        encoding="utf-8",
+    )
+
+    capability_source_v2 = tmp_path / "capability-source-v2"
+    skill_v2 = capability_source_v2 / "skills" / "runtime-trace"
+    skill_v2.mkdir(parents=True)
+    (skill_v2 / "SKILL.md").write_text(
+        "---\nname: runtime-trace\ndescription: Trace runtime issues.\n---\n\n# Runtime Trace\n",
+        encoding="utf-8",
+    )
+    (capability_source_v2 / "tools").mkdir()
+    (capability_source_v2 / "tools" / "runtime-tools.md").write_text(
+        "Use updated readonly inspectors first.\n",
+        encoding="utf-8",
+    )
+    (capability_source_v2 / "scripts").mkdir()
+    (capability_source_v2 / "scripts" / "inspect-runtime-v2.ps1").write_text(
+        "param([switch]$Json)\n@{ facts = @{ version = 2 } } | ConvertTo-Json\n",
+        encoding="utf-8",
+    )
+
+    pack_v2 = tmp_path / "packs" / "capability-demo-v2"
+    exported_v2 = run_ps(
+        "export-knowledge-pack",
+        "-SourceKnowledgeDir",
+        str(source_v2),
+        "-PackId",
+        "capability-demo",
+        "-OutputDir",
+        str(pack_v2),
+        "-SkillsDir",
+        str(capability_source_v2 / "skills"),
+        "-ToolsDir",
+        str(capability_source_v2 / "tools"),
+        "-ScriptsDir",
+        str(capability_source_v2 / "scripts"),
+        "-Force",
+    )
+    assert_standard_shape(exported_v2, "export-knowledge-pack")
+    assert exported_v2["status"] == "ok"
+
+    updated = run_ps(
+        "update-knowledge-pack",
+        "-RepoRoot",
+        str(workspace),
+        "-PackPath",
+        str(pack_v2),
+    )
+    assert_standard_shape(updated, "update-knowledge-pack")
+    assert updated["status"] == "ok"
+    assert (workspace / "ai" / "knowledge" / "workspace" / "overview.md").read_text(encoding="utf-8") == "Capability pack overview v2.\n"
+    assert not (workspace / ".agents" / "spec-kit" / "skills" / "capability-demo__runtime-debug").exists()
+    assert (workspace / ".agents" / "spec-kit" / "skills" / "capability-demo__runtime-trace" / "SKILL.md").exists()
+    assert not (workspace / ".specify" / "scripts" / "packs" / "capability-demo" / "inspect-runtime.ps1").exists()
+    assert (workspace / ".specify" / "scripts" / "packs" / "capability-demo" / "inspect-runtime-v2.ps1").exists()
+    assert "updated readonly" in (workspace / "ai" / "tools" / "capability-demo" / "runtime-tools.md").read_text(encoding="utf-8")
+    capability_lock_v2 = (workspace / ".specify" / "capabilities" / "lock.yml").read_text(encoding="utf-8")
+    assert "capability-demo__runtime-trace" in capability_lock_v2
+    assert "capability-demo__runtime-debug" not in capability_lock_v2
+
+    uninstalled = run_ps(
+        "uninstall-knowledge-pack",
+        "-RepoRoot",
+        str(workspace),
+        "-PackId",
+        "capability-demo",
+    )
+    assert_standard_shape(uninstalled, "uninstall-knowledge-pack")
+    assert uninstalled["status"] == "ok"
+    assert not (workspace / ".specify" / "knowledge" / "packs" / "capability-demo").exists()
+    assert not (workspace / ".agents" / "spec-kit" / "skills" / "capability-demo__runtime-trace").exists()
+    assert not (workspace / "ai" / "tools" / "capability-demo").exists()
+    assert not (workspace / ".specify" / "scripts" / "packs" / "capability-demo").exists()
+
+    selected_after_uninstall = run_ps(
+        "select-capability",
+        "-RepoRoot",
+        str(workspace),
+        "-PackId",
+        "capability-demo",
+    )
+    assert_standard_shape(selected_after_uninstall, "select-capability")
+    assert selected_after_uninstall["status"] == "ok"
+    assert selected_after_uninstall["facts"]["selected"] == []
 
 
 def test_compare_knowledge_pack_equivalence_scores_indexed_guides_routing_and_aliases(tmp_path):

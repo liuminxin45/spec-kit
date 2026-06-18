@@ -295,6 +295,7 @@ layers:
       - "templates/commands/knowledge-pack.md"
       - "templates/commands/knowledge-pack-generate.md"
       - "scripts/powershell/select-knowledge.ps1"
+      - "scripts/powershell/select-capability.ps1"
       - "scripts/powershell/select-gates.ps1"
       - "scripts/powershell/validate-knowledge-index.ps1"
       - "scripts/powershell/bootstrap-knowledge.ps1"
