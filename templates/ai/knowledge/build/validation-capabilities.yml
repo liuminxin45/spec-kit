@@ -1,0 +1,25 @@
+schema_version: "1.0"
+authority: generated
+confidence: low
+source_refs: []
+
+capabilities:
+  unit:
+    status: unknown
+    discover_with:
+      - "inspect-validation-capabilities"
+      - "project package/build files"
+  api:
+    status: unknown
+    discover_with:
+      - "contracts/"
+      - "integration test folders"
+  e2e:
+    status: unknown
+    discover_with:
+      - "browser automation setup"
+      - "host/runtime launch scripts"
+
+notes:
+  - "This file is a skeleton. Bootstrap drafts should update command names and support levels."
+  - "E2E can be N/A when unsupported, but API validation planning should still be explicit."

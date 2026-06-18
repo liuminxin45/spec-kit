@@ -1,0 +1,106 @@
+policy:
+  automation_scope: hard-facts-only
+  natural_language_keyword_routing: forbidden
+  llm_owns:
+    - semantic routing
+    - root cause judgment
+    - risk explanation
+    - validation sufficiency
+    - tradeoff decisions
+
+paths:
+  runtime_artifacts:
+    - app-data/plugins/**
+    - frontend/plugins/**
+  generated:
+    - dist/**
+    - build/**
+    - export/**
+    - plugin-out/**
+    - "**/dist/**"
+    - "**/build/**"
+  temp:
+    - .pytest_cache/**
+    - "**/__pycache__/**"
+    - .mypy_cache/**
+    - .ruff_cache/**
+    - "**/*.log"
+    - "**/*.tmp"
+  source:
+    - src/**
+    - source/**
+    - lib/**
+    - app/**
+    - plugins/**
+    - packages/**
+    - "**/*.cpp"
+    - "**/*.cc"
+    - "**/*.c"
+    - "**/*.h"
+    - "**/*.hpp"
+    - "**/*.ts"
+    - "**/*.tsx"
+    - "**/*.js"
+    - "**/*.jsx"
+    - "**/*.vue"
+    - "**/*.cs"
+    - "**/*.py"
+  test:
+    - tests/**
+    - test/**
+    - "**/*test*.*"
+    - "**/*spec*.*"
+  spec:
+    - specs/**
+    - .specify/**
+    - AGENTS.md
+
+feature_artifacts:
+  commit:
+    - spec.md
+    - plan.md
+    - validation.md
+    - acceptance.md
+    - workflow-state.json
+  full-sdd-commit:
+    - spec.md
+    - plan.md
+    - tasks.md
+    - validation.md
+    - acceptance.md
+    - workflow-state.json
+  implement:
+    - spec.md
+    - plan.md
+    - workflow-state.json
+  full-sdd-implement:
+    - spec.md
+    - plan.md
+    - tasks.md
+    - workflow-state.json
+  retrospective:
+    - acceptance.md
+    - workflow-record.md
+
+required_sections:
+  plan.md:
+    - Root Cause Evidence
+    - Validation Mapping
+  tasks.md:
+    - Implementation Slices
+  workflow-record.md:
+    - Key User Inputs
+    - AI Actions
+    - Errors and Fixes
+
+validation_discovery:
+  package_json_scripts:
+    - test
+    - build
+    - lint
+  pytest_markers:
+    - pytest.ini
+    - pyproject.toml
+    - conftest.py
+  cmake_markers:
+    - CMakeLists.txt

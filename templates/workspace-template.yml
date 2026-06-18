@@ -1,0 +1,68 @@
+workspace:
+  root: "."
+  primary_repo: "CoreRuntime"
+  default_base_branch: "master"
+
+branch_policy:
+  local_only: true
+  push_remote: false
+  same_branch_across_repos: true
+  require_clean_worktree: true
+  complete_by_cherry_picking_to_base: true
+  require_user_confirmation_before_cherry_pick: false
+  delete_local_spec_branch_after_cherry_pick: false
+  keep_local_spec_branch_after_cherry_pick: true
+  # Legacy compatibility keys retained for older commands/tests. Current
+  # complete-branch behavior is cherry-pick, not merge.
+  complete_by_merging_to_base: false
+  require_user_confirmation_before_merge: false
+  require_user_confirmation_before_commit: false
+  delete_local_spec_branch_after_merge: false
+  keep_local_spec_branch_after_merge: true
+
+repositories:
+  - name: "CoreRuntime"
+    path: "CoreRuntime"
+    role: "sdk-biz-core"
+    required: true
+
+  - name: "SdkConsumer"
+    path: "SdkConsumer"
+    role: "sdk-consumer"
+    required: true
+
+  - name: "JsPlugin"
+    path: "JsPlugin"
+    role: "js-plugin"
+    required: true
+
+  - name: "NativePlugin"
+    path: "NativePlugin"
+    role: "native-plugin-and-bridge"
+    required: true
+
+  - name: "PluginCommon"
+    path: "PluginCommon"
+    role: "shared-plugin-common"
+    required: true
+
+  - name: "FrontendPlugin"
+    path: "FrontendPlugin"
+    role: "frontend-plugin-targets"
+    required: true
+
+  - name: "PlatformLibs"
+    path: "PlatformLibs"
+    role: "windows-dependencies"
+    required: true
+
+  - name: "HostApplication"
+    path: "HostApplication"
+    role: "host-and-frontend-plugins"
+    required: true
+
+  - name: "spec-kit"
+    path: "spec-kit"
+    role: "ai-delivery-tooling"
+    required: false
+    participates_in_spec_branches: false

@@ -1,0 +1,22 @@
+schema_version: "1.0"
+authority: generated
+confidence: low
+source_refs: []
+
+commands:
+  install:
+    command: ""
+    evidence: ""
+  lint:
+    command: ""
+    evidence: ""
+  test:
+    command: ""
+    evidence: ""
+  build:
+    command: ""
+    evidence: ""
+
+notes:
+  - "Fill commands from package files, CI workflows, README files, or maintainer evidence."
+  - "Do not preserve machine-local absolute paths."

@@ -1,0 +1,21 @@
+schema_version: "1.0"
+authority: generated
+confidence: low
+source_refs: []
+
+gates:
+  source:
+    required: true
+    evidence: "changed files and review"
+  unit:
+    required: conditional
+    evidence: "unit test command or explicit N/A reason"
+  api:
+    required: conditional
+    evidence: "contract/integration command or explicit N/A reason"
+  e2e:
+    required: conditional
+    evidence: "automation screenshot/logs or explicit unsupported reason"
+
+notes:
+  - "A real workspace should replace these placeholders with project-specific gates."
