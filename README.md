@@ -1,44 +1,91 @@
 # Spec Kit
 
-Spec Kit 是一个面向 Codex 的 AI Coding 工作流脚手架。它的目标不是把所有
-项目知识塞进默认上下文，而是提供一套小核心：初始化模板、阶段技能、验证
-脚本、知识索引、知识包挂载和 AI 辅助知识包生成能力。具体项目、团队和仓库
-知识应放在项目本地 `ai/knowledge/`，或打成可分发的 capability pack。
+<p align="center">
+  <a href="https://github.com/liuminxin45/spec-kit"><img src="https://img.shields.io/badge/AI%20Coding-Spec%20Kit-blue?style=for-the-badge" alt="AI Coding Spec Kit"></a>
+  <img src="https://img.shields.io/badge/Codex-only-Workflow-green?style=for-the-badge" alt="Codex-only Workflow">
+  <img src="https://img.shields.io/badge/Knowledge%20Packs-portable-purple?style=for-the-badge" alt="Knowledge Packs">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-brightgreen?style=for-the-badge" alt="MIT License"></a>
+</p>
 
-## 核心理念
+Spec Kit 是一个面向 Codex 的 AI Coding 工作流脚手架。它提供 CLI、模板、阶段技能、验证脚本、知识索引和知识包生命周期能力，用来把“规格驱动开发”和“项目知识按需加载”组织成一套可复制的工程流程。
 
-- **默认上下文要小**：先读稳定入口和仓库映射，再按任务只加载需要的知识、
-  gate、skill 和 feature artifacts。
-- **开源核心与知识包分离**：Spec Kit 只承载通用工作流和工具框架，项目私有
-  事实通过知识包挂载。
-- **知识按需加载**：通过 `ai/knowledge/index.yml` 和 `select-knowledge`
-  选择少量 guide，避免每次任务全量读取知识库。
-- **脚本给事实，AI 做判断**：脚本输出 `facts`、`blockers`、`unknowns`、
-  `hints`；语义路由、根因判断、验证充分性和取舍仍由 LLM 负责。
-- **知识可生成、可挂载、可更新、可卸载、可重新打包**：项目使用过程中沉淀
-  的知识可以 repack 成独立包继续分发。
+它不把某个团队、业务或仓库的知识写死在开源核心里。开源核心只保留通用工作流；项目事实、团队规则、仓库结构、领域约束和定制技能应放在目标项目本地 `ai/knowledge/`，或打成可挂载、可更新、可卸载、可重新打包的 capability pack。
+
+## 功能特点
+
+- **Codex-only 初始化**：`specify init --here` 会安装 Codex 入口 skill 和 Spec Kit 共享资产。
+- **小默认上下文**：默认入口只要求读取稳定的 workspace、repository map 和 task routing，具体知识按任务再加载。
+- **分层知识库**：`ai/knowledge/index.yml` 配合 `select-knowledge.ps1`，让 AI 只读取当前任务需要的 guide。
+- **知识包挂载**：支持把 `ai/knowledge/`、skills、tools、scripts、commands、profiles 和 evaluation 组成独立 pack。
+- **AI 辅助知识包生成**：`generate-knowledge-pack.ps1` 负责确定性扫描和质量产物，AI 负责语义阅读、整理、标注未知项和补 source refs。
+- **生命周期完整**：已有 pack 可以挂载、更新、卸载；用户在项目中补充后的知识也可以 repack 后继续分发。
+- **工程化验证**：提供 generated context、knowledge index、context budget、pack schema、synthesis quality 和 semantic equivalence 相关脚本。
+
+## 架构图
+
+```mermaid
+flowchart TD
+    U["用户 / Codex 任务"] --> A["AGENTS.md<br/>小默认上下文"]
+    A --> W[".specify/workspace.yml"]
+    A --> R[".specify/memory/repository-map.md"]
+    A --> T["ai/workflows/task-routing.md"]
+
+    T --> D{"当前任务需要什么?"}
+    D -->|"规格开发"| F["specs/<feature>/spec.md<br/>plan.md / progress.md"]
+    D -->|"验证门禁"| G["select-gates.ps1<br/>ai/workflows/gates/"]
+    D -->|"项目知识"| K["select-knowledge.ps1<br/>ai/knowledge/index.yml"]
+    D -->|"扩展能力"| C["select-capability.ps1<br/>capabilities/index.yml"]
+
+    KP["Capability Pack"] --> I["install / apply"]
+    I --> P[".specify/knowledge/packs/<pack-id>"]
+    I --> V["ai/knowledge/<pack materialized view>"]
+    I --> B["命名空间化行为层<br/>skills / tools / scripts"]
+
+    V --> K
+    B --> C
+
+    K --> L["按需加载的分层知识"]
+    C --> E["按需加载的子技能 / 工具 / 脚本"]
+    L --> J["AI 判断<br/>路由 / 根因 / 取舍 / 验证充分性"]
+    E --> J
+
+    J --> Q["验证脚本"]
+    Q --> O["facts / blockers / unknowns / hints"]
+    O --> J
+
+    V --> RP["repack"]
+    B --> RP
+    RP --> NP["新的可分发 Capability Pack"]
+```
 
 ## 快速开始
 
-安装本仓库版本的 CLI：
+### 1. 环境要求
+
+- Python 3.11+
+- PowerShell
+- Git
+- Codex
+
+### 2. 安装 CLI
+
+在 Spec Kit 仓库根目录执行：
 
 ```powershell
 pwsh -NoProfile -File .\scripts\powershell\install.ps1
 ```
 
-在目标项目中初始化 Spec Kit：
+安装后会注册 `specify` 命令，对应 Python package `specify-cli`。
+
+### 3. 初始化目标项目
+
+进入目标项目根目录：
 
 ```powershell
 specify init --here
 ```
 
-初始化后，从 Codex 暴露的入口 skill 开始工作流：
-
-```text
-$speckit-specify
-```
-
-项目中会生成这些核心目录和文件：
+初始化后会生成或刷新这些资产：
 
 ```text
 AGENTS.md
@@ -48,27 +95,29 @@ ai/
 specs/
 ```
 
+然后在 Codex 中从入口 skill 开始：
+
+```text
+$speckit-specify
+```
+
 ## 使用已有知识包开局
 
-如果你已经有项目、团队或仓库知识包，可以初始化时直接挂载：
+如果已经有可分发知识包，可以在初始化时直接挂载：
 
 ```powershell
 specify init --here --knowledge-pack <pack-dir>
 ```
 
-这会安装 pack，物化到 `ai/knowledge/`，写入
-`.specify/knowledge/lock.yml`，并验证当前知识索引。由于知识来自已有
-pack，这条路径不会生成 AI review packet；也就是 it does not generate an AI review packet because the knowledge already came from an external pack.
+这会安装 pack、物化 `ai/knowledge/`、写入 `.specify/knowledge/lock.yml`，并验证知识索引。因为知识来自外部 pack，这条路径 does not generate an AI review packet。
 
-如果这个 pack 还应该定义目标项目的 workspace profile 和 repository map：
+如果 pack 明确要定义目标项目的 workspace profile 和 repository map，再加：
 
 ```powershell
 specify init --here --knowledge-pack <pack-dir> --knowledge-pack-apply-profiles
 ```
 
-只有当 pack 明确用于定义目标项目结构时才使用
-`--knowledge-pack-apply-profiles`。不加这个参数时，Spec Kit 会保留初始化时
-生成的 `.specify/workspace.yml` 和 `.specify/memory/repository-map.md`。
+不加 `--knowledge-pack-apply-profiles` 时，Spec Kit 会保留初始化生成的 `.specify/workspace.yml` 和 `.specify/memory/repository-map.md`。
 
 ## 没有知识包时开局
 
@@ -78,41 +127,33 @@ specify init --here --knowledge-pack <pack-dir> --knowledge-pack-apply-profiles
 specify init --here
 ```
 
-再生成一版低置信度的草稿知识库：
+再生成一版可审查的草稿知识库：
 
 ```powershell
 pwsh -NoProfile -File .specify/scripts/powershell/bootstrap-knowledge.ps1 -RepoRoot . -Json
 ```
 
-草稿模式会生成：
+输出目录：
 
 ```text
 .specify/knowledge-bootstrap/draft/ai/knowledge/
 .specify/knowledge-bootstrap/ai-review/
 ```
 
-`ai-review` 目录里包含有界源码读取计划和 claim ledger。AI 应先按这个计划
-做定向源码读取，补充 source refs、未知项和分层知识，再提升置信度或导出
-可复用 pack。
+`.specify/knowledge-bootstrap/ai-review/` 用于记录 source-read plan 和 claim ledger。AI 应按计划补充 source refs、未知项和分层知识，而不是把机械扫描结果直接当作高质量知识库。
 
-## 用 AI 生成项目知识包
+## 用 AI 生成知识包
 
-对一个新项目或任意项目，推荐使用 AI-assisted generator，而不是直接导出
-机械草稿：
+对一个已有项目或多仓 workspace，可以运行 AI-assisted generator：
 
 ```powershell
 pwsh -NoProfile -File .specify/scripts/powershell/generate-knowledge-pack.ps1 -RepoRoot . -PackId <id> -IncludeProfiles -Json
 ```
 
-该命令会创建 AI synthesis workspace：
+生成器会创建：
 
 ```text
 .specify/knowledge-pack-generation/ai-synthesis/ai/knowledge/
-```
-
-同时生成：
-
-```text
 .specify/knowledge-pack-generation/ai-pack-generator/generation-contract.json
 .specify/knowledge-pack-generation/ai-pack-generator/source-read-queue.md
 .specify/knowledge-pack-generation/quality/
@@ -120,13 +161,11 @@ pwsh -NoProfile -File .specify/scripts/powershell/generate-knowledge-pack.ps1 -R
 .specify/knowledge-pack-generation/pack/<id>/
 ```
 
-脚本负责确定性事实采集、质量报告、等效性检查和 pack 机械流程；AI 负责：
+AI 完成 `.specify/knowledge-pack-generation/ai-synthesis/ai/knowledge/` 后，用 reviewed knowledge 重新导出：
 
-- 按 source-read queue 做定向源码读取。
-- 将机械库存整理成分层知识。
-- 保留每条长期事实的 `source_refs`。
-- 明确未知项，不靠猜测补事实。
-- 删除噪声和重复内容。
+```powershell
+pwsh -NoProfile -File .specify/scripts/powershell/generate-knowledge-pack.ps1 -RepoRoot . -PackId <id> -ReviewedKnowledgeDir .specify/knowledge-pack-generation/ai-synthesis/ai/knowledge -IncludeProfiles -Json
+```
 
 质量闭环会写出：
 
@@ -137,40 +176,47 @@ pwsh -NoProfile -File .specify/scripts/powershell/generate-knowledge-pack.ps1 -R
 .specify/knowledge-pack-generation/equivalence/equivalence-summary.md
 ```
 
-AI 完成 synthesis 后，用 reviewed workspace 重新导出：
+也可以单独评估 synthesis 质量：
 
 ```powershell
-pwsh -NoProfile -File .specify/scripts/powershell/generate-knowledge-pack.ps1 -RepoRoot . -PackId <id> -ReviewedKnowledgeDir .specify/knowledge-pack-generation/ai-synthesis/ai/knowledge -IncludeProfiles -Json
+pwsh -NoProfile -File .specify/scripts/powershell/evaluate-knowledge-pack-synthesis.ps1 -RepoRoot . -KnowledgeDir .specify/knowledge-pack-generation/ai-synthesis/ai/knowledge -MinimumScore 70 -FailBelowMinimum -Json
 ```
 
-传入 `-ReviewedKnowledgeDir` 后，generator 会强制执行质量分和 pack 等效性
-门禁，只有通过后才把 pack 视为可挂载。
+## 知识包结构
 
-## Capability Pack 边界
-
-开源核心只应包含框架资产：模板、validators、selectors、workflow scripts
-和通用 starter knowledge。项目事实、团队规则、领域约束、工具策略和定制
-技能应该进入 workspace-local `ai/knowledge/` 或 portable capability pack。
-Project-specific facts belong in workspace-local `ai/knowledge/` or portable
-capability packs.
-
-一个 capability pack 可以包含：
+一个 capability pack 可以包含这些层：
 
 ```text
-ai/knowledge/          分层项目知识
-skills/                命名空间化 Codex skills，按需加载
-tools/                 工具策略和 MCP/tool 使用说明
-scripts/               返回 facts/blockers/unknowns/hints 的显式脚本
-commands/              pack 专属命令提示
-prompts/               可复用 prompt 模板
-resources/             大文档、示例、图、生成地图
-profiles/              workspace.yml 和 repository-map.md
-evaluation/            路由 canary 和语义评估输入
-capabilities/index.yml 渐进式加载注册表
+knowledge-pack/
+├── knowledge-pack.yml
+├── ai/knowledge/
+├── capabilities/index.yml
+├── skills/
+├── tools/
+├── scripts/
+├── commands/
+├── prompts/
+├── resources/
+├── profiles/
+└── evaluation/
 ```
 
-Pack 安装或 compose 时不会自动执行 pack scripts。应用 pack 后，行为层会发布
-到带命名空间的 workspace-local 路径，例如：
+各层含义：
+
+| 层 | 作用 |
+| --- | --- |
+| `ai/knowledge/` | 分层项目知识、仓库地图、领域规则、工具约束。 |
+| `capabilities/index.yml` | 注册 pack 暴露的 skills、tools、scripts、commands、prompts 和 resources。 |
+| `skills/` | 命名空间化 Codex skills，按任务触发读取。 |
+| `tools/` | MCP/tool 使用策略、验证工具约定和低频工具说明。 |
+| `scripts/` | pack 自带脚本。脚本应输出 `facts`、`blockers`、`unknowns`、`hints`。 |
+| `commands/` | pack 专属命令提示或工作流片段。 |
+| `prompts/` | 可复用 prompt 模板。 |
+| `resources/` | 大文档、示例、图和低频资料。 |
+| `profiles/` | 可选的 `workspace.yml` 和 `repository-map.md`。 |
+| `evaluation/` | 路由 canary、语义评估输入和 golden contract。 |
+
+Pack 安装或 compose 时不会自动执行 pack scripts。行为层会发布到命名空间路径：
 
 ```text
 .agents/spec-kit/skills/<pack-id>__<skill>
@@ -178,37 +224,22 @@ ai/tools/<pack-id>/
 .specify/scripts/packs/<pack-id>/
 ```
 
-## 知识包生命周期
+## 生命周期命令
 
-常用命令：
+| 目标 | 命令 |
+| --- | --- |
+| 挂载 pack | `bootstrap-knowledge.ps1 -RepoRoot . -PackPath <pack-dir> -Force -Json` |
+| 更新 pack | `update-knowledge-pack.ps1 -RepoRoot . -PackPath <pack-dir> -Json` |
+| 卸载 pack | `uninstall-knowledge-pack.ps1 -RepoRoot . -PackId <id> -Json` |
+| 选择能力层 | `select-capability.ps1 -RepoRoot . -Layer skills -Json` |
+| 导出本地知识 | `export-knowledge-pack.ps1 -SourceKnowledgeDir ai/knowledge -PackId <id> -OutputDir <pack-dir> -Force -Json` |
+| 重新打包 | `repack-knowledge-pack.ps1 -RepoRoot . -PackId <id> -Mode full-snapshot -IncludeProfiles -Force -Json` |
+| 验证 pack | `validate-knowledge-pack.ps1 -PackRoot <pack-dir> -Json` |
+| 比较等效性 | `compare-knowledge-pack-equivalence.ps1 -SourceKnowledgeDir ai/knowledge -PackRoot <pack-dir> -Json` |
 
-```powershell
-pwsh -NoProfile -File .specify/scripts/powershell/generate-knowledge-pack.ps1 -RepoRoot . -PackId <id> -IncludeProfiles -Json
-pwsh -NoProfile -File .specify/scripts/powershell/evaluate-knowledge-pack-synthesis.ps1 -RepoRoot . -KnowledgeDir .specify/knowledge-pack-generation/ai-synthesis/ai/knowledge -MinimumScore 70 -FailBelowMinimum -Json
-pwsh -NoProfile -File .specify/scripts/powershell/bootstrap-knowledge.ps1 -RepoRoot . -PackPath <pack-dir> -Force -Json
-pwsh -NoProfile -File .specify/scripts/powershell/update-knowledge-pack.ps1 -RepoRoot . -PackPath <pack-dir> -Json
-pwsh -NoProfile -File .specify/scripts/powershell/uninstall-knowledge-pack.ps1 -RepoRoot . -PackId <id> -Json
-pwsh -NoProfile -File .specify/scripts/powershell/select-capability.ps1 -RepoRoot . -Layer skills -Json
-pwsh -NoProfile -File .specify/scripts/powershell/export-knowledge-pack.ps1 -SourceKnowledgeDir ai/knowledge -PackId <id> -OutputDir <pack-dir> -Force -Json
-pwsh -NoProfile -File .specify/scripts/powershell/repack-knowledge-pack.ps1 -RepoRoot . -PackId <id> -Mode full-snapshot -IncludeProfiles -Force -Json
-pwsh -NoProfile -File .specify/scripts/powershell/validate-knowledge-pack.ps1 -PackRoot <pack-dir> -Json
-pwsh -NoProfile -File .specify/scripts/powershell/compare-knowledge-pack-equivalence.ps1 -SourceKnowledgeDir ai/knowledge -PackRoot <pack-dir> -Json
-```
+## 本地开发
 
-生命周期语义：
-
-- **挂载**：`bootstrap-knowledge.ps1 -PackPath` 或 `apply-knowledge-pack.ps1`
-  安装 pack 并物化到 `ai/knowledge/`。
-- **更新**：`update-knowledge-pack.ps1` 替换同 id 的已安装 pack，清理旧的
-  命名空间发布层，然后重新 compose 当前 active pack set。
-- **卸载**：`uninstall-knowledge-pack.ps1` 删除已安装 pack 和对应命名空间
-  发布层，再重新 compose 剩余 pack 或恢复 base knowledge snapshot。
-- **重新打包**：`repack-knowledge-pack.ps1` 可以把当前已经挂载并被用户完善
-  的知识层重新打成 pack，便于继续分发。
-
-## 初始化脚本
-
-如果不想先全局安装 CLI，也可以从本仓库根目录使用包装脚本：
+不想先全局安装 CLI 时，可以从 Spec Kit 仓库根目录使用包装脚本初始化目标项目：
 
 ```powershell
 pwsh -NoProfile -File .\scripts\powershell\init.ps1 -ProjectPath <project-dir> -SpecKitSourcePath .
@@ -216,11 +247,13 @@ pwsh -NoProfile -File .\scripts\powershell\init.ps1 -ProjectPath <project-dir> -
 
 常用选项：
 
-- `-SkipInstall`：复用当前已经安装的 `specify`。
-- `-NoForce`：不强制覆盖已管理的共享资产。
-- `-EditableInstall`：以 editable 模式安装当前源码。
-- `-ConfigureMcpAgent`：显式写入 Codex MCP 配置。
-- `-SkipMcpAgentConfig`：即使传入 MCP 相关参数，也跳过 MCP 配置。
+| 参数 | 作用 |
+| --- | --- |
+| `-SkipInstall` | 复用当前已安装的 `specify`。 |
+| `-NoForce` | 不强制覆盖已管理的共享资产。 |
+| `-EditableInstall` | 以 editable 模式安装当前源码。 |
+| `-ConfigureMcpAgent` | 显式写入 Codex MCP 配置。 |
+| `-SkipMcpAgentConfig` | 即使传入 MCP 参数，也跳过 MCP 配置。 |
 
 默认初始化不写 Codex MCP 配置；需要 Chrome DevTools MCP 时再显式开启。
 
@@ -234,28 +267,62 @@ pwsh -NoProfile -File .specify/scripts/powershell/automation-common.ps1 -Tool va
 pwsh -NoProfile -File .specify/scripts/powershell/automation-common.ps1 -Tool validate-context-budget -RepoRoot . -Json
 ```
 
-开发 Spec Kit 本身时，可以运行自动化脚本测试：
+开发 Spec Kit 本身时运行：
 
 ```powershell
 python -m pytest tests/test_spec_automation_scripts.py -q
 ```
 
-脚本结果里的 `facts` 是硬事实，`blockers` 是必须处理的问题，`unknowns`
-是仍需 AI 或人工判断的缺口，`hints` 是下一步建议。不要把脚本通过等同于
-语义正确，AI 仍需要基于 source evidence 判断。
+README 与知识包开局文档相关回归：
 
-## 目录结构
+```powershell
+python -m pytest tests/test_spec_delivery_workflow.py::test_open_source_readme_documents_pack_and_generated_knowledge_starts -q
+```
+
+## 项目结构
 
 ```text
-src/specify_cli/        CLI 源码
+src/specify_cli/        specify CLI 源码
 scripts/powershell/     初始化、验证、知识包和工作流脚本
-templates/              初始化模板、命令模板、内置 skills 和 AI 资产
+templates/              初始化模板、命令模板、AI 资产和内置 skills
 workflows/              bundled workflow 定义
 checklist-rules/        checklist 规则包
+config/                 配置模板
 tests/                  回归测试
 TEAM-README.md          团队内部流程说明，默认不进入任务上下文
 ```
 
-## 许可证
+## FAQ
 
-本仓库使用 MIT License。
+### 这个仓库会包含项目私有知识吗？
+
+不应该包含。开源核心只放通用框架资产。Project-specific facts belong in workspace-local `ai/knowledge/` or portable capability packs.
+
+### bootstrap 和 generate-knowledge-pack 有什么区别？
+
+`bootstrap-knowledge.ps1 -RepoRoot . -Json` 更适合没有 pack 时快速生成草稿知识库和 AI review packet。`generate-knowledge-pack.ps1` 面向可分发 pack，会生成 synthesis workspace、质量报告、等效性产物和 pack 目录。
+
+### 知识包挂载后还能继续演进吗？
+
+可以。用户在目标项目中补充或修正知识后，可以用 `repack-knowledge-pack.ps1` 把当前知识层重新打包，便于分发给其它项目或团队。
+
+### Pack scripts 会在安装时自动执行吗？
+
+不会。安装和 compose 只发布命名空间化资产；脚本需要由 AI 或用户在明确任务中按需调用。
+
+### 为什么要保留小默认上下文？
+
+AI Coding 的问题通常不是缺少知识，而是旧知识、无关知识和过量上下文污染判断。Spec Kit 的默认入口只加载稳定事实，再通过 selector 按需加载 feature artifacts、knowledge guides、gate packs 和 capability behavior。
+
+## 路线图
+
+当前仓库已经包含知识包生命周期、AI-assisted generator、synthesis quality 和 semantic equivalence 相关脚本。后续演进应围绕这些已有能力继续收敛：
+
+- 强化随机项目的 AI pack generation 质量闭环。
+- 扩展 pack evaluation contract 的可复用样例。
+- 增强多 pack compose、更新和 repack 的冲突诊断。
+- 继续压缩默认上下文，让更多低频知识进入按需加载层。
+
+## License
+
+本仓库使用 [MIT License](LICENSE)。
