@@ -8,6 +8,9 @@ param(
     [string]$CandidatesPath = "",
     [string]$PackagePath = "",
     [string]$RubricPath = "",
+    [string]$PackId = "",
+    [switch]$Repack,
+    [switch]$Force,
     [switch]$Json
 )
 
@@ -171,6 +174,8 @@ function Get-RequiredArtifacts {
         )
     } elseif ($Stage -eq "implement") {
         return @("spec.md", "plan.md")
+    } elseif ($Stage -eq "converge") {
+        return @("spec.md", "plan.md", "progress.md", "validation.md")
     } elseif ($Stage -eq "retrospective") {
         return @("acceptance.md", "workflow-record.md", "improvement-candidates.md")
     }
@@ -187,6 +192,81 @@ function Add-UniqueItems {
         }
     }
     return $output
+}
+
+function Resolve-FeatureDirPath {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return ""
+    }
+    if ([System.IO.Path]::IsPathRooted($Path)) {
+        return $Path
+    }
+    return Join-Path $RepoRoot $Path
+}
+
+function Get-RelativeDisplayPath {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return ""
+    }
+    try {
+        $root = (Resolve-Path -LiteralPath $RepoRoot -ErrorAction Stop).Path
+        $full = if (Test-Path -LiteralPath $Path) {
+            (Resolve-Path -LiteralPath $Path -ErrorAction Stop).Path
+        } else {
+            [System.IO.Path]::GetFullPath($Path)
+        }
+        $relative = [System.IO.Path]::GetRelativePath($root, $full)
+        return ($relative -replace "\\", "/")
+    } catch {
+        return ($Path -replace "\\", "/")
+    }
+}
+
+function Read-JsonObject {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $null
+    }
+    try {
+        return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+}
+
+function Get-ObjectPropertyValue {
+    param($Object, [string]$PropertyName)
+    if ($null -eq $Object) {
+        return $null
+    }
+    if ($Object.PSObject.Properties.Name -contains $PropertyName) {
+        return $Object.$PropertyName
+    }
+    return $null
+}
+
+function Get-WorkflowStateStatus {
+    param($State, [string]$NodeName)
+    $node = Get-ObjectPropertyValue -Object $State -PropertyName $NodeName
+    if ($null -eq $node) {
+        return ""
+    }
+    $status = Get-ObjectPropertyValue -Object $node -PropertyName "status"
+    if ($null -eq $status) {
+        return ""
+    }
+    return [string]$status
+}
+
+function Test-TextAcceptancePassed {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $false
+    }
+    $text = Get-Content -LiteralPath $Path -Raw -ErrorAction SilentlyContinue
+    return ($text -match "(?i)acceptance\s*(status|result)?\s*[:：]\s*passed|human\s+acceptance\s*[:：]\s*passed|验收通过|人工验收通过")
 }
 
 function Read-FeatureRouting {
@@ -311,7 +391,7 @@ function Get-KnowledgeEntries {
         return @()
     }
 
-    $entrySections = @("workspace", "repositories", "domains", "build")
+    $entrySections = @("workspace", "repositories", "domains", "build", "promoted")
     $entries = @()
     $section = ""
     $current = $null
@@ -748,6 +828,8 @@ function Invoke-ValidateFeatureArtifacts {
         status = ""
         workflow_record = ""
         improvement_candidates = ""
+        knowledge_candidates = ""
+        workflow_observation = ""
     }
     if ($Stage -eq "commit") {
         $retrospectiveGate.checked = $true
@@ -767,6 +849,8 @@ function Invoke-ValidateFeatureArtifacts {
                     $retrospectiveGate.status = [string]$retroState.status
                     $retrospectiveGate.workflow_record = [string]$retroState.workflow_record
                     $retrospectiveGate.improvement_candidates = [string]$retroState.improvement_candidates
+                    $retrospectiveGate.knowledge_candidates = [string](Get-ObjectPropertyValue -Object $retroState -PropertyName "knowledge_candidates")
+                    $retrospectiveGate.workflow_observation = [string](Get-ObjectPropertyValue -Object $retroState -PropertyName "workflow_observation")
                     if ($retrospectiveGate.status -ne "completed") {
                         $retrospectiveGate.gate_status = "blocked"
                         Set-Blocked $result "retrospective.status must be completed before commit"
@@ -778,6 +862,10 @@ function Invoke-ValidateFeatureArtifacts {
                     if ([string]::IsNullOrWhiteSpace($retrospectiveGate.improvement_candidates)) {
                         $retrospectiveGate.gate_status = "blocked"
                         Set-Blocked $result "retrospective.improvement_candidates must reference improvement-candidates.md before commit"
+                    }
+                    if ([string]::IsNullOrWhiteSpace($retrospectiveGate.knowledge_candidates)) {
+                        $retrospectiveGate.gate_status = "blocked"
+                        Set-Blocked $result "retrospective.knowledge_candidates must reference knowledge-candidates.md before commit"
                     }
                 }
             }
@@ -838,7 +926,7 @@ function Invoke-ValidateGeneratedContext {
     $checks += @(
         [ordered]@{
             path = $canonicalContextFile
-            phrases = @("Project Path Categories", "source-to-runtime copy", "best-effort self-validation", "direct runtime replacement", "host CDP validation", "ensure-host-cdp", "stale/current-feature hint", "read the current plan only", "select-knowledge", "select-gates", "validate-knowledge-index", "validate-context-budget", "inspect-validation-capabilities")
+            phrases = @("Project Path Categories", "source-to-runtime copy", "best-effort self-validation", "direct runtime replacement", "host CDP validation", "ensure-host-cdp", "stale/current-feature hint", "read the current plan only", "select-knowledge", "select-gates", "validate-knowledge-index", "validate-context-budget", "inspect-validation-capabilities", "inspect-workflow-closure", "knowledge-candidates.md")
         },
         [ordered]@{
             path = ".specify/memory/repository-map.md"
@@ -850,19 +938,19 @@ function Invoke-ValidateGeneratedContext {
         },
         [ordered]@{
             path = "ai/workflows/task-routing.md"
-            phrases = @("tasks -> analyze -> checklist", "skill-routing.yml", "validate-generated-context", "validate-knowledge-index", "validate-context-budget", "select-knowledge", "select-gates", "artifact_sections", "Stage Continuation", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "do not apply stale feature risk flags")
+            phrases = @("tasks -> analyze -> checklist", "skill-routing.yml", "validate-generated-context", "validate-knowledge-index", "validate-context-budget", "select-knowledge", "select-gates", "artifact_sections", "Stage Continuation", "Final Response Guard", "inspect-workflow-closure", "workflow-observer", "promote-candidates", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "do not apply stale feature risk flags")
         },
         [ordered]@{
             path = "ai/workflows/skill-routing.yml"
-            phrases = @("internal_skill_root", ".agents/spec-kit/skills", "load_only_selected_skill", "speckit-fact-layer", "speckit-test-plan", "speckit-quality-vision", "speckit-acceptance-rubric", "speckit-ai-self-acceptance", "commit-message")
+            phrases = @("internal_skill_root", ".agents/spec-kit/skills", "load_only_selected_skill", "speckit-fact-layer", "speckit-test-plan", "speckit-quality-vision", "speckit-acceptance-rubric", "speckit-ai-self-acceptance", "speckit-workflow-observer", "speckit-promote-knowledge", "commit-message")
         },
         [ordered]@{
             path = "ai/rules/ai-coding-rules.md"
-            phrases = @("Generated Context Drift", "analysis.md", "validate-generated-context", "validate-knowledge-index", "Stage Continuation Contract", "Host Frontend Delivery Chain", "ensure-host-cdp", "Retrospective")
+            phrases = @("Generated Context Drift", "analysis.md", "validate-generated-context", "validate-knowledge-index", "Stage Continuation Contract", "Host Frontend Delivery Chain", "ensure-host-cdp", "Retrospective", "inspect-workflow-closure", "knowledge-candidates.md")
         },
         [ordered]@{
             path = $workflowPath
-            phrases = @("id: retrospective", "id: commit", "Require workflow-record.md and improvement-candidates.md before commit", "automatic_stage_continuation", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "validate-knowledge-index", "validate-context-budget", "select-gates", "current-feature state only")
+            phrases = @("id: retrospective", "id: workflow-observer", "id: commit", "Require workflow-record.md", "knowledge-candidates.md", "workflow-observation.md", "automatic_stage_continuation", "post_human_acceptance_closure", "promote_knowledge_candidates", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "validate-knowledge-index", "validate-context-budget", "select-gates", "current-feature state only")
         },
         [ordered]@{
             path = "spec-kit/TEAM-README.md"
@@ -890,7 +978,7 @@ function Invoke-ValidateGeneratedContext {
     }
     $checks += [ordered]@{
         path = "$internalSkillsDir/speckit-retrospective/SKILL.md"
-        phrases = @("Existing Constraint Audit", "AI workflow self-check", "Team knowledge candidates", "retrospective.status")
+        phrases = @("Existing Constraint Audit", "AI workflow self-check", "Team knowledge candidates", "knowledge-candidates.md", "workflow-observer-packet.json", "retrospective.status")
     }
     $checks += [ordered]@{
         path = "$internalSkillsDir/speckit-tasks/SKILL.md"
@@ -974,6 +1062,9 @@ function Invoke-ValidateGeneratedContext {
         "validate-plugin-package.ps1",
         "post-commit-self-check.ps1",
         "validate-rubric-score.ps1",
+        "inspect-workflow-closure.ps1",
+        "collect-workflow-observer-packet.ps1",
+        "promote-knowledge-candidates.ps1",
         "cleanup-host-cdp.ps1",
         "capture-cdp-screenshot.ps1",
         "cdp-common.ps1",
@@ -1263,7 +1354,7 @@ function Invoke-NormalizeWorkflowState {
     }
     try {
         $state = Get-Content -LiteralPath $WorkflowState -Raw | ConvertFrom-Json
-        foreach ($field in @("attempts", "validations", "fact_layer", "acceptance", "retrospective", "promotion")) {
+        foreach ($field in @("attempts", "validations", "fact_layer", "acceptance", "retrospective", "promotion", "commit", "post_commit_self_check", "rubric_score")) {
             if ($null -eq $state.$field) {
                 Set-Blocked $result "workflow-state.json missing field: $field"
             }
@@ -1514,7 +1605,7 @@ function Invoke-PostCommitSelfCheck {
         return $result
     }
 
-    $requiredFiles = @("validation.md", "acceptance.md", "workflow-record.md", "improvement-candidates.md", "workflow-state.json")
+    $requiredFiles = @("validation.md", "acceptance.md", "workflow-record.md", "improvement-candidates.md", "knowledge-candidates.md", "workflow-observation.md", "workflow-state.json")
     $missing = @()
     foreach ($fileName in $requiredFiles) {
         if (-not (Test-Path -LiteralPath (Join-Path $FeatureDir $fileName) -PathType Leaf)) {
@@ -1650,6 +1741,599 @@ function Invoke-ValidateRubricScore {
     return $result
 }
 
+function Get-WorkflowPolicyFacts {
+    $workspacePath = Join-Path $RepoRoot ".specify/workspace.yml"
+    $policy = [ordered]@{
+        workspace_file = $workspacePath
+        local_only = $null
+        push_remote = $null
+        complete_by_cherry_picking_to_base = $null
+        closure_exemption = $false
+        rule = "local branch and push policy never exempts retrospective, post-commit self-check, or rubric-score"
+    }
+    if (-not (Test-Path -LiteralPath $workspacePath -PathType Leaf)) {
+        return $policy
+    }
+    $text = Get-Content -LiteralPath $workspacePath -Raw
+    foreach ($key in @("local_only", "push_remote", "complete_by_cherry_picking_to_base")) {
+        $match = [regex]::Match($text, "(?m)^\s*$key\s*:\s*(true|false)\s*$")
+        if ($match.Success) {
+            $policy[$key] = ($match.Groups[1].Value -eq "true")
+        }
+    }
+    return $policy
+}
+
+function Invoke-InspectWorkflowClosure {
+    $result = New-Result "inspect-workflow-closure"
+    $resolvedFeatureDir = Resolve-FeatureDirPath $FeatureDir
+    $result.facts.repo_root = $RepoRoot
+    $result.facts.feature_dir = $resolvedFeatureDir
+    $result.facts.stage = if ($Stage) { $Stage } else { "final-response" }
+    $result.facts.branch_policy = Get-WorkflowPolicyFacts
+
+    if (-not (Test-Path -LiteralPath $resolvedFeatureDir -PathType Container)) {
+        Set-Blocked $result "FeatureDir not found"
+        $result.facts.next_required_stage = "speckit.specify"
+        $result.facts.missing_artifacts = @("feature directory")
+        return $result
+    }
+
+    $statePath = Join-Path $resolvedFeatureDir "workflow-state.json"
+    $state = Read-JsonObject $statePath
+    if ((Test-Path -LiteralPath $statePath -PathType Leaf) -and $null -eq $state) {
+        Set-Blocked $result "workflow-state.json is not valid JSON"
+    }
+
+    $deliveryProfile = $DeliveryProfile
+    if (-not $deliveryProfile -and $state) {
+        $workflowModel = Get-ObjectPropertyValue -Object $state -PropertyName "workflow_model"
+        if ($workflowModel) {
+            $deliveryProfile = [string](Get-ObjectPropertyValue -Object $workflowModel -PropertyName "delivery_profile")
+        }
+    }
+
+    $artifacts = [ordered]@{}
+    foreach ($name in @(
+        "validation.md",
+        "acceptance.md",
+        "workflow-record.md",
+        "improvement-candidates.md",
+        "knowledge-candidates.md",
+        "workflow-observation.md",
+        "post-commit-self-check.md",
+        "rubric-score.md",
+        "workflow-state.json",
+        "investigation.md",
+        "fact-pack.md",
+        "commit-record.md",
+        "commit.md"
+    )) {
+        $artifacts[$name] = Test-Path -LiteralPath (Join-Path $resolvedFeatureDir $name) -PathType Leaf
+    }
+
+    $acceptanceStatus = Get-WorkflowStateStatus -State $state -NodeName "acceptance"
+    if (-not $acceptanceStatus) {
+        if (Test-TextAcceptancePassed -Path (Join-Path $resolvedFeatureDir "acceptance.md")) {
+            $acceptanceStatus = "passed"
+        } elseif ($artifacts["acceptance.md"]) {
+            $acceptanceStatus = "artifact-present"
+        } else {
+            $acceptanceStatus = "missing"
+        }
+    }
+
+    $retrospectiveStatus = Get-WorkflowStateStatus -State $state -NodeName "retrospective"
+    if (-not $retrospectiveStatus) {
+        $retrospectiveStatus = if ($artifacts["workflow-record.md"] -or $artifacts["improvement-candidates.md"]) { "artifact-present" } else { "missing" }
+    }
+
+    $postCommitStatus = Get-WorkflowStateStatus -State $state -NodeName "post_commit_self_check"
+    if (-not $postCommitStatus) {
+        $postCommitStatus = if ($artifacts["post-commit-self-check.md"]) { "completed" } else { "missing" }
+    }
+
+    $commitStatus = Get-WorkflowStateStatus -State $state -NodeName "commit"
+    $commitNode = Get-ObjectPropertyValue -Object $state -PropertyName "commit"
+    $commitHash = ""
+    if ($commitNode) {
+        $commitHash = [string](Get-ObjectPropertyValue -Object $commitNode -PropertyName "commit_hash")
+    }
+    $commitDetected = (
+        $commitStatus -eq "completed" -or
+        -not [string]::IsNullOrWhiteSpace($commitHash) -or
+        $artifacts["commit-record.md"] -or
+        $artifacts["commit.md"] -or
+        $artifacts["post-commit-self-check.md"] -or
+        $artifacts["rubric-score.md"]
+    )
+    if (-not $commitStatus) {
+        $commitStatus = if ($commitDetected) { "completed" } else { "missing" }
+    }
+
+    $rubricStatus = Get-WorkflowStateStatus -State $state -NodeName "rubric_score"
+    $rubricValidation = $null
+    if ($artifacts["rubric-score.md"]) {
+        $oldRubricPath = $RubricPath
+        $script:RubricPath = Join-Path $resolvedFeatureDir "rubric-score.md"
+        $rubricValidation = Invoke-ValidateRubricScore
+        $script:RubricPath = $oldRubricPath
+        $rubricStatus = if ($rubricValidation.status -eq "ok") { "completed" } else { "blocked" }
+    } elseif (-not $rubricStatus) {
+        $rubricStatus = "missing"
+    }
+
+    $missingArtifacts = @()
+    foreach ($entry in $artifacts.GetEnumerator()) {
+        if (-not $entry.Value -and $entry.Key -in @(
+            "workflow-record.md",
+            "improvement-candidates.md",
+            "knowledge-candidates.md",
+            "workflow-observation.md",
+            "post-commit-self-check.md",
+            "rubric-score.md"
+        )) {
+            $missingArtifacts += $entry.Key
+        }
+    }
+
+    $workflowRecordExists = [bool]$artifacts["workflow-record.md"]
+    $improvementCandidatesExists = [bool]$artifacts["improvement-candidates.md"]
+    $knowledgeCandidatesExists = [bool]$artifacts["knowledge-candidates.md"]
+    $workflowObservationExists = [bool]$artifacts["workflow-observation.md"]
+    $retrospectiveCompleted = (
+        $retrospectiveStatus -eq "completed" -and
+        $workflowRecordExists -and
+        $improvementCandidatesExists -and
+        $knowledgeCandidatesExists
+    )
+    $postCommitCompleted = ($postCommitStatus -eq "completed")
+    $closureRequired = (
+        $acceptanceStatus -eq "passed" -or
+        $commitDetected -or
+        $postCommitCompleted -or
+        $artifacts["rubric-score.md"]
+    )
+
+    $result.facts.delivery_profile = $deliveryProfile
+    $result.facts.acceptance_status = $acceptanceStatus
+    $result.facts.retrospective_status = if ($retrospectiveCompleted) { "completed" } else { $retrospectiveStatus }
+    $result.facts.workflow_observer_status = if ($workflowObservationExists) { "completed" } else { "missing" }
+    $result.facts.commit_status = $commitStatus
+    $result.facts.commit_detected = [bool]$commitDetected
+    $result.facts.post_commit_self_check_status = $postCommitStatus
+    $result.facts.rubric_score_status = $rubricStatus
+    $result.facts.missing_artifacts = @($missingArtifacts | Select-Object -Unique)
+    $result.facts.artifacts = $artifacts
+    if ($rubricValidation) {
+        $result.facts.rubric_validation = $rubricValidation
+    }
+
+    if ($deliveryProfile -eq "validation-only") {
+        if (-not $artifacts["validation.md"]) {
+            Set-Blocked $result "validation-only closure requires validation.md"
+            $result.facts.next_required_stage = "speckit.validation"
+        } else {
+            $result.facts.next_required_stage = ""
+        }
+        return $result
+    }
+    if ($deliveryProfile -eq "blocked-investigation") {
+        $hasBlockerRecord = $artifacts["investigation.md"] -or $artifacts["fact-pack.md"]
+        if (-not $hasBlockerRecord) {
+            Set-Blocked $result "blocked-investigation closure requires investigation.md or fact-pack.md"
+            $result.facts.next_required_stage = "speckit.fact-layer"
+        } else {
+            $result.facts.next_required_stage = ""
+        }
+        return $result
+    }
+
+    $nextRequiredStage = ""
+    if ($closureRequired) {
+        if (-not $retrospectiveCompleted) {
+            $nextRequiredStage = "speckit.retrospective"
+            Set-Blocked $result "acceptance or commit detected but retrospective is not completed"
+        } elseif (-not $workflowObservationExists) {
+            $nextRequiredStage = "speckit.workflow-observer"
+            Set-Blocked $result "retrospective completed but workflow-observation.md is missing"
+        } elseif (-not $commitDetected) {
+            $nextRequiredStage = "speckit.commit"
+            Set-Blocked $result "acceptance closure requires commit after retrospective and workflow observer"
+        } elseif (-not $postCommitCompleted) {
+            $nextRequiredStage = "speckit.post-commit-self-check"
+            Set-Blocked $result "commit detected but post-commit self-check is missing"
+        } elseif ($rubricStatus -ne "completed") {
+            $nextRequiredStage = "speckit.rubric-score"
+            if ($rubricStatus -eq "blocked" -and $rubricValidation) {
+                foreach ($blocker in @($rubricValidation.blockers)) {
+                    Set-Blocked $result $blocker
+                }
+            } else {
+                Set-Blocked $result "post-commit self-check completed but rubric-score.md is missing or invalid"
+            }
+        }
+    }
+
+    $result.facts.next_required_stage = $nextRequiredStage
+    if ($result.status -eq "ok") {
+        $result.hints += "workflow closure is complete for the inspected stage"
+    }
+    return $result
+}
+
+function Get-WorkflowStageIds {
+    $workflowPath = Join-Path $RepoRoot "workflows/speckit/workflow.yml"
+    if (-not (Test-Path -LiteralPath $workflowPath -PathType Leaf)) {
+        $workflowPath = Join-Path $RepoRoot ".specify/workflows/speckit/workflow.yml"
+    }
+    if (-not (Test-Path -LiteralPath $workflowPath -PathType Leaf)) {
+        return @()
+    }
+    $ids = @()
+    foreach ($line in Get-Content -LiteralPath $workflowPath) {
+        if ($line -match "^\s*-\s+id:\s*['""]?([^'""]+)['""]?\s*$") {
+            $ids += $Matches[1]
+        }
+    }
+    return $ids
+}
+
+function Invoke-CollectWorkflowObserverPacket {
+    $result = New-Result "collect-workflow-observer-packet"
+    $resolvedFeatureDir = Resolve-FeatureDirPath $FeatureDir
+    if (-not (Test-Path -LiteralPath $resolvedFeatureDir -PathType Container)) {
+        Set-Blocked $result "FeatureDir not found"
+        return $result
+    }
+
+    $statePath = Join-Path $resolvedFeatureDir "workflow-state.json"
+    $state = Read-JsonObject $statePath
+    $stateSummary = [ordered]@{
+        exists = Test-Path -LiteralPath $statePath -PathType Leaf
+        parseable = $null -ne $state
+        acceptance_status = Get-WorkflowStateStatus -State $state -NodeName "acceptance"
+        retrospective_status = Get-WorkflowStateStatus -State $state -NodeName "retrospective"
+        commit_status = Get-WorkflowStateStatus -State $state -NodeName "commit"
+        post_commit_self_check_status = Get-WorkflowStateStatus -State $state -NodeName "post_commit_self_check"
+        rubric_score_status = Get-WorkflowStateStatus -State $state -NodeName "rubric_score"
+    }
+
+    $artifactNames = @(
+        "intake.md",
+        "spec.md",
+        "plan.md",
+        "tasks.md",
+        "progress.md",
+        "validation.md",
+        "evidence.md",
+        "fact-pack.md",
+        "acceptance.md",
+        "acceptance-checklist.md",
+        "workflow-record.md",
+        "improvement-candidates.md",
+        "knowledge-candidates.md",
+        "workflow-observation.md",
+        "post-commit-self-check.md",
+        "rubric-score.md",
+        "workflow-state.json"
+    )
+    $artifacts = [ordered]@{}
+    foreach ($name in $artifactNames) {
+        $artifacts[$name] = Test-Path -LiteralPath (Join-Path $resolvedFeatureDir $name) -PathType Leaf
+    }
+
+    $closure = Invoke-InspectWorkflowClosure
+    $changedFiles = @(Get-RepoChangedFiles $RepoRoot)
+    $dirty = [ordered]@{
+        changed_file_count = $changedFiles.Count
+        classified = [ordered]@{
+            source = @()
+            test = @()
+            spec = @()
+            generated = @()
+            runtime = @()
+            temp = @()
+            unknown = @()
+        }
+    }
+    foreach ($file in $changedFiles) {
+        $kind = Classify-Path $file
+        $dirty.classified[$kind] += $file
+    }
+
+    $packet = [ordered]@{
+        schema_version = "1.0"
+        generated_by = "collect-workflow-observer-packet"
+        repo_root = $RepoRoot
+        feature_dir = Get-RelativeDisplayPath $resolvedFeatureDir
+        expected_stage_sequence = Get-WorkflowStageIds
+        workflow_state = $stateSummary
+        artifacts = $artifacts
+        closure_gate = $closure
+        dirty_state = $dirty
+        context_policy = [ordered]@{
+            default_context_only = $true
+            does_not_include_source_text = $true
+            allowed_reads = @("workflow-observer-packet.json", "workflow.yml", "task-routing.md", "missing feature artifact only when packet points to a gap")
+        }
+    }
+
+    $packetPath = Join-Path $resolvedFeatureDir "workflow-observer-packet.json"
+    $packet | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $packetPath -Encoding UTF8
+
+    $result.facts.packet_path = $packetPath
+    $result.facts.feature_dir = $resolvedFeatureDir
+    $result.facts.context_bounded = $true
+    $result.facts.does_not_include_source_text = $true
+    $result.facts.artifacts = $artifacts
+    $result.facts.closure_status = $closure.status
+    $result.facts.next_required_stage = $closure.facts.next_required_stage
+    if ($closure.status -eq "blocked") {
+        $result.status = "warning"
+        $result.hints += "observer packet collected a blocked closure state; run the reported next_required_stage"
+    }
+    return $result
+}
+
+function Get-MarkdownField {
+    param([string]$Block, [string[]]$Names)
+    foreach ($name in $Names) {
+        $pattern = "(?im)^\s*-\s*" + [regex]::Escape($name) + "\s*[:：]\s*(.*?)\s*$"
+        $match = [regex]::Match($Block, $pattern)
+        if ($match.Success) {
+            return $match.Groups[1].Value.Trim()
+        }
+    }
+    return ""
+}
+
+function Get-SafeKnowledgeGuide {
+    param([string]$Guide)
+    $rawGuide = if ($null -eq $Guide) { "" } else { $Guide }
+    $candidate = $rawGuide.Trim().Trim('"').Trim("'") -replace "\\", "/"
+    if ([string]::IsNullOrWhiteSpace($candidate)) {
+        $candidate = "workspace/promoted-knowledge.md"
+    }
+    if ($candidate.StartsWith("ai/knowledge/")) {
+        $candidate = $candidate.Substring("ai/knowledge/".Length)
+    }
+    if ([System.IO.Path]::IsPathRooted($candidate) -or $candidate.StartsWith("/") -or $candidate.Contains("..")) {
+        throw "unsafe knowledge guide path: $Guide"
+    }
+    if (-not $candidate.EndsWith(".md")) {
+        $candidate = "$candidate.md"
+    }
+    return $candidate
+}
+
+function Get-PromotionSlug {
+    param([string]$Value)
+    $slug = ($Value.ToLowerInvariant() -replace "[^a-z0-9]+", "-").Trim("-")
+    if (-not $slug) { return "promoted-knowledge" }
+    return $slug
+}
+
+function Update-KnowledgeIndexForGuide {
+    param([string]$IndexPath, [string]$Guide, [string]$Confidence)
+    if (-not (Test-Path -LiteralPath $IndexPath -PathType Leaf)) {
+        $indexDir = Split-Path $IndexPath -Parent
+        New-Item -ItemType Directory -Force -Path $indexDir | Out-Null
+        @"
+schema_version: "1.1"
+purpose: "Project knowledge index."
+policy:
+  default_context: false
+  no_full_text_search_required: true
+  repository_map_authority: ".specify/memory/repository-map.md"
+  max_selected_guides: 3
+promoted:
+"@ | Set-Content -LiteralPath $IndexPath -Encoding UTF8
+    }
+
+    $indexText = Get-Content -LiteralPath $IndexPath -Raw
+    if ($indexText -match [regex]::Escape("guide: `"$Guide`"") -or $indexText -match [regex]::Escape("guide: '$Guide'")) {
+        return
+    }
+    if ($indexText -notmatch "(?m)^promoted:\s*$") {
+        Add-Content -LiteralPath $IndexPath -Encoding UTF8 -Value "`npromoted:"
+    }
+    $key = Get-PromotionSlug ([System.IO.Path]::GetFileNameWithoutExtension($Guide))
+    $existing = Get-KnowledgeEntries -IndexPath $IndexPath | Where-Object { $_.key -eq $key }
+    if ($existing) {
+        $key = "$key-$([Math]::Abs($Guide.GetHashCode()))"
+    }
+    $entry = @"
+  ${key}:
+    guide: "$Guide"
+    authority: "reviewed"
+    confidence: "$Confidence"
+    tags: ["promoted-knowledge", "retrospective"]
+"@
+    Add-Content -LiteralPath $IndexPath -Encoding UTF8 -Value $entry
+}
+
+function Invoke-PromoteKnowledgeCandidates {
+    $result = New-Result "promote-knowledge-candidates"
+    $resolvedFeatureDir = Resolve-FeatureDirPath $FeatureDir
+    if (-not (Test-Path -LiteralPath $resolvedFeatureDir -PathType Container)) {
+        Set-Blocked $result "FeatureDir not found"
+        return $result
+    }
+
+    $candidatePath = if ($CandidatesPath) { $CandidatesPath } else { Join-Path $resolvedFeatureDir "knowledge-candidates.md" }
+    if (-not (Test-Path -LiteralPath $candidatePath -PathType Leaf)) {
+        Set-Blocked $result "knowledge-candidates.md not found"
+        return $result
+    }
+
+    $knowledgeRoot = Join-Path $RepoRoot "ai/knowledge"
+    $indexPath = Join-Path $knowledgeRoot "index.yml"
+    New-Item -ItemType Directory -Force -Path $knowledgeRoot | Out-Null
+
+    $text = Get-Content -LiteralPath $candidatePath -Raw
+    $blocks = @()
+    foreach ($piece in [regex]::Split($text, "(?m)^##\s+")) {
+        if ([string]::IsNullOrWhiteSpace($piece)) { continue }
+        if ($piece -notmatch "(?im)^\s*-\s*(人工审核结论|review_status|审核状态)\s*[:：]") { continue }
+        $blocks += $piece
+    }
+
+    $promoted = @()
+    $skipped = @()
+    $candidateNumber = 0
+    foreach ($block in $blocks) {
+        $candidateNumber += 1
+        $review = (Get-MarkdownField -Block $block -Names @("人工审核结论", "review_status", "审核状态")).ToLowerInvariant()
+        $titleLine = (($block -split "\r?\n") | Select-Object -First 1).Trim()
+        if ($review -ne "approved") {
+            $skipped += [ordered]@{
+                candidate = $candidateNumber
+                title = $titleLine
+                review_status = if ($review) { $review } else { "missing" }
+                reason = "only approved knowledge candidates can be promoted"
+            }
+            continue
+        }
+
+        $experience = Get-MarkdownField -Block $block -Names @("经验", "lesson")
+        $applies = Get-MarkdownField -Block $block -Names @("适用条件", "applies_when")
+        $notApplies = Get-MarkdownField -Block $block -Names @("不适用条件", "does_not_apply_when")
+        $layer = Get-MarkdownField -Block $block -Names @("推荐知识层", "recommended_layer")
+        $guide = Get-MarkdownField -Block $block -Names @("推荐 guide", "recommended_guide", "guide")
+        $sourceRefs = Get-MarkdownField -Block $block -Names @("source_refs", "来源证据")
+        $confidence = (Get-MarkdownField -Block $block -Names @("置信度", "confidence")).ToLowerInvariant()
+        if ($confidence -notin @("low", "medium", "high")) {
+            $confidence = "medium"
+        }
+        $risk = Get-MarkdownField -Block $block -Names @("污染风险", "pollution_risk")
+
+        try {
+            $safeGuide = Get-SafeKnowledgeGuide -Guide $guide
+        } catch {
+            Set-Blocked $result ([string]$_)
+            continue
+        }
+        $guidePath = Join-Path $knowledgeRoot $safeGuide
+        $guideDir = Split-Path $guidePath -Parent
+        New-Item -ItemType Directory -Force -Path $guideDir | Out-Null
+
+        if (-not (Test-Path -LiteralPath $guidePath -PathType Leaf)) {
+            @"
+---
+authority: reviewed
+confidence: $confidence
+source_refs:
+  - $sourceRefs
+---
+# Promoted Knowledge
+
+"@ | Set-Content -LiteralPath $guidePath -Encoding UTF8
+        }
+
+        $sectionTitle = if ($titleLine) { $titleLine } else { "Candidate $candidateNumber" }
+        $entry = @"
+
+## Promoted Knowledge - $sectionTitle
+- Type: project-knowledge
+- Recommended layer: $layer
+- Experience: $experience
+- Applies when: $applies
+- Does not apply when: $notApplies
+- Source refs: $sourceRefs
+- Confidence: $confidence
+- Pollution risk: $risk
+- Review status: approved
+"@
+        Add-Content -LiteralPath $guidePath -Encoding UTF8 -Value $entry
+        Update-KnowledgeIndexForGuide -IndexPath $indexPath -Guide $safeGuide -Confidence $confidence
+        $promoted += [ordered]@{
+            candidate = $candidateNumber
+            title = $sectionTitle
+            guide = Get-KnowledgeDisplayPath -Guide $safeGuide
+            confidence = $confidence
+        }
+    }
+
+    $validation = Invoke-ValidateKnowledgeIndex
+    if ($validation.status -eq "blocked") {
+        foreach ($blocker in @($validation.blockers)) {
+            Set-Blocked $result $blocker
+        }
+    }
+
+    $repackResult = $null
+    if ($Repack) {
+        if ([string]::IsNullOrWhiteSpace($PackId)) {
+            Set-Blocked $result "--repack requires --pack-id"
+        } elseif ($result.status -ne "blocked") {
+            $scriptPath = Join-Path $PSScriptRoot "repack-knowledge-pack.ps1"
+            if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
+                Set-Blocked $result "repack-knowledge-pack.ps1 not found"
+            } else {
+                $repackParams = @{
+                    RepoRoot = $RepoRoot
+                    PackId = $PackId
+                    Mode = "delta-overlay"
+                    Json = $true
+                }
+                if ($Force) { $repackParams.Force = $true }
+                $raw = & $scriptPath @repackParams
+                try {
+                    $repackResult = $raw | ConvertFrom-Json
+                    if ($repackResult.status -eq "blocked") {
+                        Set-Blocked $result ("repack failed: " + (($repackResult.blockers | ForEach-Object { [string]$_ }) -join "; "))
+                    }
+                } catch {
+                    Set-Blocked $result "repack did not return JSON"
+                }
+            }
+        }
+    }
+
+    $reportPath = Join-Path $resolvedFeatureDir "knowledge-promotion-report.md"
+    $reportLines = @(
+        "# Knowledge Promotion Report",
+        "",
+        "- Candidate file: $(Get-RelativeDisplayPath $candidatePath)",
+        "- Promoted count: $(@($promoted).Count)",
+        "- Skipped count: $(@($skipped).Count)",
+        "- Validation status: $($validation.status)"
+    )
+    if ($Repack) {
+        $reportLines += "- Repack requested: true"
+        $reportLines += "- Pack id: $PackId"
+        if ($repackResult) {
+            $reportLines += "- Repack status: $($repackResult.status)"
+        }
+    }
+    $reportLines += ""
+    $reportLines += "## Promoted"
+    foreach ($item in @($promoted)) {
+        $reportLines += "- Candidate $($item.candidate): $($item.guide) ($($item.confidence))"
+    }
+    $reportLines += ""
+    $reportLines += "## Skipped"
+    foreach ($item in @($skipped)) {
+        $reportLines += "- Candidate $($item.candidate): $($item.review_status) - $($item.reason)"
+    }
+    $reportLines | Set-Content -LiteralPath $reportPath -Encoding UTF8
+
+    $result.facts.candidates_path = $candidatePath
+    $result.facts.promoted = $promoted
+    $result.facts.skipped = $skipped
+    $result.facts.knowledge_index = $indexPath
+    $result.facts.validation = $validation
+    $result.facts.report_path = $reportPath
+    if ($repackResult) {
+        $result.facts.repack = $repackResult
+    }
+    if (@($promoted).Count -eq 0) {
+        $result.hints += "no approved candidates promoted; pending and rejected candidates were left untouched"
+    }
+    return $result
+}
+
 function Invoke-GenericInspector {
     param([string]$Name)
     $result = New-Result $Name
@@ -1685,6 +2369,9 @@ switch ($Tool) {
     "validate-plugin-package" { $result = Invoke-ValidatePluginPackage }
     "post-commit-self-check" { $result = Invoke-PostCommitSelfCheck }
     "validate-rubric-score" { $result = Invoke-ValidateRubricScore }
+    "inspect-workflow-closure" { $result = Invoke-InspectWorkflowClosure }
+    "collect-workflow-observer-packet" { $result = Invoke-CollectWorkflowObserverPacket }
+    "promote-knowledge-candidates" { $result = Invoke-PromoteKnowledgeCandidates }
     default { $result = Invoke-GenericInspector $Tool }
 }
 

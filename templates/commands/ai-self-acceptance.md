@@ -1,5 +1,5 @@
 ---
-description: Judge AI-owned validation after code changes before human acceptance.
+description: Judge AI-owned validation after code changes before convergence and human acceptance.
 ---
 
 ## User Input
@@ -23,8 +23,9 @@ Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md
 
 Run the mandatory AI self-acceptance loop after code changes. This is a
 judgeable gate: collect evidence, score `acceptance-rubric.md`, write
-`validation.md`, and return `PASS`, `FAIL`, or `BLOCKED`. Human acceptance may
-start only after `PASS` or a true external blocker.
+`validation.md`, and return `PASS`, `FAIL`, or `BLOCKED`. Convergence may start
+only after `PASS` or a true external blocker; human acceptance starts after
+convergence closes promised-vs-delivered gaps.
 
 ## Required Inputs
 
@@ -72,7 +73,7 @@ surface:
 
 ## Loop Contract
 
-- `PASS`: continue to `speckit-acceptance`.
+- `PASS`: continue to `speckit-converge`.
 - `FAIL`: return to `speckit-implement` or `speckit-fact-layer`; patch source,
   rebuild/sync when relevant, and rerun this skill.
 - `BLOCKED`: stop with concrete blocker evidence and `next_required_human_action`.
@@ -88,4 +89,4 @@ Report in Chinese:
 - Rubric criteria coverage and explicit note that final scoring is deferred
   until post-commit self-check.
 - Next workflow stage.
-- `next_required_human_action` only for true blockers or human acceptance.
+- `next_required_human_action` only for true blockers or human acceptance after convergence.

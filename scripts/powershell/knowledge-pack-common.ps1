@@ -20,7 +20,7 @@ function Set-KnowledgePackBlocked {
 
 function Write-KnowledgePackJson {
     param($Result)
-    $Result | ConvertTo-Json -Depth 12 -Compress
+    $Result | ConvertTo-Json -Depth 18 -Compress
 }
 
 function Resolve-KnowledgePackPath {
@@ -53,6 +53,27 @@ function Get-KnowledgePackManifestValue {
     $match = [regex]::Match($text, $pattern)
     if (-not $match.Success) { return "" }
     return $match.Groups[1].Value.Trim().Trim('"').Trim("'")
+}
+
+function Get-KnowledgePackManifestNestedValue {
+    param(
+        [string]$ManifestPath,
+        [string]$Section,
+        [string]$Key
+    )
+    if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) { return "" }
+    $inSection = $false
+    foreach ($line in Get-Content -LiteralPath $ManifestPath) {
+        if ($line -match ("^\s*" + [regex]::Escape($Section) + ":\s*$")) {
+            $inSection = $true
+            continue
+        }
+        if ($inSection -and $line -match "^\S") { break }
+        if ($inSection -and $line -match ("^\s{2}" + [regex]::Escape($Key) + ":\s*['""]?(.+?)['""]?\s*$")) {
+            return $Matches[1].Trim().Trim('"').Trim("'")
+        }
+    }
+    return ""
 }
 
 function Get-KnowledgePackManifestPath {
@@ -150,6 +171,189 @@ function Get-KnowledgePackFileHash {
     param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return "" }
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+}
+
+function Get-KnowledgePackFileManifest {
+    param([string]$PackRoot)
+    $rootFull = [System.IO.Path]::GetFullPath($PackRoot)
+    $manifest = @()
+    if (-not (Test-Path -LiteralPath $rootFull -PathType Container)) { return $manifest }
+    foreach ($file in Get-ChildItem -LiteralPath $rootFull -Recurse -File -Force | Sort-Object FullName) {
+        $relative = [System.IO.Path]::GetRelativePath($rootFull, $file.FullName).Replace('\', '/')
+        if (-not (Test-KnowledgePackSafeRelativePath -RelativePath $relative)) {
+            throw "Unsafe pack file path found while hashing: $relative"
+        }
+        $manifest += [ordered]@{
+            path = $relative
+            sha256 = Get-KnowledgePackFileHash -Path $file.FullName
+            bytes = $file.Length
+        }
+    }
+    return $manifest
+}
+
+function Get-KnowledgePackTreeHash {
+    param(
+        [string]$PackRoot,
+        $FileManifest = $null
+    )
+    $files = if ($null -ne $FileManifest) { @($FileManifest) } else { @(Get-KnowledgePackFileManifest -PackRoot $PackRoot) }
+    $lines = @()
+    foreach ($file in $files) {
+        $lines += "$($file.path)`t$($file.sha256)`t$($file.bytes)"
+    }
+    $payload = ($lines -join "`n")
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+        return ([System.BitConverter]::ToString($sha.ComputeHash($bytes))).Replace("-", "").ToLowerInvariant()
+    } finally {
+        $sha.Dispose()
+    }
+}
+
+function Get-KnowledgePackRecordPath {
+    param(
+        [string]$RepoRoot,
+        [string]$PackId
+    )
+    $slug = ConvertTo-KnowledgePackSlug -Value $PackId
+    return (Join-Path $RepoRoot ".specify\knowledge\records\$slug.json")
+}
+
+function Write-KnowledgePackRecordsIndex {
+    param([string]$RepoRoot)
+    $recordsRoot = Join-Path $RepoRoot ".specify\knowledge\records"
+    New-Item -ItemType Directory -Force -Path $recordsRoot | Out-Null
+    $records = @()
+    foreach ($file in Get-ChildItem -LiteralPath $recordsRoot -File -Filter "*.json" -Force | Where-Object { $_.Name -ne "index.json" } | Sort-Object Name) {
+        try {
+            $record = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+            $records += [ordered]@{
+                pack_id = $record.pack_id
+                version = $record.version
+                tree_sha256 = $record.hashes.tree_sha256
+                installed_path = $record.installed_path
+                record_path = ".specify/knowledge/records/$($file.Name)"
+            }
+        } catch {
+            $records += [ordered]@{
+                pack_id = $file.BaseName
+                version = ""
+                tree_sha256 = ""
+                installed_path = ""
+                record_path = ".specify/knowledge/records/$($file.Name)"
+                read_error = $_.Exception.Message
+            }
+        }
+    }
+    $index = [ordered]@{
+        schema_version = "1.0"
+        generated_by = "knowledge-pack-common"
+        records = $records
+    }
+    $indexPath = Join-Path $recordsRoot "index.json"
+    $index | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $indexPath -Encoding utf8
+    return $indexPath
+}
+
+function Get-KnowledgePackInstallRecord {
+    param(
+        [string]$RepoRoot,
+        [string]$PackId
+    )
+    $recordPath = Get-KnowledgePackRecordPath -RepoRoot $RepoRoot -PackId $PackId
+    if (-not (Test-Path -LiteralPath $recordPath -PathType Leaf)) { return $null }
+    return (Get-Content -LiteralPath $recordPath -Raw | ConvertFrom-Json)
+}
+
+function Write-KnowledgePackInstallRecord {
+    param(
+        [string]$RepoRoot,
+        [string]$PackRoot,
+        [string]$InstalledPath,
+        $Info,
+        $Validation,
+        [string]$SourcePath
+    )
+    $slug = ConvertTo-KnowledgePackSlug -Value $Info.id
+    $recordsRoot = Join-Path $RepoRoot ".specify\knowledge\records"
+    New-Item -ItemType Directory -Force -Path $recordsRoot | Out-Null
+    $manifestPath = Get-KnowledgePackManifestPath -PackRoot $PackRoot
+    $fileManifest = @(Get-KnowledgePackFileManifest -PackRoot $PackRoot)
+    $treeHash = Get-KnowledgePackTreeHash -PackRoot $PackRoot -FileManifest $fileManifest
+    $recordPath = Join-Path $recordsRoot "$slug.json"
+    $relativeInstalled = try {
+        [System.IO.Path]::GetRelativePath($RepoRoot, $InstalledPath).Replace('\', '/')
+    } catch {
+        $InstalledPath
+    }
+    $manifestRelative = try {
+        [System.IO.Path]::GetRelativePath($PackRoot, $manifestPath).Replace('\', '/')
+    } catch {
+        $manifestPath
+    }
+    $sourceType = if ([string]::IsNullOrWhiteSpace($SourcePath)) { "unknown" } else { "local-path" }
+    $record = [ordered]@{
+        schema_version = "1.0"
+        generated_by = "install-knowledge-pack"
+        installed_at_utc = (Get-Date).ToUniversalTime().ToString("o")
+        pack_id = $Info.id
+        slug = $slug
+        title = $Info.title
+        version = $Info.version
+        kind = $Info.kind
+        source = [ordered]@{
+            type = $sourceType
+            path = $SourcePath
+        }
+        installed_path = $relativeInstalled
+        manifest = [ordered]@{
+            path = $manifestRelative
+            source_path = $manifestPath
+        }
+        trust = [ordered]@{
+            level = Get-KnowledgePackManifestNestedValue -ManifestPath $manifestPath -Section "trust" -Key "level"
+            source = Get-KnowledgePackManifestNestedValue -ManifestPath $manifestPath -Section "trust" -Key "source"
+            verified = $false
+        }
+        hashes = [ordered]@{
+            algorithm = "sha256"
+            tree_sha256 = $treeHash
+            file_count = $fileManifest.Count
+            files = $fileManifest
+        }
+        validation = $Validation
+    }
+    if ([string]::IsNullOrWhiteSpace($record["trust"]["level"])) { $record["trust"]["level"] = "local" }
+    if ([string]::IsNullOrWhiteSpace($record["trust"]["source"])) { $record["trust"]["source"] = "unspecified" }
+    $record | ConvertTo-Json -Depth 18 | Set-Content -LiteralPath $recordPath -Encoding utf8
+    $indexPath = Write-KnowledgePackRecordsIndex -RepoRoot $RepoRoot
+    return [ordered]@{
+        path = $recordPath
+        index = $indexPath
+        tree_sha256 = $treeHash
+        file_count = $fileManifest.Count
+    }
+}
+
+function Remove-KnowledgePackInstallRecord {
+    param(
+        [string]$RepoRoot,
+        [string]$PackId
+    )
+    $recordPath = Get-KnowledgePackRecordPath -RepoRoot $RepoRoot -PackId $PackId
+    $removed = $false
+    if (Test-Path -LiteralPath $recordPath -PathType Leaf) {
+        Remove-Item -LiteralPath $recordPath -Force
+        $removed = $true
+    }
+    $indexPath = Write-KnowledgePackRecordsIndex -RepoRoot $RepoRoot
+    return [ordered]@{
+        removed = $removed
+        path = $recordPath
+        index = $indexPath
+    }
 }
 
 function Copy-KnowledgePackLayerIfPresent {

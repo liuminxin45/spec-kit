@@ -22,7 +22,10 @@ function Get-InputMessage {
         return [Console]::In.ReadToEnd()
     }
     if (-not [string]::IsNullOrWhiteSpace($MessageFile)) {
-        return Get-Content -LiteralPath $MessageFile -Raw
+        return [System.IO.File]::ReadAllText(
+            (Resolve-Path -LiteralPath $MessageFile).Path,
+            [System.Text.UTF8Encoding]::new($false, $true)
+        )
     }
     return $Message
 }
@@ -136,7 +139,7 @@ if ($nonEmptyLines.Count -lt 2) {
 
 $typeLines = @(Get-SectionContentLines -AllLines $lines -Section "【提交类型】" -SectionNames $requiredSections)
 if ($typeLines.Count -gt 0 -and $typeLines[0] -notmatch '\s-\s') {
-    $blockers += "【提交类型】 must use '<类型> - <范围或问题域>': $($typeLines[0])"
+    $blockers += "commit.type_format: 【提交类型】 must use '<类型> - <范围或问题域>': $($typeLines[0])"
 }
 if ($typeLines.Count -gt 0) {
     $genericTypes = @(
@@ -155,7 +158,7 @@ $selfTestLines = @(Get-SectionContentLines -AllLines $lines -Section "【自测�
 if ($selfTestLines.Count -gt 0) {
     $lastSelfTest = $selfTestLines[$selfTestLines.Count - 1]
     if ($lastSelfTest -notmatch '相关测试通过，自测通过') {
-        $blockers += "【自测结果】 must end with '相关测试通过，自测通过' when validation passes: $lastSelfTest"
+        $blockers += "commit.self_test_result: 【自测结果】 must end with '相关测试通过，自测通过' when validation passes: $lastSelfTest"
     }
 }
 
@@ -181,6 +184,7 @@ $payload = [PSCustomObject]@{
         required_sections = $requiredSections
         non_empty_line_count = $nonEmptyLines.Count
         generic_type_blocklist = @("修复 - UI 交互", "修复 - 代码", "修复 - 逻辑", "缺陷修复 - UI", "缺陷修复 - 前端")
+        generic_type_blocklist_codes = @("fix-ui-interaction", "fix-code", "fix-logic", "bugfix-ui", "bugfix-frontend")
     }
     blockers = $blockers
     unknowns = $unknowns

@@ -16,11 +16,11 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if ($Help) {
-    Write-Output "Usage: complete-spec-branches.ps1 [-Branch <name>] [-BaseBranch master|main] [-KeepBranch] [-DeleteBranch] [-AllowDirty] [-PreflightOnly] [-ConfirmCompletion] [-Json]"
-    Write-Output "Cherry-picks the local spec branch commits into the base branch across workspace repositories and keeps the local branch by default."
+    Write-Output "Usage: complete-spec-branches.ps1 [-Branch <name>] [-BaseBranch <branch>] [-KeepBranch] [-DeleteBranch] [-AllowDirty] [-PreflightOnly] [-ConfirmCompletion] [-Json]"
+    Write-Output "Cherry-picks local spec branch commits into the entry branch captured when the spec branch was created; -BaseBranch overrides all recorded targets."
     Write-Output "Use -DeleteBranch only when the user explicitly asks to delete the local spec branch."
     Write-Output "Use -PreflightOnly to inspect every repository without cherry-picking commits."
-    Write-Output "Requires feature retrospective artifacts before completion: workflow-record.md and improvement-candidates.md."
+    Write-Output "Requires feature closure artifacts before completion: workflow-record.md, improvement-candidates.md, knowledge-candidates.md, and workflow-observation.md."
     Write-Output "-ConfirmCompletion is accepted for legacy callers but is no longer required after post-commit self-check and rubric gates pass."
     exit 0
 }
@@ -153,6 +153,35 @@ function Test-BranchHasUpstream {
     return ($LASTEXITCODE -eq 0)
 }
 
+function Get-FeatureConfig {
+    param([string]$RepoRoot)
+    $featureJson = Join-Path $RepoRoot ".specify/feature.json"
+    if (-not (Test-Path -LiteralPath $featureJson -PathType Leaf)) { return $null }
+    return (Get-Content -LiteralPath $featureJson -Raw | ConvertFrom-Json)
+}
+
+function Get-RecordedCompletionBranch {
+    param(
+        [object]$FeatureConfig,
+        [object]$Repo,
+        [string]$Fallback
+    )
+    if ($FeatureConfig) {
+        foreach ($target in @($FeatureConfig.completion_targets)) {
+            if ([string]$target.repository -eq [string]$Repo.name -and -not [string]::IsNullOrWhiteSpace([string]$target.branch)) {
+                return [string]$target.branch
+            }
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$FeatureConfig.entry_branch)) {
+            return [string]$FeatureConfig.entry_branch
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$FeatureConfig.base_branch)) {
+            return [string]$FeatureConfig.base_branch
+        }
+    }
+    return $Fallback
+}
+
 function Get-RemoteDivergence {
     param([string]$Path, [string]$BranchName)
     $upstream = git -C $Path rev-parse --abbrev-ref "$BranchName@{upstream}" 2>$null
@@ -245,7 +274,7 @@ function Resolve-FeatureDirectory {
 function Test-RetrospectiveGate {
     param([string]$RepoRoot, [string]$BranchName)
     $featureDir = Resolve-FeatureDirectory -RepoRoot $RepoRoot -BranchName $BranchName
-    $required = @("workflow-record.md", "improvement-candidates.md")
+    $required = @("workflow-record.md", "improvement-candidates.md", "knowledge-candidates.md", "workflow-observation.md")
     $missing = @()
     foreach ($fileName in $required) {
         $path = Join-Path $featureDir $fileName
@@ -261,14 +290,13 @@ function Test-RetrospectiveGate {
 
 $repoRoot = Get-RepoRoot
 $workspace = Get-WorkspaceConfig -RepoRoot $repoRoot
-if ([string]::IsNullOrWhiteSpace($BaseBranch)) { $BaseBranch = $workspace.default_base_branch }
+$featureConfigForCompletion = Get-FeatureConfig -RepoRoot $repoRoot
+$explicitBaseBranch = -not [string]::IsNullOrWhiteSpace($BaseBranch)
 
 if ([string]::IsNullOrWhiteSpace($Branch)) {
-    $featureJson = Join-Path $repoRoot ".specify/feature.json"
-    if (Test-Path -LiteralPath $featureJson -PathType Leaf) {
-        $cfg = Get-Content -LiteralPath $featureJson -Raw | ConvertFrom-Json
-        if ($cfg.spec_branch) { $Branch = [string]$cfg.spec_branch }
-        elseif ($cfg.feature_directory) { $Branch = Split-Path -Leaf ([string]$cfg.feature_directory) }
+    if ($featureConfigForCompletion) {
+        if ($featureConfigForCompletion.spec_branch) { $Branch = [string]$featureConfigForCompletion.spec_branch }
+        elseif ($featureConfigForCompletion.feature_directory) { $Branch = Split-Path -Leaf ([string]$featureConfigForCompletion.feature_directory) }
     }
 }
 if ([string]::IsNullOrWhiteSpace($Branch)) {
@@ -283,6 +311,19 @@ if ([string]::IsNullOrWhiteSpace($Branch)) {
 if ([string]::IsNullOrWhiteSpace($Branch) -or $Branch -eq "HEAD") {
     throw "Could not resolve spec branch. Pass -Branch explicitly."
 }
+if ($featureConfigForCompletion -and
+    -not [string]::IsNullOrWhiteSpace([string]$featureConfigForCompletion.spec_branch) -and
+    [string]$featureConfigForCompletion.spec_branch -ne $Branch) {
+    $featureConfigForCompletion = $null
+}
+$hasRecordedCompletionTargets = (
+    $featureConfigForCompletion -and (
+        @($featureConfigForCompletion.completion_targets).Count -gt 0 -or
+        -not [string]::IsNullOrWhiteSpace([string]$featureConfigForCompletion.entry_branch) -or
+        -not [string]::IsNullOrWhiteSpace([string]$featureConfigForCompletion.base_branch)
+    )
+)
+$baseBranchSource = if ($explicitBaseBranch) { "argument" } elseif ($hasRecordedCompletionTargets) { "feature.completion_targets" } else { "workspace.default_base_branch" }
 
 $shouldKeepBranch = -not [bool]$DeleteBranch
 if ($KeepBranch) { $shouldKeepBranch = $true }
@@ -295,26 +336,27 @@ if ($retrospectiveGate.status -ne "ok") {
     $errors += "Retrospective gate failed for '$Branch': missing $missingText in $($retrospectiveGate.feature_dir). Run speckit.retrospective before complete-branch."
 }
 foreach ($repo in $workspace.repositories) {
+    $preferredBase = if ($explicitBaseBranch) { $BaseBranch } else { Get-RecordedCompletionBranch -FeatureConfig $featureConfigForCompletion -Repo $repo -Fallback $workspace.default_base_branch }
     if (-not $repo.participates_in_spec_branches) {
-        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "skipped"; branch = $Branch; base = $BaseBranch; planned_action = "skip"; participates_in_spec_branches = $false }
+        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "skipped"; branch = $Branch; base = $preferredBase; planned_action = "skip"; participates_in_spec_branches = $false }
         continue
     }
     if (-not (Test-Path -LiteralPath $repo.path -PathType Container)) {
-        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "missing"; branch = $Branch; base = $BaseBranch; planned_action = "skip"; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches }
+        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "missing"; branch = $Branch; base = $preferredBase; planned_action = "skip"; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches }
         if ($repo.required) { $errors += "Required repository not found: $($repo.name)" }
         continue
     }
     if (-not (Test-GitRepo $repo.path)) {
-        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "not-git"; branch = $Branch; base = $BaseBranch; planned_action = "error"; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches }
+        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "not-git"; branch = $Branch; base = $preferredBase; planned_action = "error"; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches }
         $errors += "Repository is not a git work tree: $($repo.name)"
         continue
     }
     $dirtyState = Get-DirtyClassification -Path $repo.path
     try {
-        $targetBase = Resolve-BaseBranch -Path $repo.path -Preferred $BaseBranch
+        $targetBase = Resolve-BaseBranch -Path $repo.path -Preferred $preferredBase
         $remoteDivergence = Get-RemoteDivergence -Path $repo.path -BranchName $targetBase
     } catch {
-        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "base-missing"; branch = $Branch; base = $BaseBranch; planned_action = "error"; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches }
+        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "base-missing"; branch = $Branch; base = $preferredBase; planned_action = "error"; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches }
         $errors += $_.Exception.Message
         continue
     }
@@ -360,7 +402,9 @@ foreach ($repo in $workspace.repositories) {
 
 $preflightPayload = [PSCustomObject]@{
     branch = $Branch
-    base_branch = $BaseBranch
+    base_branch = if ($explicitBaseBranch) { $BaseBranch } else { "recorded-entry-branches" }
+    default_base_branch = $workspace.default_base_branch
+    base_branch_source = $baseBranchSource
     pushed = $false
     confirmed = (-not [bool]$PreflightOnly)
     action = "preflight"
@@ -449,7 +493,9 @@ foreach ($item in $preflight) {
 
 $payload = [PSCustomObject]@{
     branch = $Branch
-    base_branch = $BaseBranch
+    base_branch = if ($explicitBaseBranch) { $BaseBranch } else { "recorded-entry-branches" }
+    default_base_branch = $workspace.default_base_branch
+    base_branch_source = $baseBranchSource
     confirmed = $true
     action = "completed"
     completion_ready = $true

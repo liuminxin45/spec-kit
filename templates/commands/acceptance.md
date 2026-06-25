@@ -67,6 +67,9 @@ It explains how the user should test and how the workflow records whether
    - If `acceptance-rubric.md` exists but `validation.md` lacks an AI
      Self-Acceptance rubric judgment, stop and load `speckit-ai-self-acceptance`
      before writing human acceptance.
+   - If AI changed code and `convergence.md` is missing or does not record
+     `status: passed`, stop and return to `speckit-converge`; human acceptance
+     is after promised-vs-delivered reconciliation, not before it.
 4. Ensure validation artifacts are visible:
    - `acceptance.md` remains user-facing.
    - `evidence.md` remains tool/test-facing when complex/runtime/tool-heavy

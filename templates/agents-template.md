@@ -1,7 +1,6 @@
 # AGENTS.md
 
-This repository uses Spec Kit for AI coding. Keep the default context small:
-read stable facts first, then load only artifacts and policies the task needs.
+This repository uses Spec Kit for AI coding. Keep default context small: read stable facts first, then load only artifacts and policies the task needs.
 
 ## Default Context
 
@@ -18,36 +17,26 @@ treat `.specify/feature.json` as a stale/current-feature hint. Do not load the
 active feature's `specs/<feature>/*` artifacts or apply its risk flags unless
 the user explicitly resumes that feature.
 
-Then read only the active feature files that match the selected path:
-
-- Lightweight fix: `specs/<feature>/progress.md` or `micro-fix.md` when present.
-- Standard work: `specs/<feature>/spec.md`, `plan.md`, and `progress.md`.
-- Heavy work: add `tasks.md`, `research.md`, `contracts/`, or `data-model.md`
-  only when the plan or user request requires them.
-- Runtime/debug work: add `fact-pack.md`, latest logs, or DevTools evidence only
-  when symptoms are unclear, repeated, or UI/runtime behavior is being debugged.
+Then read only active feature files for the selected path: lightweight fix
+uses `progress.md` or `micro-fix.md`; standard work uses `spec.md`, `plan.md`,
+and `progress.md`; heavy work adds `tasks.md`, `research.md`, `contracts/`, or
+`data-model.md` only when needed; runtime/debug work adds `fact-pack.md`,
+latest logs, or DevTools evidence only for unclear/repeated/runtime symptoms.
 
 ## Do Not Load By Default
 
-Do not read these unless the current stage explicitly needs them:
-
-- `TEAM-README.md`
-- `Layered SDD for AI Coding.md`
-- `LAYERED-SDD-*`
-- `ai/knowledge/*`
-- `ai/templates/*`
-- `ai/tools/*`
-- `templates/*`
-- old completed `specs/*`
+Do not read these unless the current stage explicitly needs them: `TEAM-README.md`,
+`Layered SDD for AI Coding.md`, `LAYERED-SDD-*`, `ai/knowledge/*`,
+`ai/templates/*`, `ai/tools/*`, `templates/*`, or old completed `specs/*`.
 
 This avoids stale knowledge and keeps AI coding context bounded.
 
 ## Operating Rules
 
-- Use `.specify/memory/repository-map.md` as the repository role source of
-  truth. Do not infer repository ownership by scanning source trees.
-- Product or plugin fixes must be made in repository source files, not only in
-  installed runtime plugin directories or built artifacts.
+- Use `.specify/memory/repository-map.md` as repository role truth. Do not infer
+  ownership by scanning source trees.
+- Product or plugin fixes belong in repository source files, not only installed
+  runtime plugin directories or built artifacts.
 - When a task needs plugin source, build output, package artifact, or runtime
   directory context, use the `Project Path Categories` section in
   `.specify/memory/repository-map.md` first. When repository-map is not enough,
@@ -58,13 +47,11 @@ This avoids stale knowledge and keeps AI coding context bounded.
   not write machine-specific absolute paths into team memory. Use placeholders
   such as `<workspace-root>`, `<host-app-root>`, `<app-data-root>`,
   `<plugin-id>`, `<version>`, and `<location>`.
-- When a task needs workflow-specific evidence rules, use `select-gates` or
-  `ai/workflows/gates/index.yml` first and read only selected
-  `ai/workflows/gates/*` packs. Command templates are stage contracts, not
-  full manuals.
-- For host-embedded UI fixes, a source-to-runtime copy and refresh may be used
-  as validation/deployment evidence after source output is built; runtime
-  artifacts are still not source or commit targets.
+- For workflow-specific evidence rules, use `select-gates` or
+  `ai/workflows/gates/index.yml` first and read only selected packs. Command
+  templates are stage contracts, not full manuals.
+- For host-embedded UI fixes, a source-to-runtime copy and refresh may validate
+  built source output; runtime artifacts are still not source or commit targets.
 - Host-embedded frontend plugin source edits must follow the AI delivery chain:
   source edit -> frontend build -> direct runtime replacement -> real host CDP
   verification, then final `.plugin` build/package evidence. Native, JS, and
@@ -82,9 +69,8 @@ This avoids stale knowledge and keeps AI coding context bounded.
   itself a reason to skip to manual acceptance. Save key-path screenshots from
   CDP into `FEATURE_DIR/cdp-screenshots/` and report the screenshot directory to
   the human when CDP validation ends.
-- Qt-to-frontend UI parity work should read
-  `.specify/memory/qt-source-behavior-map.md` or
-  `ai/knowledge/qt-source-behavior-map.md` before broad workspace search.
+- Qt-to-frontend UI parity should read `.specify/memory/qt-source-behavior-map.md`
+  or `ai/knowledge/qt-source-behavior-map.md` before broad workspace search.
 - After changing or upgrading `spec-kit` templates, run
   `validate-generated-context`, `validate-knowledge-index`, and
   `validate-context-budget` before relying on generated default context. If a
@@ -95,14 +81,13 @@ This avoids stale knowledge and keeps AI coding context bounded.
 - Scripts output `facts`, `blockers`, `unknowns`, and `hints`. The LLM owns
   semantic routing, root-cause judgment, validation sufficiency, and tradeoffs.
 - During test planning, use `inspect-validation-capabilities` before searching
-  for test commands. E2E may be marked `N/A` when unsupported, but an API test
-  plan remains required.
+  test commands. E2E may be `N/A` when unsupported, but API test plan remains required.
 - Required repositories from `.specify/workspace.yml` must be present. If a
   required repo is missing, run `inspect-workspace-repositories` and block
   instead of scanning other repositories to guess an implementation owner.
-- If a UI/CSS/layout patch fails once, do not make a second patch until runtime
-  DOM/CSS/computed style/box metrics are collected through DevTools/CDP or the
-  user provides copied DOM/CSS evidence.
+- If a UI/CSS/layout patch fails once, collect runtime DOM/CSS/computed
+  style/box metrics through DevTools/CDP before a second patch, unless the user
+  provides copied DOM/CSS evidence.
 - After UI/UX-affecting code changes, use available MCP/CDP/browser automation
   for best-effort self-validation such as screenshots, visual comparison, and
   simulated interactions. If unsupported, record the reason instead of treating
@@ -110,11 +95,21 @@ This avoids stale knowledge and keeps AI coding context bounded.
 - SDK/Biz runtime investigations should use the latest logs from:
   `<system-temp>/SDKLog\SDK_*.log` and
   `<system-temp>/ServiceBridgeLog\ServiceBridge_*.log`.
-- Branch completion cherry-picks back to the configured base branch, keeps the
-  local spec branch by default, and does not push.
+- Branch completion cherry-picks back to the entry branch recorded at spec
+  branch creation, keeps the local spec branch by default, and does not push.
 - Commit and complete-branch are automated after hard gates pass. After commit,
   run exactly one post-commit self-check, then output final Rubric scoring; do
   not run complete-branch unless `validate-rubric-score` passes.
+- Before any final response after human acceptance, commit, post-commit
+  self-check, or rubric work, run `inspect-workflow-closure`. If it reports a
+  `next_required_stage`, execute that stage instead of reporting completion.
+  Branch policy such as `local_only`, `push_remote: false`, or
+  `complete_by_cherry_picking_to_base: false` does not skip retrospective,
+  workflow-observer, post-commit self-check, or rubric-score.
+- Retrospective creates `knowledge-candidates.md` only as pending project
+  knowledge candidates. Only human-approved candidates may be promoted into
+  `ai/knowledge` with `promote-knowledge-candidates`, followed by
+  `validate-knowledge-index` and optional delta-overlay repack.
 - Long-term facts or rules are not edited silently. They require source
   evidence, validation evidence, and explicit human approval.
 

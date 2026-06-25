@@ -164,6 +164,8 @@ try {
 
         $aliases = Read-KnowledgeToolAliases -PackRoot $packRootResolved
         $scenarios = @(Get-KnowledgePackEvaluationScenarios -PackRoot $packRootResolved)
+        $fileManifest = @(Get-KnowledgePackFileManifest -PackRoot $packRootResolved)
+        $treeSha256 = Get-KnowledgePackTreeHash -PackRoot $packRootResolved -FileManifest $fileManifest
         $result.facts.pack_root = $packRootResolved
         $result.facts.pack_id = $info.id
         $result.facts.version = $info.version
@@ -181,6 +183,9 @@ try {
         $result.facts.capability_index = $capabilityIndexPath
         $result.facts.capability_layers = $capabilityLayerFacts
         $result.facts.script_hashes = $scriptHashes
+        $result.facts.hash_algorithm = "sha256"
+        $result.facts.tree_sha256 = $treeSha256
+        $result.facts.file_count = $fileManifest.Count
     }
 } catch {
     Set-KnowledgePackBlocked $result $_.Exception.Message

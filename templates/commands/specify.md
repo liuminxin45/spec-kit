@@ -96,14 +96,19 @@ device integration, migration, or tooling work.
 1. Resolve the local spec branch and feature directory from the branch script.
    - Preferred branch format: `NNN-short-capability-name`.
    - Preferred feature directory: `specs/<spec-branch>`.
+   - The branch script records the current branch for each participating
+     repository in `.specify/feature.json` `completion_targets`; complete-branch
+     uses those recorded entry branches as the default cherry-pick targets.
    - Preserve existing `.specify/feature.json` intake fields while updating
-     `feature_directory`, `spec_branch`, and `branch_local_only`.
+     `feature_directory`, `spec_branch`, `branch_local_only`, and completion
+     target fields.
 
    ```json
    {
      "feature_directory": "specs/<spec-branch>",
      "spec_branch": "<spec-branch>",
      "branch_local_only": true,
+     "completion_targets": [{"repository": "<repo>", "branch": "<entry-branch>"}],
      "...existing_intake_fields": "preserve"
    }
    ```
@@ -245,12 +250,13 @@ device integration, migration, or tooling work.
   incomplete, stop and ask the user to update that fixed map.
 - The spec branch is the workflow identity; final completion happens only after
   acceptance, simplify, optional test-hardening, retrospective/留痕, optional
-  promote-lessons, commit, one post-commit self-check, final Rubric score, and
-  complete-branch.
+  workflow-observer, optional promote-lessons/promote-knowledge, commit, one
+  post-commit self-check, final Rubric score, and complete-branch.
 - Commit and branch-state completion are automated only after their hard gates
   pass; they still do not push or create remote tracking.
-- Branch completion cherry-picks back to the configured base branch and keeps
-  the local spec branch by default. Do not push or create remote tracking.
+- Branch completion cherry-picks back to the recorded entry branch captured at
+  spec branch creation and keeps the local spec branch by default. Do not push
+  or create remote tracking.
 
 ## Output
 

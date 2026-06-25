@@ -100,7 +100,7 @@ encoding 必须在文档化边界处理。不得在无关层级增加 ad hoc con
 每个受影响仓库都必须使用同名本地 Spec branch。Spec Kit 不得 push branches、
 创建 remote tracking branches，或依赖 GitHub issue generation。Spec workflow
 在通过用户验收、必要提交完成、每个受影响仓库都将本地 Spec branch 的提交
-cherry-pick 回配置的 base branch 后才算完成；默认保留本地 Spec branch，不删除。
+cherry-pick 回创建 Spec branch 时记录的入口分支后才算完成；默认保留本地 Spec branch，不删除。
 任何 agent 在执行 commit 或 cherry-pick branch completion 这类仓库状态变更命令前，
 都必须请求并获得用户明确确认。
 

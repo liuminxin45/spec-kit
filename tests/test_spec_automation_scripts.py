@@ -49,6 +49,9 @@ AUTOMATION_TOOLS = [
     "validate-plugin-package",
     "post-commit-self-check",
     "validate-rubric-score",
+    "inspect-workflow-closure",
+    "collect-workflow-observer-packet",
+    "promote-knowledge-candidates",
     "cleanup-host-cdp",
     "generate-knowledge-pack",
     "evaluate-knowledge-pack-synthesis",
@@ -130,6 +133,36 @@ def assert_standard_shape(output: dict, tool: str):
     assert isinstance(output["hints"], list)
 
 
+def write_minimal_knowledge_index(repo: Path) -> None:
+    knowledge = repo / "ai" / "knowledge"
+    (knowledge / "workspace").mkdir(parents=True, exist_ok=True)
+    (knowledge / "workspace" / "overview.md").write_text(
+        "---\nauthority: reviewed\nconfidence: medium\n---\n# Overview\n",
+        encoding="utf-8",
+    )
+    (knowledge / "index.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.1"',
+                'purpose: "test knowledge index"',
+                "policy:",
+                "  default_context: false",
+                "  no_full_text_search_required: true",
+                '  repository_map_authority: ".specify/memory/repository-map.md"',
+                "  max_selected_guides: 3",
+                "workspace:",
+                "  overview:",
+                '    guide: "workspace/overview.md"',
+                '    authority: "reviewed"',
+                '    confidence: "medium"',
+                '    tags: ["workspace"]',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_automation_assets_are_packaged_and_declared():
     pyproject = read_text("pyproject.toml")
 
@@ -149,7 +182,18 @@ def test_automation_assets_are_packaged_and_declared():
     assert "dist/**" in config["paths"]["generated"]
 
     state = json.loads(read_text("templates/workflow-state-template.json"))
-    for key in ["workflow_model", "attempts", "validations", "fact_layer", "acceptance", "retrospective", "promotion"]:
+    for key in [
+        "workflow_model",
+        "attempts",
+        "validations",
+        "fact_layer",
+        "acceptance",
+        "retrospective",
+        "promotion",
+        "commit",
+        "post_commit_self_check",
+        "rubric_score",
+    ]:
         assert key in state
     assert state["workflow_model"]["manifest"] == ".specify/templates/layer-manifest.yml"
 
@@ -163,9 +207,16 @@ def test_automation_assets_are_packaged_and_declared():
     assert "workflow-state.json" in manifest["artifact_sets"]["implement"]
     assert "workflow-record.md" in manifest["artifact_sets"]["commit"]
     assert "improvement-candidates.md" in manifest["artifact_sets"]["commit"]
+    assert "knowledge-candidates.md" in manifest["artifact_sets"]["commit"]
+    assert "workflow-observation.md" in manifest["artifact_sets"]["commit"]
     assert "workflow-record.md" in manifest["artifact_sets"]["full-sdd-commit"]
     assert "improvement-candidates.md" in manifest["artifact_sets"]["full-sdd-commit"]
+    assert "knowledge-candidates.md" in manifest["artifact_sets"]["full-sdd-commit"]
+    assert "workflow-observation.md" in manifest["artifact_sets"]["full-sdd-commit"]
     assert "improvement-candidates.md" in manifest["artifact_sets"]["retrospective"]
+    assert "knowledge-candidates.md" in manifest["artifact_sets"]["retrospective"]
+    assert "workflow-observer-packet.json" in manifest["artifact_sets"]["retrospective"]
+    assert "workflow-observation.md" in manifest["artifact_sets"]["workflow-observer"]
     assert "L1 Artifact Contract" in manifest["artifact_sections"]["spec.md"]
     assert "L2 Artifact Contract" in manifest["artifact_sections"]["plan.md"]
     assert "AI Context Contract" in manifest["artifact_sections"]["plan.md"]
@@ -665,6 +716,13 @@ def test_knowledge_pack_exports_installs_and_materializes_with_aliases(tmp_path)
     assert "legacy-tool" not in materialized
     assert (workspace / ".specify" / "knowledge" / "packs" / "demo-pack" / "knowledge-pack.yml").exists()
     assert (workspace / ".specify" / "knowledge" / "lock.yml").exists()
+    install_facts = applied["facts"]["install"]["facts"]
+    assert install_facts["tree_sha256"]
+    assert install_facts["install_record"].endswith("demo-pack.json")
+    assert (workspace / ".specify" / "knowledge" / "records" / "demo-pack.json").exists()
+    lock_text = (workspace / ".specify" / "knowledge" / "lock.yml").read_text(encoding="utf-8")
+    assert "tree_sha256:" in lock_text
+    assert 'install_record: ".specify/knowledge/records/demo-pack.json"' in lock_text
     assert applied["facts"]["validation"]["status"] == "ok"
     assert applied["facts"]["profiles_applied"] == []
 
@@ -775,6 +833,11 @@ def test_capability_pack_exports_materializes_and_repacks_layers(tmp_path):
     assert (workspace / ".specify" / "scripts" / "packs" / "capability-demo" / "inspect-runtime.ps1").exists()
     assert (workspace / ".specify" / "capabilities" / "commands" / "capability-demo" / "debug-runtime.md").exists()
     assert (workspace / ".specify" / "capabilities" / "prompts" / "capability-demo" / "runtime-prompt.md").exists()
+    assert applied["facts"]["install"]["facts"]["tree_sha256"]
+    assert (workspace / ".specify" / "knowledge" / "records" / "capability-demo.json").exists()
+    knowledge_lock = (workspace / ".specify" / "knowledge" / "lock.yml").read_text(encoding="utf-8")
+    assert 'install_record: ".specify/knowledge/records/capability-demo.json"' in knowledge_lock
+    assert "tree_sha256:" in knowledge_lock
     capability_lock = (workspace / ".specify" / "capabilities" / "lock.yml").read_text(encoding="utf-8")
     assert 'auto_run_scripts: false' in capability_lock
     assert 'capability-demo__runtime-debug' in capability_lock
@@ -904,6 +967,9 @@ def test_capability_pack_exports_materializes_and_repacks_layers(tmp_path):
     )
     assert_standard_shape(updated, "update-knowledge-pack")
     assert updated["status"] == "ok"
+    assert updated["facts"]["previous_tree_sha256"]
+    assert updated["facts"]["new_tree_sha256"]
+    assert updated["facts"]["tree_changed"] is True
     assert (workspace / "ai" / "knowledge" / "workspace" / "overview.md").read_text(encoding="utf-8") == "Capability pack overview v2.\n"
     assert not (workspace / ".agents" / "spec-kit" / "skills" / "capability-demo__runtime-debug").exists()
     assert (workspace / ".agents" / "spec-kit" / "skills" / "capability-demo__runtime-trace" / "SKILL.md").exists()
@@ -924,6 +990,8 @@ def test_capability_pack_exports_materializes_and_repacks_layers(tmp_path):
     assert_standard_shape(uninstalled, "uninstall-knowledge-pack")
     assert uninstalled["status"] == "ok"
     assert not (workspace / ".specify" / "knowledge" / "packs" / "capability-demo").exists()
+    assert uninstalled["facts"]["removed_install_record"]["removed"] is True
+    assert not (workspace / ".specify" / "knowledge" / "records" / "capability-demo.json").exists()
     assert not (workspace / ".agents" / "spec-kit" / "skills" / "capability-demo__runtime-trace").exists()
     assert not (workspace / "ai" / "tools" / "capability-demo").exists()
     assert not (workspace / ".specify" / "scripts" / "packs" / "capability-demo").exists()
@@ -1612,7 +1680,14 @@ def test_plugin_build_plan_and_package_validation(tmp_path):
 def test_post_commit_self_check_and_rubric_score_gate(tmp_path):
     feature_dir = tmp_path / "specs" / "001-demo"
     feature_dir.mkdir(parents=True)
-    for name in ["validation.md", "acceptance.md", "workflow-record.md", "improvement-candidates.md"]:
+    for name in [
+        "validation.md",
+        "acceptance.md",
+        "workflow-record.md",
+        "improvement-candidates.md",
+        "knowledge-candidates.md",
+        "workflow-observation.md",
+    ]:
         (feature_dir / name).write_text(f"# {name}\n", encoding="utf-8")
     (feature_dir / "workflow-state.json").write_text(
         json.dumps({"retrospective": {"status": "completed"}}),
@@ -1672,6 +1747,251 @@ def test_post_commit_self_check_and_rubric_score_gate(tmp_path):
     output = json.loads(blocked.stdout)
     assert output["status"] == "blocked"
     assert "below 90" in "\n".join(output["blockers"])
+
+
+def test_workflow_closure_blocks_after_acceptance_without_retrospective(tmp_path):
+    feature_dir = tmp_path / "specs" / "001-demo"
+    feature_dir.mkdir(parents=True)
+    (feature_dir / "acceptance.md").write_text("人工验收通过\n", encoding="utf-8")
+    (feature_dir / "workflow-state.json").write_text(
+        json.dumps(
+            {
+                "workflow_model": {"delivery_profile": "standard-bugfix"},
+                "acceptance": {"status": "passed"},
+                "retrospective": {"status": "pending"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    output = run_ps("inspect-workflow-closure", "-RepoRoot", str(tmp_path), "-FeatureDir", str(feature_dir))
+
+    assert_standard_shape(output, "inspect-workflow-closure")
+    assert output["status"] == "blocked"
+    assert output["facts"]["acceptance_status"] == "passed"
+    assert output["facts"]["next_required_stage"] == "speckit.retrospective"
+
+
+def test_workflow_closure_blocks_after_commit_without_self_check(tmp_path):
+    feature_dir = tmp_path / "specs" / "001-demo"
+    feature_dir.mkdir(parents=True)
+    for name in [
+        "acceptance.md",
+        "workflow-record.md",
+        "improvement-candidates.md",
+        "knowledge-candidates.md",
+        "workflow-observation.md",
+    ]:
+        (feature_dir / name).write_text(f"# {name}\n", encoding="utf-8")
+    (feature_dir / "workflow-state.json").write_text(
+        json.dumps(
+            {
+                "workflow_model": {"delivery_profile": "standard-bugfix"},
+                "acceptance": {"status": "passed"},
+                "retrospective": {
+                    "status": "completed",
+                    "workflow_record": "workflow-record.md",
+                    "improvement_candidates": "improvement-candidates.md",
+                    "knowledge_candidates": "knowledge-candidates.md",
+                },
+                "commit": {"status": "completed", "commit_hash": "abc123"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    output = run_ps("inspect-workflow-closure", "-RepoRoot", str(tmp_path), "-FeatureDir", str(feature_dir))
+
+    assert output["status"] == "blocked"
+    assert output["facts"]["commit_detected"] is True
+    assert output["facts"]["next_required_stage"] == "speckit.post-commit-self-check"
+
+
+def test_workflow_closure_blocks_self_check_without_rubric(tmp_path):
+    feature_dir = tmp_path / "specs" / "001-demo"
+    feature_dir.mkdir(parents=True)
+    for name in [
+        "acceptance.md",
+        "workflow-record.md",
+        "improvement-candidates.md",
+        "knowledge-candidates.md",
+        "workflow-observation.md",
+        "post-commit-self-check.md",
+    ]:
+        (feature_dir / name).write_text(f"# {name}\n", encoding="utf-8")
+    (feature_dir / "workflow-state.json").write_text(
+        json.dumps(
+            {
+                "workflow_model": {"delivery_profile": "standard-bugfix"},
+                "acceptance": {"status": "passed"},
+                "retrospective": {
+                    "status": "completed",
+                    "workflow_record": "workflow-record.md",
+                    "improvement_candidates": "improvement-candidates.md",
+                    "knowledge_candidates": "knowledge-candidates.md",
+                },
+                "commit": {"status": "completed", "commit_hash": "abc123"},
+                "post_commit_self_check": {"status": "completed"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    output = run_ps("inspect-workflow-closure", "-RepoRoot", str(tmp_path), "-FeatureDir", str(feature_dir))
+
+    assert output["status"] == "blocked"
+    assert output["facts"]["post_commit_self_check_status"] == "completed"
+    assert output["facts"]["next_required_stage"] == "speckit.rubric-score"
+
+
+def test_local_branch_policy_does_not_skip_retrospective_or_rubric(tmp_path):
+    (tmp_path / ".specify").mkdir()
+    (tmp_path / ".specify" / "workspace.yml").write_text(
+        "local_only: true\npush_remote: false\ncomplete_by_cherry_picking_to_base: false\n",
+        encoding="utf-8",
+    )
+    feature_dir = tmp_path / "specs" / "001-demo"
+    feature_dir.mkdir(parents=True)
+    (feature_dir / "acceptance.md").write_text("人工验收通过\n", encoding="utf-8")
+    (feature_dir / "workflow-state.json").write_text(
+        json.dumps(
+            {
+                "workflow_model": {"delivery_profile": "standard-bugfix"},
+                "acceptance": {"status": "passed"},
+                "retrospective": {"status": "pending"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    output = run_ps("inspect-workflow-closure", "-RepoRoot", str(tmp_path), "-FeatureDir", str(feature_dir))
+
+    assert output["status"] == "blocked"
+    assert output["facts"]["branch_policy"]["local_only"] is True
+    assert output["facts"]["branch_policy"]["push_remote"] is False
+    assert output["facts"]["branch_policy"]["closure_exemption"] is False
+    assert output["facts"]["next_required_stage"] == "speckit.retrospective"
+
+
+def test_workflow_observer_packet_is_context_bounded(tmp_path):
+    feature_dir = tmp_path / "specs" / "001-demo"
+    feature_dir.mkdir(parents=True)
+    (feature_dir / "workflow-state.json").write_text(
+        json.dumps({"acceptance": {"status": "passed"}, "retrospective": {"status": "pending"}}),
+        encoding="utf-8",
+    )
+
+    output = run_ps("collect-workflow-observer-packet", "-RepoRoot", str(REPO_ROOT), "-FeatureDir", str(feature_dir))
+
+    assert_standard_shape(output, "collect-workflow-observer-packet")
+    assert output["status"] in {"ok", "warning"}
+    packet = json.loads((feature_dir / "workflow-observer-packet.json").read_text(encoding="utf-8"))
+    assert packet["context_policy"]["default_context_only"] is True
+    assert packet["context_policy"]["does_not_include_source_text"] is True
+    assert "artifacts" in packet
+    assert "closure_gate" in packet
+    assert "source_files" not in packet
+
+
+def test_knowledge_candidates_require_approval(tmp_path):
+    repo = tmp_path
+    (repo / ".specify").mkdir()
+    feature_dir = repo / "specs" / "001-demo"
+    feature_dir.mkdir(parents=True)
+    write_minimal_knowledge_index(repo)
+    candidates = feature_dir / "knowledge-candidates.md"
+    candidates.write_text(
+        "\n".join(
+            [
+                "# 知识候选清单",
+                "",
+                "## Candidate 1",
+                "- 类型: project-knowledge",
+                "- 经验: pending lesson",
+                "- 推荐 guide: workspace/pending.md",
+                "- source_refs: validation.md",
+                "- 置信度: medium",
+                "- 人工审核结论: pending",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    pending = run_ps("promote-knowledge-candidates", "-RepoRoot", str(repo), "-FeatureDir", str(feature_dir))
+
+    assert_standard_shape(pending, "promote-knowledge-candidates")
+    assert pending["status"] == "ok"
+    assert pending["facts"]["promoted"] == []
+    assert not (repo / "ai" / "knowledge" / "workspace" / "pending.md").exists()
+
+    candidates.write_text(
+        "\n".join(
+            [
+                "# 知识候选清单",
+                "",
+                "## Candidate 1",
+                "- 类型: project-knowledge",
+                "- 经验: approved lesson",
+                "- 适用条件: same workflow",
+                "- 不适用条件: unrelated project",
+                "- 推荐知识层: workspace",
+                "- 推荐 guide: workspace/approved.md",
+                "- source_refs: workflow-record.md",
+                "- 置信度: high",
+                "- 污染风险: low",
+                "- 人工审核结论: approved",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    approved = run_ps("promote-knowledge-candidates", "-RepoRoot", str(repo), "-FeatureDir", str(feature_dir))
+
+    assert approved["status"] == "ok"
+    assert approved["facts"]["promoted"][0]["guide"] == "ai/knowledge/workspace/approved.md"
+    assert "approved lesson" in (repo / "ai" / "knowledge" / "workspace" / "approved.md").read_text(encoding="utf-8")
+    assert "workspace/approved.md" in (repo / "ai" / "knowledge" / "index.yml").read_text(encoding="utf-8")
+
+
+def test_promote_candidates_repack_delta_overlay(tmp_path):
+    repo = tmp_path
+    (repo / ".specify").mkdir()
+    feature_dir = repo / "specs" / "001-demo"
+    feature_dir.mkdir(parents=True)
+    write_minimal_knowledge_index(repo)
+    (feature_dir / "knowledge-candidates.md").write_text(
+        "\n".join(
+            [
+                "# 知识候选清单",
+                "",
+                "## Candidate 1",
+                "- 类型: project-knowledge",
+                "- 经验: package lesson",
+                "- 推荐 guide: workspace/package.md",
+                "- source_refs: workflow-record.md",
+                "- 置信度: medium",
+                "- 人工审核结论: approved",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    output = run_ps(
+        "promote-knowledge-candidates",
+        "-RepoRoot",
+        str(repo),
+        "-FeatureDir",
+        str(feature_dir),
+        "-Repack",
+        "-PackId",
+        "demo-pack",
+        "-Force",
+    )
+
+    assert output["status"] == "ok"
+    assert output["facts"]["repack"]["status"] == "ok"
+    pack_root = Path(output["facts"]["repack"]["facts"]["pack_root"])
+    assert (pack_root / "knowledge-pack.yml").exists()
+    assert (feature_dir / "knowledge-promotion-report.md").exists()
 
 
 def test_cdp_common_and_cleanup_process_boundaries():
@@ -2342,8 +2662,8 @@ def test_validate_commit_message_blocks_truncated_template(tmp_path):
     blockers = "\n".join(payload["blockers"])
     assert "Conventional Commit format" in blockers
     assert "Second non-empty line must be the Chinese summary" in blockers
-    assert "【提交类型】 must use '<类型> - <范围或问题域>'" in blockers
-    assert "【自测结果】 must end with '相关测试通过，自测通过'" in blockers
+    assert "commit.type_format" in blockers
+    assert "commit.self_test_result" in blockers
     assert "Technical token appears split across lines" in blockers
 
     generic_type_message = "\n".join(
@@ -2397,7 +2717,7 @@ def test_validate_commit_message_blocks_truncated_template(tmp_path):
     assert result.returncode != 0
     payload = json.loads(result.stdout)
     assert "scope is too generic" in "\n".join(payload["blockers"])
-    assert "修复 - UI 交互" in payload["facts"]["generic_type_blocklist"]
+    assert "fix-ui-interaction" in payload["facts"]["generic_type_blocklist_codes"]
 
 
 def test_validate_feature_artifacts_blocks_missing_commit_stage_files(tmp_path):
@@ -2670,7 +2990,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         "ensure-host-cdp\n"
         "stale/current-feature hint\nread the current plan only\n"
         "select-knowledge\nselect-gates\nvalidate-knowledge-index\nvalidate-context-budget\n"
-        "inspect-validation-capabilities\n",
+        "inspect-validation-capabilities\ninspect-workflow-closure\nknowledge-candidates.md\n",
         encoding="utf-8",
     )
     (repo / ".specify" / "memory" / "repository-map.md").write_text(
@@ -2703,7 +3023,8 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
     (repo / "ai" / "workflows" / "task-routing.md").write_text(
         "tasks -> analyze -> checklist\nvalidate-generated-context\nvalidate-knowledge-index\n"
         "validate-context-budget\nselect-knowledge\nselect-gates\nskill-routing.yml\nartifact_sections\n"
-        "Stage Continuation\ninspect-host-cdp-target\n"
+        "Stage Continuation\nFinal Response Guard\ninspect-workflow-closure\n"
+        "workflow-observer\npromote-candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
         "capture-cdp-screenshot\n"
         "do not apply stale feature risk flags\n",
@@ -2712,19 +3033,23 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
     (repo / "ai" / "workflows" / "skill-routing.yml").write_text(
         "internal_skill_root\n.agents/spec-kit/skills\nload_only_selected_skill\n"
         "speckit-fact-layer\nspeckit-test-plan\nspeckit-quality-vision\n"
-        "speckit-acceptance-rubric\nspeckit-ai-self-acceptance\ncommit-message\n",
+        "speckit-acceptance-rubric\nspeckit-ai-self-acceptance\n"
+        "speckit-workflow-observer\nspeckit-promote-knowledge\ncommit-message\n",
         encoding="utf-8",
     )
     (repo / "ai" / "rules" / "ai-coding-rules.md").write_text(
         "Generated Context Drift\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
         "Stage Continuation Contract\nHost Frontend Delivery Chain\n"
         "ensure-host-cdp\n"
-        "Retrospective/留痕 is mandatory before commit\n",
+        "Retrospective/留痕 is mandatory before commit\n"
+        "inspect-workflow-closure\nknowledge-candidates.md\n",
         encoding="utf-8",
     )
     (repo / "spec-kit" / "workflows" / "speckit" / "workflow.yml").write_text(
-        "id: retrospective\nid: commit\nRequire workflow-record.md and improvement-candidates.md before commit\n"
-        "automatic_stage_continuation\ninspect-host-cdp-target\n"
+        "id: retrospective\nid: workflow-observer\nid: commit\nRequire workflow-record.md\n"
+        "knowledge-candidates.md\nworkflow-observation.md\n"
+        "automatic_stage_continuation\npost_human_acceptance_closure\n"
+        "promote_knowledge_candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
         "capture-cdp-screenshot\n"
         "validate-knowledge-index\nvalidate-context-budget\nselect-gates\ncurrent-feature state only\n",
@@ -2751,7 +3076,8 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-retrospective" / "SKILL.md").write_text(
-        "Existing Constraint Audit\nAI workflow self-check\nTeam knowledge candidates\nretrospective.status\n",
+        "Existing Constraint Audit\nAI workflow self-check\nTeam knowledge candidates\n"
+        "knowledge-candidates.md\nworkflow-observer-packet.json\nretrospective.status\n",
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-tasks" / "SKILL.md").write_text(
@@ -2789,6 +3115,9 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         "validate-plugin-package.ps1",
         "post-commit-self-check.ps1",
         "validate-rubric-score.ps1",
+        "inspect-workflow-closure.ps1",
+        "collect-workflow-observer-packet.ps1",
+        "promote-knowledge-candidates.ps1",
         "cleanup-host-cdp.ps1",
         "validate-context-budget.ps1",
         "sync-native-runtime-artifacts.ps1",
@@ -2849,7 +3178,7 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         "ensure-host-cdp\n"
         "stale/current-feature hint\nread the current plan only\n"
         "select-knowledge\nselect-gates\nvalidate-knowledge-index\nvalidate-context-budget\n"
-        "inspect-validation-capabilities\n",
+        "inspect-validation-capabilities\ninspect-workflow-closure\nknowledge-candidates.md\n",
         encoding="utf-8",
     )
     (repo / ".specify" / "memory" / "repository-map.md").write_text(
@@ -2874,7 +3203,8 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
     (repo / "ai" / "workflows" / "task-routing.md").write_text(
         "tasks -> analyze -> checklist\nvalidate-generated-context\nvalidate-knowledge-index\n"
         "validate-context-budget\nselect-knowledge\nselect-gates\nskill-routing.yml\nartifact_sections\n"
-        "Stage Continuation\ninspect-host-cdp-target\n"
+        "Stage Continuation\nFinal Response Guard\ninspect-workflow-closure\n"
+        "workflow-observer\npromote-candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
         "capture-cdp-screenshot\n"
         "do not apply stale feature risk flags\n",
@@ -2883,19 +3213,23 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
     (repo / "ai" / "workflows" / "skill-routing.yml").write_text(
         "internal_skill_root\n.agents/spec-kit/skills\nload_only_selected_skill\n"
         "speckit-fact-layer\nspeckit-test-plan\nspeckit-quality-vision\n"
-        "speckit-acceptance-rubric\nspeckit-ai-self-acceptance\ncommit-message\n",
+        "speckit-acceptance-rubric\nspeckit-ai-self-acceptance\n"
+        "speckit-workflow-observer\nspeckit-promote-knowledge\ncommit-message\n",
         encoding="utf-8",
     )
     (repo / "ai" / "rules" / "ai-coding-rules.md").write_text(
         "Generated Context Drift\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
         "Stage Continuation Contract\nHost Frontend Delivery Chain\n"
         "ensure-host-cdp\n"
-        "Retrospective/留痕 is mandatory before commit\n",
+        "Retrospective/留痕 is mandatory before commit\n"
+        "inspect-workflow-closure\nknowledge-candidates.md\n",
         encoding="utf-8",
     )
     (repo / "spec-kit" / "workflows" / "speckit" / "workflow.yml").write_text(
-        "id: retrospective\nid: commit\nRequire workflow-record.md and improvement-candidates.md before commit\n"
-        "automatic_stage_continuation\ninspect-host-cdp-target\n"
+        "id: retrospective\nid: workflow-observer\nid: commit\nRequire workflow-record.md\n"
+        "knowledge-candidates.md\nworkflow-observation.md\n"
+        "automatic_stage_continuation\npost_human_acceptance_closure\n"
+        "promote_knowledge_candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
         "capture-cdp-screenshot\n"
         "validate-knowledge-index\nvalidate-context-budget\nselect-gates\ncurrent-feature state only\n",
@@ -2922,7 +3256,8 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-retrospective" / "SKILL.md").write_text(
-        "Existing Constraint Audit\nAI workflow self-check\nTeam knowledge candidates\nretrospective.status\n",
+        "Existing Constraint Audit\nAI workflow self-check\nTeam knowledge candidates\n"
+        "knowledge-candidates.md\nworkflow-observer-packet.json\nretrospective.status\n",
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-tasks" / "SKILL.md").write_text(
@@ -2956,6 +3291,9 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         "validate-plugin-package.ps1",
         "post-commit-self-check.ps1",
         "validate-rubric-score.ps1",
+        "inspect-workflow-closure.ps1",
+        "collect-workflow-observer-packet.ps1",
+        "promote-knowledge-candidates.ps1",
         "cleanup-host-cdp.ps1",
         "validate-context-budget.ps1",
         "sync-native-runtime-artifacts.ps1",
@@ -3061,6 +3399,8 @@ def test_validate_feature_artifacts_blocks_commit_without_retrospective(tmp_path
 
     (feature_dir / "workflow-record.md").write_text("# Workflow Record\n", encoding="utf-8")
     (feature_dir / "improvement-candidates.md").write_text("# Improvement Candidates\n", encoding="utf-8")
+    (feature_dir / "knowledge-candidates.md").write_text("# Knowledge Candidates\nstatus: no-candidates\n", encoding="utf-8")
+    (feature_dir / "workflow-observation.md").write_text("# Workflow Observation\n", encoding="utf-8")
     still_blocked = run_ps(
         "validate-feature-artifacts",
         "-FeatureDir",
@@ -3082,6 +3422,8 @@ def test_validate_feature_artifacts_blocks_commit_without_retrospective(tmp_path
                     "status": "completed",
                     "workflow_record": "workflow-record.md",
                     "improvement_candidates": "improvement-candidates.md",
+                    "knowledge_candidates": "knowledge-candidates.md",
+                    "workflow_observation": "workflow-observation.md",
                 },
                 "promotion": {},
             }

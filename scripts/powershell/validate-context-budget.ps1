@@ -60,7 +60,9 @@ function Get-InternalSkillBudget {
         "speckit-acceptance" = 230
         "speckit-checklist" = 230
         "speckit-constitution" = 220
+        "speckit-workflow-observer" = 160
         "speckit-promote-lessons" = 210
+        "speckit-promote-knowledge" = 160
         "speckit-commit" = 180
     }
     if ($budgets.ContainsKey($Name)) { return [int]$budgets[$Name] }

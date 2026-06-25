@@ -31,6 +31,7 @@ try {
             Set-KnowledgePackBlocked $result ("pack validation failed: " + (($validation.blockers) -join "; "))
         } else {
             $info = Get-KnowledgePackInfo -PackRoot $packRoot
+            $packSlug = ConvertTo-KnowledgePackSlug -Value $info.id
             $knowledgeRoot = Join-Path $root ".specify\knowledge"
             $packsRoot = Join-Path $knowledgeRoot "packs"
             $baseRoot = Join-Path $knowledgeRoot "base\ai\knowledge"
@@ -41,18 +42,24 @@ try {
                 Copy-KnowledgePackDirectory -Source $activeKnowledge -Destination $baseRoot
             }
 
-            $destination = Join-Path $packsRoot $info.id
+            $destination = Join-Path $packsRoot $packSlug
             if ((Test-Path -LiteralPath $destination) -and -not $Force) {
-                Set-KnowledgePackBlocked $result "Pack is already installed; pass -Force to replace: $($info.id)"
+                Set-KnowledgePackBlocked $result "Pack is already installed; pass -Force to replace: $packSlug"
             } else {
                 if (Test-Path -LiteralPath $destination) {
                     Remove-KnowledgePackDirectorySafe -Root $packsRoot -Path $destination
                 }
                 Copy-KnowledgePackDirectory -Source $packRoot -Destination $destination
+                $installRecord = Write-KnowledgePackInstallRecord -RepoRoot $root -PackRoot $destination -InstalledPath $destination -Info $info -Validation $validation -SourcePath $packRoot
                 $result.facts.repo_root = $root
                 $result.facts.pack_id = $info.id
+                $result.facts.pack_slug = $packSlug
                 $result.facts.version = $info.version
                 $result.facts.installed_path = $destination
+                $result.facts.install_record = $installRecord.path
+                $result.facts.install_record_index = $installRecord.index
+                $result.facts.tree_sha256 = $installRecord.tree_sha256
+                $result.facts.file_count = $installRecord.file_count
                 $result.facts.base_knowledge = $baseRoot
                 $result.facts.validation = $validation
                 $result.hints += "Run apply-knowledge-pack.ps1 to materialize installed pack knowledge into ai/knowledge."

@@ -88,21 +88,32 @@ try {
             foreach ($layerName in @("skills", "tools", "scripts", "commands", "prompts", "resources", "templates")) {
                 $layer = $layers[$layerName]
                 if (-not $layer.present) { continue }
-                $layerDestination = Join-Path $capabilityMaterialized "$layerName\$($info.id)"
+                $layerDestination = Join-Path $capabilityMaterialized "$layerName\$slug"
                 Copy-KnowledgePackDirectory -Source $layer.path -Destination $layerDestination
                 $capabilityApplied += [ordered]@{
-                    pack_id = $info.id
+                    pack_id = $slug
                     layer = $layerName
-                    materialized_path = ".specify/capabilities/materialized/$layerName/$($info.id)"
+                    materialized_path = ".specify/capabilities/materialized/$layerName/$slug"
                 }
             }
             $packAliases = Read-KnowledgeToolAliases -PackRoot $packRoot
             foreach ($key in $packAliases.Keys) { $aliases[$key] = $packAliases[$key] }
+            $installRecord = Get-KnowledgePackInstallRecord -RepoRoot $root -PackId $slug
+            $recordRelative = ".specify/knowledge/records/$slug.json"
+            $treeSha256 = ""
+            if ($null -ne $installRecord -and $installRecord.hashes -and $installRecord.hashes.tree_sha256) {
+                $treeSha256 = $installRecord.hashes.tree_sha256
+            } else {
+                $treeSha256 = Get-KnowledgePackTreeHash -PackRoot $packRoot
+            }
             $applied += [ordered]@{
                 id = $info.id
+                slug = $slug
                 version = $info.version
                 compose_strategy = $strategy
-                installed_path = ".specify/knowledge/packs/$($info.id)"
+                installed_path = ".specify/knowledge/packs/$slug"
+                install_record = $recordRelative
+                tree_sha256 = $treeSha256
             }
         }
 
@@ -126,7 +137,7 @@ try {
 
             $publishedCapabilities = @()
             foreach ($pack in $applied) {
-                $packIdForPublish = $pack.id
+                $packIdForPublish = $pack.slug
                 $skillsStage = Join-Path $capabilityMaterialized "skills\$packIdForPublish"
                 if (Test-Path -LiteralPath $skillsStage -PathType Container) {
                     $skillsTargetRoot = Join-Path $root ".agents\spec-kit\skills"
@@ -183,9 +194,12 @@ try {
             )
             foreach ($pack in $applied) {
                 $lock += "  - id: `"$($pack.id)`""
+                $lock += "    slug: `"$($pack.slug)`""
                 $lock += "    version: `"$($pack.version)`""
                 $lock += "    compose_strategy: `"$($pack.compose_strategy)`""
                 $lock += "    installed_path: `"$($pack.installed_path)`""
+                $lock += "    install_record: `"$($pack.install_record)`""
+                $lock += "    tree_sha256: `"$($pack.tree_sha256)`""
             }
             $lock += "aliases_applied:"
             if ($aliases.Count -eq 0) {
@@ -207,8 +221,11 @@ try {
             )
             foreach ($pack in $applied) {
                 $capabilityLock += "  - id: `"$($pack.id)`""
+                $capabilityLock += "    slug: `"$($pack.slug)`""
                 $capabilityLock += "    version: `"$($pack.version)`""
                 $capabilityLock += "    installed_path: `"$($pack.installed_path)`""
+                $capabilityLock += "    install_record: `"$($pack.install_record)`""
+                $capabilityLock += "    tree_sha256: `"$($pack.tree_sha256)`""
             }
             $capabilityLock += "published:"
             if ($publishedCapabilities.Count -eq 0) {

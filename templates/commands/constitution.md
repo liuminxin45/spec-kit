@@ -150,7 +150,7 @@ Use these defaults unless the user explicitly overrides them:
      same local spec branch.
    - A Spec is complete only after user acceptance, required commit work, and
      all affected repositories cherry-pick the spec branch commits back to the
-     configured base branch.
+     entry branch recorded at spec branch creation.
    - Branch completion keeps the local spec branch by default; deletion is not
      part of the default workflow.
    - The agent must request and receive explicit user confirmation before

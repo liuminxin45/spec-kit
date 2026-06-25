@@ -3,15 +3,14 @@ description: Prepare and create confirmed multi-repository commits with the Core
 scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json -IncludeTasks
   preflight_ps: scripts/powershell/validate-feature-artifacts.ps1 -Json -Stage commit -FeatureDir <feature-dir>
+  closure_ps: scripts/powershell/inspect-workflow-closure.ps1 -Json -FeatureDir <feature-dir> -Stage commit
   validate_message_ps: scripts/powershell/validate-commit-message.ps1 -Json -MessageFile <message-file>
 ---
 
 ## User Input
-
 ```text
 $ARGUMENTS
 ```
-
 ## Context Contract
 
 Default context is `AGENTS.md`, `.specify/workspace.yml`, `.specify/memory/repository-map.md`, `.specify/feature.json` when present, and `ai/workflows/task-routing.md`.
@@ -20,16 +19,16 @@ Scripts provide `facts`, `blockers`, `unknowns`, and `hints`; LLM owns semantic 
 Keep this command stage-specific. Do not duplicate long-term governance prose here.
 
 ## Stage Continuation Rule
-
 Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md`; if this stage cannot execute the next required stage, report `blockers` and `next_required_human_action`.
-
 ## Purpose
 
 Commit accepted Spec Kit work automatically after implementation, validation,
 user acceptance, and retrospective/留痕 are complete. Lesson promotion remains
-conditional and only applies to human-approved retrospective candidates. This
-stage changes local git history only when all deterministic gates pass; it does
-not require a second manual confirmation.
+conditional and only applies to human-approved retrospective candidates.
+Project knowledge promotion remains conditional and only applies to approved
+`knowledge-candidates.md` entries. This stage changes local git history only
+when all deterministic gates pass; it does not require a second manual
+confirmation.
 
 ## Language Rules
 
@@ -52,23 +51,33 @@ not require a second manual confirmation.
    - `FEATURE_DIR/acceptance-checklist.md`
    - `FEATURE_DIR/workflow-record.md` when present
    - `FEATURE_DIR/improvement-candidates.md` when present
+   - `FEATURE_DIR/knowledge-candidates.md` when present
+   - `FEATURE_DIR/workflow-observation.md` when present
    - `FEATURE_DIR/promotion-report.md` when present
+   - `FEATURE_DIR/knowledge-promotion-report.md` when present
    - `FEATURE_DIR/lessons.md` when present
 3. Confirm acceptance, quick acceptance, AI self-acceptance, test-plan review,
    plugin delivery evidence, and retrospective are passed.
    First run `validate-feature-artifacts` with `--stage commit` /
    `-Stage commit` for the active `FEATURE_DIR`. Treat missing
-   `workflow-record.md`, missing `improvement-candidates.md`, or
+   `workflow-record.md`, missing `improvement-candidates.md`, missing
+   `knowledge-candidates.md`, missing `workflow-observation.md`, or
    `workflow-state.json` `retrospective.status` not equal to `completed` as a
-   hard blocker. Return to `speckit.retrospective`; do not inspect, stage, or
-   commit repository files until this preflight passes.
-   If any of them is missing, stop and return to the required stage.
-   Require `workflow-record.md` and `improvement-candidates.md` before commit.
+   hard blocker. Return to `speckit.retrospective` or
+   `speckit.workflow-observer` according to `inspect-workflow-closure`; do not
+   inspect, stage, or commit repository files until this preflight passes.
+   Require `workflow-record.md`, `improvement-candidates.md`,
+   `knowledge-candidates.md`, and `workflow-observation.md` before commit.
    If retrospective artifacts are missing, stop and return to
    `speckit.retrospective`.
+   If workflow-observer artifacts are missing, stop and return to
+   `speckit.workflow-observer`.
    If approved promotion candidates already exist from a prior retrospective,
    require that promotion was handled before committing Spec Kit process
    changes.
+   If approved knowledge candidates already exist, require
+   `speckit.promote-knowledge` or an explicit decision to defer them before
+   committing knowledge-layer changes.
    Run `validate-test-plan` and require API plus E2E/interface rows, or an
    explicit E2E `N/A` reason with review status.
    Run `validate-ai-self-acceptance` and require `AI Self-Acceptance = PASS`.

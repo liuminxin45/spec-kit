@@ -777,7 +777,10 @@ def init(
             # Install bundled speckit workflow
             try:
                 from ._upgrade import install_bundled_workflow, resolve_upgrade_source
+                from .workflows.catalog import WorkflowRegistry
 
+                wf_registry = WorkflowRegistry(project_path)
+                workflow_should_install = not wf_registry.is_installed("speckit") or force
                 source_info = resolve_upgrade_source(
                     source=None,
                     core_pack=_locate_core_pack(),
@@ -794,6 +797,11 @@ def init(
                     tracker.skip("workflow", "bundled workflow not found")
                 elif workflow_status == "unchanged":
                     tracker.complete("workflow", "already installed")
+                elif workflow_should_install and workflow_status in {"added", "forced-overwrite"}:
+                    tracker.complete(
+                        "workflow",
+                        "speckit refreshed" if force else "speckit installed",
+                    )
                 elif workflow_status == "preserved-customized":
                     tracker.complete("workflow", "customized workflow preserved")
                 else:
@@ -1479,9 +1487,16 @@ def _set_default_integration_or_exit(*args: Any, **kwargs: Any) -> None:
 
 
 def _resolve_project_root_arg(project_dir: str | Path | None = None) -> Path:
-    if project_dir is None or str(project_dir).strip() == "":
-        return Path.cwd()
-    path = Path(project_dir).expanduser()
+    candidate = project_dir
+    if candidate is None or str(candidate).strip() == "":
+        candidate = os.environ.get("SPECIFY_INIT_DIR", "")
+    if candidate is None or str(candidate).strip() == "":
+        current = Path.cwd().resolve()
+        for path in [current, *current.parents]:
+            if (path / ".specify").is_dir():
+                return path
+        return current
+    path = Path(candidate).expanduser()
     if not path.is_absolute():
         path = Path.cwd() / path
     return path.resolve()
@@ -1544,6 +1559,76 @@ def integration_list(
     else:
         console.print("\n[yellow]No integration currently installed.[/yellow]")
         console.print("Install one with: [cyan]specify integration install <key>[/cyan]")
+
+
+@integration_app.command("status")
+def integration_status(
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable integration diagnostics"),
+):
+    """Show project-local integration diagnostics."""
+    from .integrations import INTEGRATION_REGISTRY
+
+    project_root = _require_specify_project()
+    current = _read_integration_json(project_root)
+    default_key = _default_integration_key(current) or ""
+    installed_keys = _installed_integration_keys(current)
+    integrations: list[dict[str, Any]] = []
+
+    for key in sorted(INTEGRATION_REGISTRY.keys()):
+        integration = INTEGRATION_REGISTRY[key]
+        cfg = integration.config or {}
+        folder = str(cfg.get("folder", ""))
+        commands_subdir = str(cfg.get("commands_subdir", ""))
+        internal_subdir = str(cfg.get("internal_skills_subdir", ""))
+        context_file = getattr(integration, "context_file", "")
+        paths = {
+            "folder": str(project_root / folder) if folder else "",
+            "commands_dir": str(project_root / folder / commands_subdir) if folder and commands_subdir else "",
+            "internal_skills_dir": str(project_root / folder / internal_subdir) if folder and internal_subdir else "",
+            "context_file": str(project_root / context_file) if context_file else "",
+        }
+        path_status = {
+            name: (Path(value).exists() if value else False)
+            for name, value in paths.items()
+        }
+        integrations.append(
+            {
+                "key": key,
+                "name": cfg.get("name", key),
+                "installed": key in installed_keys,
+                "default": key == default_key,
+                "requires_cli": bool(cfg.get("requires_cli", False)),
+                "multi_install_safe": bool(getattr(integration, "multi_install_safe", False)),
+                "paths": paths,
+                "path_status": path_status,
+                "exposed_skill_names": list(cfg.get("exposed_skill_names", [])),
+            }
+        )
+
+    payload = {
+        "project_root": str(project_root),
+        "integration_state_path": str(project_root / INTEGRATION_JSON),
+        "integration_state_exists": (project_root / INTEGRATION_JSON).is_file(),
+        "codex_only": True,
+        "default_integration": default_key,
+        "installed_integrations": installed_keys,
+        "integrations": integrations,
+    }
+
+    if json_output:
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        return
+
+    console.print("\n[bold cyan]Integration Status[/bold cyan]")
+    console.print(f"Project: [cyan]{payload['project_root']}[/cyan]")
+    console.print(f"Default: [cyan]{default_key or 'none'}[/cyan]")
+    console.print(f"Installed: [cyan]{', '.join(installed_keys) if installed_keys else 'none'}[/cyan]")
+    for item in integrations:
+        state = "default" if item["default"] else "installed" if item["installed"] else "available"
+        console.print(f"\n[bold]{item['key']}[/bold] ({state})")
+        for path_name, exists in item["path_status"].items():
+            style = "green" if exists else "yellow"
+            console.print(f"  {path_name}: [{style}]{'ok' if exists else 'missing'}[/{style}] {item['paths'][path_name]}")
 
 
 @integration_app.command("install")
@@ -4563,6 +4648,33 @@ workflow_catalog_app = typer.Typer(
     add_completion=False,
 )
 
+def _parse_workflow_inputs(input_values: list[str] | None) -> dict[str, Any]:
+    inputs: dict[str, Any] = {}
+    if input_values:
+        for kv in input_values:
+            if "=" not in kv:
+                console.print(f"[red]Error:[/red] Invalid input format: {kv!r} (expected key=value)")
+                raise typer.Exit(1)
+            key, _, value = kv.partition("=")
+            inputs[key.strip()] = value.strip()
+    return inputs
+
+
+def _workflow_state_payload(state: Any, project_root: Path) -> dict[str, Any]:
+    run_dir = project_root / ".specify" / "workflows" / "runs" / state.run_id
+    return {
+        "run_id": state.run_id,
+        "workflow_id": state.workflow_id,
+        "status": state.status.value,
+        "current_step_index": state.current_step_index,
+        "current_step_id": state.current_step_id,
+        "created_at": state.created_at,
+        "updated_at": state.updated_at,
+        "inputs": state.inputs,
+        "step_results": state.step_results,
+        "run_dir": str(run_dir),
+    }
+
 
 @workflow_app.command("run")
 def workflow_run(
@@ -4570,13 +4682,15 @@ def workflow_run(
     input_values: list[str] | None = typer.Option(
         None, "--input", "-i", help="Input values as key=value pairs"
     ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable run state JSON"),
 ):
     """Run a workflow from an installed ID or local YAML path."""
     from .workflows.engine import WorkflowEngine
 
     project_root = _require_specify_project()
     engine = WorkflowEngine(project_root)
-    engine.on_step_start = lambda sid, label: console.print(f"  -> [{sid}] {label} ...")
+    if not json_output:
+        engine.on_step_start = lambda sid, label: console.print(f"  -> [{sid}] {label} ...")
 
     try:
         definition = engine.load_workflow(source)
@@ -4595,18 +4709,11 @@ def workflow_run(
             console.print(f"  - {err}")
         raise typer.Exit(1)
 
-    # Parse inputs
-    inputs: dict[str, Any] = {}
-    if input_values:
-        for kv in input_values:
-            if "=" not in kv:
-                console.print(f"[red]Error:[/red] Invalid input format: {kv!r} (expected key=value)")
-                raise typer.Exit(1)
-            key, _, value = kv.partition("=")
-            inputs[key.strip()] = value.strip()
+    inputs = _parse_workflow_inputs(input_values)
 
-    console.print(f"\n[bold cyan]Running workflow:[/bold cyan] {definition.name} ({definition.id})")
-    console.print(f"[dim]Version: {definition.version}[/dim]\n")
+    if not json_output:
+        console.print(f"\n[bold cyan]Running workflow:[/bold cyan] {definition.name} ({definition.id})")
+        console.print(f"[dim]Version: {definition.version}[/dim]\n")
 
     try:
         state = engine.execute(definition, inputs)
@@ -4616,6 +4723,12 @@ def workflow_run(
     except Exception as exc:
         console.print(f"[red]Workflow failed:[/red] {exc}")
         raise typer.Exit(1)
+
+    if json_output:
+        sys.stdout.write(json.dumps(_workflow_state_payload(state, project_root), ensure_ascii=False, indent=2) + "\n")
+        if state.status.value in {"failed", "aborted"}:
+            raise typer.Exit(1)
+        return
 
     status_colors = {
         "completed": "green",
@@ -4636,15 +4749,25 @@ def workflow_run(
 @workflow_app.command("resume")
 def workflow_resume(
     run_id: str = typer.Argument(..., help="Run ID to resume"),
+    input_values: list[str] | None = typer.Option(
+        None, "--input", "-i", help="Input values to merge before resume, as key=value pairs"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable run state JSON"),
 ):
     """Resume a paused or failed workflow run."""
-    from .workflows.engine import WorkflowEngine
+    from .workflows.engine import RunState, WorkflowEngine
 
     project_root = _require_specify_project()
     engine = WorkflowEngine(project_root)
-    engine.on_step_start = lambda sid, label: console.print(f"  -> [{sid}] {label} ...")
+    if not json_output:
+        engine.on_step_start = lambda sid, label: console.print(f"  -> [{sid}] {label} ...")
 
     try:
+        merged_inputs = _parse_workflow_inputs(input_values)
+        if merged_inputs:
+            state_for_update = RunState.load(run_id, project_root)
+            state_for_update.inputs.update(merged_inputs)
+            state_for_update.save()
         state = engine.resume(run_id)
     except FileNotFoundError:
         console.print(f"[red]Error:[/red] Run not found: {run_id}")
@@ -4663,6 +4786,11 @@ def workflow_resume(
         "aborted": "red",
     }
     color = status_colors.get(state.status.value, "white")
+    if json_output:
+        sys.stdout.write(json.dumps(_workflow_state_payload(state, project_root), ensure_ascii=False, indent=2) + "\n")
+        if state.status.value in {"failed", "aborted"}:
+            raise typer.Exit(1)
+        return
     console.print(f"\n[{color}]Status: {state.status.value}[/{color}]")
     if state.status.value in {"failed", "aborted"}:
         raise typer.Exit(1)
@@ -4671,6 +4799,7 @@ def workflow_resume(
 @workflow_app.command("status")
 def workflow_status(
     run_id: str | None = typer.Argument(None, help="Run ID to inspect (shows all if omitted)"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable run state JSON"),
 ):
     """Show workflow run status."""
     from .workflows.engine import WorkflowEngine
@@ -4685,6 +4814,10 @@ def workflow_status(
         except FileNotFoundError:
             console.print(f"[red]Error:[/red] Run not found: {run_id}")
             raise typer.Exit(1)
+
+        if json_output:
+            sys.stdout.write(json.dumps(_workflow_state_payload(state, project_root), ensure_ascii=False, indent=2) + "\n")
+            return
 
         status_colors = {
             "completed": "green",
@@ -4713,6 +4846,9 @@ def workflow_status(
                 console.print(f"    [{sc}]*[/{sc}] {step_id}: {s}")
     else:
         runs = engine.list_runs()
+        if json_output:
+            sys.stdout.write(json.dumps({"runs": runs}, ensure_ascii=False, indent=2) + "\n")
+            return
         if not runs:
             console.print("[yellow]No workflow runs found.[/yellow]")
             return

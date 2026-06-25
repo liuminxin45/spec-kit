@@ -1,6 +1,7 @@
 workspace:
   root: "."
   primary_repo: "CoreRuntime"
+  # Fallback only. create-spec-branch records the actual entry branch per repo.
   default_base_branch: "master"
 
 branch_policy:
@@ -19,6 +20,17 @@ branch_policy:
   require_user_confirmation_before_commit: false
   delete_local_spec_branch_after_merge: false
   keep_local_spec_branch_after_merge: true
+
+spec_persistence:
+  # How feature specs evolve after delivery:
+  # - flow-back: keep feature artifacts, then promote durable lessons through retrospective.
+  # - flow-forward: keep historical specs immutable and create follow-up specs for changed behavior.
+  # - living-spec: maintain a current product spec in addition to feature artifacts.
+  model: "flow-back"
+  keep_feature_artifacts: true
+  promote_only_with_human_approval: true
+  durable_knowledge_target: "ai/knowledge"
+  repack_after_approved_promotion: false
 
 repositories:
   - name: "CoreRuntime"

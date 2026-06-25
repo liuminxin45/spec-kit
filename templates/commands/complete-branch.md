@@ -1,9 +1,10 @@
 ---
-description: Preflight and complete local Spec branches by cherry-picking to master while keeping the Spec branch.
+description: Preflight and complete local Spec branches by cherry-picking to the recorded entry branch while keeping the Spec branch.
 scripts:
   ps: scripts/powershell/complete-spec-branches.ps1 -Json -PreflightOnly
   self_check_ps: scripts/powershell/post-commit-self-check.ps1 -Json -FeatureDir <feature-dir>
   rubric_ps: scripts/powershell/validate-rubric-score.ps1 -Json -FeatureDir <feature-dir>
+  closure_ps: scripts/powershell/inspect-workflow-closure.ps1 -Json -FeatureDir <feature-dir> -Stage complete-branch
 ---
 
 ## User Input
@@ -28,8 +29,9 @@ Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md
 Complete the accepted local Spec branch automatically only after commit,
 retrospective/留痕, one post-commit self-check, and final Rubric gates are
 complete. This is the final local delivery operation. The default is:
-preflight, cherry-pick into `master`, 保留 spec branch, 不删除 the local Spec
-branch, and 不 push.
+preflight, switch back to the entry branch recorded when the spec branch was
+created, cherry-pick the local spec commits there, 保留 spec branch, 不删除 the
+local Spec branch, and 不 push.
 
 ## Language Rules
 
@@ -39,22 +41,26 @@ branch, and 不 push.
 
 ## Execution Steps
 
-1. Run `post-commit-self-check` exactly once for the active feature. If it
+1. Run `inspect-workflow-closure`; continue only when it returns `ok` and
+   `facts.next_required_stage` is empty.
+2. Run `post-commit-self-check` exactly once for the active feature. If it
    produces deterministic fixes, amend the commit once and do not repeat this
    self-check.
-2. Run `validate-rubric-score` for the active feature. The final Rubric score
+3. Run `validate-rubric-score` for the active feature. The final Rubric score
    must have been produced after the self-check, not during plan/implement/
    acceptance. Block complete-branch when hard gates fail, total score is below
    90, any L1-L5 score is missing, any dimension below 80 lacks blocker or
    accepted-gap evidence, evidence paths or deduction reasons are missing, or
    the complete-branch allow/deny conclusion is missing.
-3. Run the configured preflight-only completion script from the Spec Kit
+4. Run the configured preflight-only completion script from the Spec Kit
    repository root:
    - PowerShell: `.specify/scripts/powershell/complete-spec-branches.ps1 -Json -PreflightOnly`
-4. Parse and show the preflight result for every affected repository:
+5. Parse and show the preflight result for every affected repository:
    - Repository path.
    - Current branch.
-   - Base branch, default `master`.
+   - Completion target branch: the recorded entry branch from
+     `.specify/feature.json` `completion_targets`, or an explicit `-BaseBranch`
+     override when supplied.
    - Local spec branch.
    - Dirty state.
    - Dirty classification: tracked source changes, generated/temp/excluded
@@ -62,13 +68,14 @@ branch, and 不 push.
    - Whether the spec branch exists.
    - Whether cherry-pick is safe.
    - Whether any upstream/remote tracking exists.
-   - Remote divergence for the base branch when an upstream exists: ahead,
+   - Remote divergence for the completion target branch when an upstream exists: ahead,
      behind, or no upstream.
    - Retrospective gate status. `workflow-record.md` and
-     `improvement-candidates.md` must both exist for the active feature; if
-     either is missing, stop and run `speckit.retrospective` before completing
-     the branch.
-5. If preflight reports dirty files, classify before completion:
+     `improvement-candidates.md`, `knowledge-candidates.md`, and
+     `workflow-observation.md` must exist for the active feature; if any are
+     missing, stop and run the closure gate's next required stage before
+     completing the branch.
+6. If preflight reports dirty files, classify before completion:
    - Tracked modifications, staged changes, deleted files, or untracked files
      in repositories that still have spec commits to cherry-pick are blockers
      unless the correct handling is clear from source evidence.
@@ -85,10 +92,10 @@ branch, and 不 push.
    partially cherry-pick repositories.
 7. Complete the branch automatically:
    - Run the completion script or native git commands in a way that
-     cherry-picks the local spec branch commits into the base branch across all
-     affected repositories.
-   - Cherry-pick target is `master` unless the feature explicitly configured
-     another base branch.
+     cherry-picks the local spec branch commits into the recorded entry branch
+     across all affected repositories.
+   - Cherry-pick target is the recorded entry branch for each repository unless
+     the caller explicitly supplied `-BaseBranch`.
    - The local spec branch is kept.
    - The command does not delete local branches.
    - The command does not push or create remote tracking.
@@ -100,16 +107,16 @@ branch, and 不 push.
      output, workbench screenshots, and host descriptor mocks. Do not ignore
      tracked source changes or unclassified dirty files that may belong to the
      spec branch being completed.
-   - Switch every affected repository that can be safely handled back to the
-     base branch, including repositories that are already up to date or have no
-     commits to cherry-pick.
+   - Switch every affected repository that can be safely handled back to its
+     recorded entry branch, including repositories that are already up to date
+     or have no commits to cherry-pick.
    - Pass or emulate keep-branch behavior so the spec branch remains available.
    - If the packaged script only supports deletion by default, do not use the
      deleting path; perform a safe cherry-pick sequence that preserves the
      branch and record that choice.
 8. Verify final repository state:
-   - Current branch is the base branch in every affected repository, including
-     repositories that did not produce a new cherry-pick commit.
+   - Current branch is the recorded entry branch in every affected repository,
+     including repositories that did not produce a new cherry-pick commit.
    - Spec branch still exists.
    - No remote push occurred.
    - No remote tracking was created by this stage.
@@ -122,8 +129,9 @@ branch, and 不 push.
 - Never run before the one post-commit self-check completes.
 - Never run before final Rubric score is emitted and `validate-rubric-score`
   passes.
-- Treat missing `workflow-record.md` or `improvement-candidates.md` as a hard
-  completion blocker, even if the user says "进入下一阶段".
+- Treat missing `workflow-record.md`, `improvement-candidates.md`,
+  `knowledge-candidates.md`, or `workflow-observation.md` as a hard completion
+  blocker, even if the user says "进入下一阶段".
 - Never delete the local spec branch by default.
 - Never push from this stage.
 - Do not hide unrelated dirty source work; report it and stop only if it blocks
@@ -144,6 +152,6 @@ Report in Chinese:
 - Cherry-pick result per repository.
 - Any ignored temporary/generated dirty entries or automatically resolved
   artifact conflicts.
-- Confirmation that the workflow cherry-picked to `master` or the configured
-  base branch.
+- Confirmation that the workflow cherry-picked to the recorded entry branch, or
+  the explicit `-BaseBranch` override when one was supplied.
 - Confirmation that it did 保留 spec branch, 不删除 it, and 不 push.

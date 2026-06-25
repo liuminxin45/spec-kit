@@ -55,8 +55,8 @@ inputs:
     prompt: "Workflow weight profile"
   base_branch:
     type: string
-    default: "master"
-    prompt: "Base branch for final local cherry-pick"
+    default: ""
+    prompt: "Optional override branch for final local cherry-pick; empty uses the entry branch recorded when the spec branch was created"
   include_spec_docs:
     type: string
     default: "ask"
@@ -122,7 +122,14 @@ steps:
     integration: "{{ inputs.integration }}"
     skip_profiles: ["validation-only", "blocked-investigation"]
     input:
-      args: "Implement from plan slices, tasks.md when present, or micro-fix evidence. Keep searches bounded to affected repos. Update progress.md. Required validation belongs here. After any code change, run speckit-ai-self-acceptance against acceptance-rubric.md; PASS may continue to acceptance, FAIL loops to implement/fact-layer, BLOCKED requires a true external dependency. If a first UI/CSS/layout patch fails, stop and collect/request runtime DOM/CSS/computed style/box metrics before a second patch. Product and plugin fixes must target repository source, not installed runtime plugin directories or built artifacts. For host-embedded frontend plugin source edits, follow source edit -> frontend build -> direct runtime replacement -> real host CDP verification, first running ensure-host-cdp with safe process recovery to reuse, launch, kill verified HostApplication debug blockers, or diagnose the real host instead of jumping to manual acceptance. For native plugin source edits, build/package or export native output, sync explicit runtime artifacts with sync-native-runtime-artifacts when validating locally, validate RPC proto bundle fields when bridge/proto changes, restart host, then run real host/CDP validation. Do not commit, push, merge, or delete branches."
+      args: "Implement from plan slices, tasks.md when present, or micro-fix evidence. Keep searches bounded to affected repos. Update progress.md. Required validation belongs here. After any code change, run speckit-ai-self-acceptance against acceptance-rubric.md; PASS may continue to converge, FAIL loops to implement/fact-layer, BLOCKED requires a true external dependency. If a first UI/CSS/layout patch fails, stop and collect/request runtime DOM/CSS/computed style/box metrics before a second patch. Product and plugin fixes must target repository source, not installed runtime plugin directories or built artifacts. For host-embedded frontend plugin source edits, follow source edit -> frontend build -> direct runtime replacement -> real host CDP verification, first running ensure-host-cdp with safe process recovery to reuse, launch, kill verified HostApplication debug blockers, or diagnose the real host instead of jumping to manual acceptance. For native plugin source edits, build/package or export native output, sync explicit runtime artifacts with sync-native-runtime-artifacts when validating locally, validate RPC proto bundle fields when bridge/proto changes, restart host, then run real host/CDP validation. Do not commit, push, merge, or delete branches."
+
+  - id: converge
+    command: speckit.converge
+    integration: "{{ inputs.integration }}"
+    skip_profiles: ["validation-only", "blocked-investigation"]
+    input:
+      args: "After implementation and before human acceptance, reconcile promised behavior against delivered code/test/runtime evidence. Write convergence.md. If fixable gaps remain, return to speckit.implement with exact missing items; if only accepted gaps or true external blockers remain, record evidence. Only convergence status passed may continue to acceptance."
 
   - id: acceptance
     command: speckit.acceptance
@@ -143,14 +150,21 @@ steps:
     integration: "{{ inputs.integration }}"
     skip_profiles: ["validation-only", "blocked-investigation"]
     input:
-      args: "After acceptance and before commit, write Chinese-first workflow-record.md and improvement-candidates.md. Record key user inputs, AI outputs, validation evidence, errors/rework, Accepted Gaps, local-only/ignored artifact visibility, and only high-value improvement candidates. Use an automation-first filter: prefer scripts, deterministic checks, generated facts, or rule-based gates over LLM/AI judgment when possible. Do not promote lessons, commit, or mutate branches/remotes."
+      args: "After acceptance and before commit, write Chinese-first workflow-record.md, improvement-candidates.md, and knowledge-candidates.md. Record key user inputs, AI outputs, validation evidence, errors/rework, Accepted Gaps, local-only/ignored artifact visibility, and only high-value improvement candidates. Use an automation-first filter: prefer scripts, deterministic checks, generated facts, or rule-based gates over LLM/AI judgment when possible. Do not promote lessons or knowledge, commit, or mutate branches/remotes."
+
+  - id: workflow-observer
+    command: speckit.workflow-observer
+    integration: "{{ inputs.integration }}"
+    skip_profiles: ["validation-only", "blocked-investigation"]
+    input:
+      args: "After retrospective and before any promotion or commit, collect workflow-observer-packet.json with collect-workflow-observer-packet, then write workflow-observation.md from a bounded context: observer packet, workflow.yml, task-routing.md, and only missing feature artifacts named by the packet. Identify expected path vs actual path, missing stages, root cause category, smallest repair location, and whether to raise a long-term Spec Kit improvement candidate."
 
   - id: commit
     command: speckit.commit
     integration: "{{ inputs.integration }}"
     skip_profiles: ["validation-only", "blocked-investigation"]
     input:
-      args: "Inspect scope and source/runtime consistency only after retrospective/留痕 is complete. Require workflow-record.md and improvement-candidates.md before commit. Also require workflow-state.json retrospective.status=completed, AI Self-Acceptance PASS, reviewed API/E2E test plan or explicit N/A, and applicable plugin .plugin package evidence before commit. Resolve spec-doc inclusion from include_spec_docs={{ inputs.include_spec_docs }} or deterministic feature policy; default to exclude generated spec docs when no policy exists. Use the commit-message skill, validate the exact message, stage only approved source/test/spec scope, commit automatically when gates pass, validate the post-commit message, and do not push."
+      args: "Inspect scope and source/runtime consistency only after retrospective/留痕 and workflow-observer are complete. Require workflow-record.md, improvement-candidates.md, knowledge-candidates.md, and workflow-observation.md before commit. Also require workflow-state.json retrospective.status=completed, AI Self-Acceptance PASS, reviewed API/E2E test plan or explicit N/A, and applicable plugin .plugin package evidence before commit. Resolve spec-doc inclusion from include_spec_docs={{ inputs.include_spec_docs }} or deterministic feature policy; default to exclude generated spec docs when no policy exists. Use the commit-message skill, validate the exact message, stage only approved source/test/spec scope, commit automatically when gates pass, validate the post-commit message, and do not push."
 
   - id: post-commit-self-check
     command: speckit.post-commit-self-check
@@ -171,7 +185,7 @@ steps:
     integration: "{{ inputs.integration }}"
     skip_profiles: ["validation-only", "blocked-investigation"]
     input:
-      args: "Final automated local operation after retrospective/留痕, commit, one post-commit self-check, and rubric-score pass. Preflight first, classify generated/temp/excluded dirty entries, report remote divergence, then cherry-pick local spec branch commits to {{ inputs.base_branch }}, keep the spec branch, switch every affected repository back to base, and do not push or create remote tracking. Do not create merge commits."
+      args: "Final automated local operation after retrospective/留痕, commit, one post-commit self-check, and rubric-score pass. Preflight first, classify generated/temp/excluded dirty entries, report remote divergence, then cherry-pick local spec branch commits to the entry branch recorded by create-spec-branch (or {{ inputs.base_branch }} only when explicitly supplied), keep the spec branch, switch every affected repository back to that recorded branch, and do not push or create remote tracking. Do not create merge commits."
 
 conditional_stages:
   clarify: "Use only for high-impact ambiguity or owner-approved gaps."
@@ -183,6 +197,7 @@ conditional_stages:
   simplify: "Use after acceptance only when behavior-preserving cleanup has clear value."
   test-hardening: "Use only when extra regression protection reduces real risk."
   promote-lessons: "Use only for human-approved improvement candidates."
+  promote-knowledge: "Use only for human-approved knowledge-candidates.md entries; pending or rejected entries are never promoted."
 
 stage_gate_policy:
   automatic_stage_continuation:
@@ -227,6 +242,18 @@ stage_gate_policy:
   knowledge_index_drift:
     command: "validate-knowledge-index"
     rule: "After ai/knowledge/index.yml or guide changes, verify selected guides exist, repository keys match workspace.yml, guides stay bounded, and no machine-specific paths are stored."
+  post_human_acceptance_closure:
+    command: "inspect-workflow-closure"
+    rule: "After human acceptance and before any final response, run closure inspection. Branch policy such as local_only, push_remote=false, or complete_by_cherry_picking_to_base=false never skips retrospective, workflow-observer, post-commit self-check, or rubric-score."
+  final_response_guard:
+    command: "inspect-workflow-closure"
+    rule: "Before final response, if acceptance is passed or a commit/self-check/rubric marker exists, block unless next_required_stage is empty. The agent must run the reported next_required_stage instead of reporting completion."
+  workflow_observer_packet:
+    command: "collect-workflow-observer-packet"
+    rule: "Workflow observer reads only workflow-observer-packet.json, workflow.yml, task-routing.md, and packet-named missing artifacts; it does not load source trees, old specs, or the full knowledge base by default."
+  promote_knowledge_candidates:
+    command: "promote-knowledge-candidates"
+    rule: "Only approved knowledge-candidates.md entries can update ai/knowledge. After promotion, validate-knowledge-index must pass; optional repack uses delta-overlay."
   hostapplication_cdp_target:
     command: "inspect-host-cdp-target"
     rule: "Before host-embedded UI CDP evidence, list /json/list page targets and record selected target id/title/url/webSocketDebuggerUrl. Product UI validation rejects Plugin Workbench, base-win.html, DevTools, blank, and unrelated targets."
@@ -255,4 +282,4 @@ stage_gate_policy:
     rule: "If AI changed code, implementation must continue the build/deploy/CDP/browser/device validation loop until validation.md records AI acceptance PASS or a true external blocker. Human acceptance cannot replace fixable AI-owned validation."
   ai_self_acceptance_gate:
     command: "speckit-ai-self-acceptance"
-    rule: "After code changes, judge acceptance-rubric.md with concrete build/test/CDP/browser/log/runtime evidence. PASS is required before human acceptance; FAIL returns to implement/fact-layer; BLOCKED needs external blocker evidence."
+    rule: "After code changes, judge acceptance-rubric.md with concrete build/test/CDP/browser/log/runtime evidence. PASS is required before converge; FAIL returns to implement/fact-layer; BLOCKED needs external blocker evidence. Converge must pass before human acceptance."

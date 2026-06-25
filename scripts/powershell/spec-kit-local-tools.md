@@ -99,8 +99,8 @@ Executable profile routing for `specify workflow run speckit` is:
 
 ```text
 micro-fix/auto: intake -> specify -> plan -> implement -> acceptance
-              -> human-acceptance gate -> retrospective -> commit
-              -> post-commit-self-check -> rubric-score -> complete-branch
+              -> human-acceptance gate -> retrospective -> workflow-observer
+              -> commit -> post-commit-self-check -> rubric-score -> complete-branch
 standard-bugfix: intake -> specify -> plan -> analyze -> implement -> ...
 full-sdd: intake -> specify -> plan -> tasks -> analyze -> checklist
           -> implement -> ...
@@ -145,8 +145,8 @@ Team policy:
 - Branch creation and completion scripts preflight all workspace repositories
   before mutating branch state.
 - A Spec is complete after all affected repositories cherry-pick the local Spec
-  branch commits back to the configured base branch while keeping the local Spec
-  branch.
+  branch commits back to the entry branch recorded at spec branch creation while
+  keeping the local Spec branch.
 - Cherry-pick completion is automated after commit, one post-commit self-check,
   and Rubric gates pass. The completion command keeps the local Spec branch and
   does not push.

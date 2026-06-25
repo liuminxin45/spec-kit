@@ -59,8 +59,8 @@
 - SdkConsumer 与 ServiceBridge 日志从以下目录读取最新文件：
   `<system-temp>/SDKLog\SDK_*.log` 和
   `<system-temp>/ServiceBridgeLog\ServiceBridge_*.log`。读日志不需要 MCP。
-- `complete-branch` 将本地 spec 分支提交 cherry-pick 到配置的 base 分支，
-  默认保留本地 spec 分支，所有受影响仓库最终切回 base，不 push。
+- `complete-branch` 将本地 spec 分支提交 cherry-pick 到创建 spec 分支时记录的
+  入口分支，默认保留本地 spec 分支，所有受影响仓库最终切回入口分支，不 push。
   It keeps the local spec branch and does not push.
 
 ## 安装与初始化
@@ -176,14 +176,15 @@ specs/<feature>/
 
 ```text
 intake -> plan/micro note -> implement -> validation.md -> acceptance.md
--> retrospective/留痕 -> commit -> complete-branch
+-> retrospective/留痕 -> workflow-observer -> commit
+-> post-commit-self-check -> rubric-score -> complete-branch
 ```
 
 特点：
 
 - 不强制生成 `tasks.md`。
-- retrospective/留痕 是 commit 前的必经记录；轻量修复可以只写
-  简短记录，不扩展成大文档。
+- retrospective/留痕 和 workflow-observer 是 commit 前的必经闭环；轻量
+  修复可以只写简短记录，不扩展成大文档。
 - 不加载大范围长期知识。
 
 ### 标准路径
@@ -193,7 +194,8 @@ intake -> plan/micro note -> implement -> validation.md -> acceptance.md
 ```text
 intake -> specify -> plan with Implementation Slices -> implement
 -> validation.md -> acceptance.md -> retrospective/留痕
--> optional promote-lessons -> commit -> complete-branch
+-> workflow-observer -> optional promote-lessons/promote-knowledge
+-> commit -> post-commit-self-check -> rubric-score -> complete-branch
 ```
 
 特点：
@@ -213,15 +215,17 @@ intake -> specify -> plan with Implementation Slices -> implement
 ```text
 intake -> specify -> plan -> tasks -> analyze/checklist when useful
 -> implement -> validation.md/evidence.md -> acceptance.md
--> retrospective/留痕 -> optional promote-lessons -> commit -> complete-branch
+-> retrospective/留痕 -> workflow-observer
+-> optional promote-lessons/promote-knowledge -> commit
+-> post-commit-self-check -> rubric-score -> complete-branch
 ```
 
 特点：
 
 - 通常需要 `tasks.md`。
 - 可以接受更多证据产物，但必须服务于真实风险降低。
-- retrospective/留痕 是 commit 前默认收尾；promote-lessons 只有人工批准
-  候选时才运行。
+- retrospective/留痕 和 workflow-observer 是 commit 前默认收尾；
+  promote-lessons/promote-knowledge 只有人工批准候选时才运行。
 
 ### 阻塞调查
 
@@ -282,8 +286,9 @@ Agent 应逐步装配上下文：
 ## 已删除或降级的设计
 
 - 默认 16 步工作流：替换为 8 步主链路加条件阶段，避免小修复承担重流程成本。
-- commit 前强制 retrospective：standard/full workflow 在 commit 前强制
-  retrospective/留痕；promote-lessons 仍只处理人工批准候选。
+- commit 前强制 closure：standard/full workflow 在 commit 前强制
+  retrospective/留痕 和 workflow-observer；promote-lessons/promote-knowledge
+  仍只处理人工批准候选。
 - `validation-report.md`：从默认验证模型中移除。validation-only 也使用 `validation.md`。
 - `ai/skills/*` 复制型治理 skill 文档：已移除。只暴露入口 skill 到 `.agents/skills/speckit-specify`；stage/subskill 放在 `.agents/spec-kit/skills`，源 skills 放在 `templates/subskills`。
 - 通用 `knowledge-entry-template.md` 和 `skill-template.md`：已移除，避免鼓励维护低信号抽象。
@@ -302,6 +307,6 @@ Agent 应逐步装配上下文：
 
 - 初始化固定使用 Codex；`specify init` 和 `scripts/powershell/init.ps1` 不再提供其它 AI 初始化路径。
 - 不分发 bundled git extension 和 `taskstoissues`。
-- 本地 spec 分支通过 cherry-pick 完成，不使用 merge。
+- 本地 spec 分支通过 cherry-pick 回记录的入口分支完成，不使用 merge。
 - Codex MCP 配置可选，并采用 npm 方式。
 - source/runtime artifact 一致性是一级门禁。

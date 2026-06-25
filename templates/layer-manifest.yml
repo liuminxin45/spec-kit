@@ -7,7 +7,7 @@ policy:
   semantic_routing_owner: "LLM"
   context_policy: "default-minimal, load-on-demand"
   knowledge_routing: "deterministic-index, no-full-text-search"
-  gate_routing: "deterministic-gate-packs, no-command-manuals"
+  gate_routing: "deterministic-gate-packs, no-command-manuals" # validate-context-budget
 
 artifact_sets:
   default:
@@ -36,6 +36,12 @@ artifact_sets:
     - "spec.md"
     - "plan.md"
     - "workflow-state.json"
+  converge:
+    - "spec.md"
+    - "plan.md"
+    - "progress.md"
+    - "validation.md"
+    - "workflow-state.json"
   full-sdd-implement:
     - "spec.md"
     - "plan.md"
@@ -56,6 +62,8 @@ artifact_sets:
     - "workflow-state.json"
     - "workflow-record.md"
     - "improvement-candidates.md"
+    - "knowledge-candidates.md"
+    - "workflow-observation.md"
   full-sdd-commit:
     - "spec.md"
     - "plan.md"
@@ -65,10 +73,17 @@ artifact_sets:
     - "workflow-state.json"
     - "workflow-record.md"
     - "improvement-candidates.md"
+    - "knowledge-candidates.md"
+    - "workflow-observation.md"
   retrospective:
     - "acceptance.md"
     - "workflow-record.md"
     - "improvement-candidates.md"
+    - "knowledge-candidates.md"
+    - "workflow-observer-packet.json"
+  workflow-observer:
+    - "workflow-observer-packet.json"
+    - "workflow-observation.md"
 
 artifact_sections:
   spec.md:
@@ -243,24 +258,13 @@ layers:
       - "templates/acceptance-rubric-template.md"
       - "templates/tasks-template.md"
       - "templates/workflow-state-template.json"
-      - "templates/commands/intake.md"
-      - "templates/commands/specify.md"
-      - "templates/commands/clarify.md"
-      - "templates/commands/plan.md"
-      - "templates/commands/test-plan.md"
+      - "templates/commands/*.md"
       - "templates/commands/quality-vision.md"
       - "templates/commands/acceptance-rubric.md"
-      - "templates/commands/tasks.md"
-      - "templates/commands/analyze.md"
-      - "templates/commands/checklist.md"
       - "templates/commands/implement.md"
       - "templates/commands/ai-self-acceptance.md"
-      - "templates/commands/bounded-investigation.md"
       - "scripts/powershell/select-gates.ps1"
-      - "scripts/powershell/validate-context-budget.ps1"
-      - "scripts/powershell/validate-fact-layer-gate.ps1"
       - "scripts/powershell/validate-implementation-slices.ps1"
-      - "scripts/powershell/inspect-source-artifact-consistency.ps1"
       - "scripts/powershell/validate-generated-context.ps1"
     generated_assets:
       - "specs/<feature>/spec.md"
@@ -347,20 +351,16 @@ layers:
       - "templates/fact-pack-template.md"
       - "templates/ai/templates/validation-template.md"
       - "templates/ai/templates/evidence-template.md"
-      - "templates/commands/fact-layer.md"
-      - "templates/commands/validation.md"
-      - "templates/commands/acceptance.md"
-      - "templates/commands/simplify.md"
-      - "templates/commands/test-hardening.md"
-      - "templates/commands/retrospective.md"
-      - "templates/commands/promote-lessons.md"
-      - "templates/commands/commit.md"
+      - "templates/commands/*.md"
       - "templates/commands/complete-branch.md"
       - "scripts/powershell/collect-fact-layer.ps1"
       - "scripts/powershell/suggest-validation.ps1"
       - "scripts/powershell/inspect-commit-scope.ps1"
       - "scripts/powershell/complete-spec-branches.ps1"
       - "scripts/powershell/parse-promotion-candidates.ps1"
+      - "scripts/powershell/inspect-workflow-closure.ps1"
+      - "scripts/powershell/collect-workflow-observer-packet.ps1"
+      - "scripts/powershell/promote-knowledge-candidates.ps1"
     generated_assets:
       - "specs/<feature>/validation.md"
       - "specs/<feature>/acceptance.md"
@@ -369,6 +369,10 @@ layers:
       - "specs/<feature>/evidence.md"
       - "specs/<feature>/workflow-record.md"
       - "specs/<feature>/improvement-candidates.md"
+      - "specs/<feature>/knowledge-candidates.md"
+      - "specs/<feature>/workflow-observer-packet.json"
+      - "specs/<feature>/workflow-observation.md"
+      - "specs/<feature>/knowledge-promotion-report.md"
       - "specs/<feature>/promotion-report.md"
     protected_current_behavior:
       - "Default closure is validation.md plus acceptance.md."

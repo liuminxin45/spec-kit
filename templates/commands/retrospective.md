@@ -2,6 +2,7 @@
 description: Record the completed Spec Kit workflow before commit without auto-promoting lessons.
 scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json -IncludeTasks
+  observer_packet_ps: scripts/powershell/collect-workflow-observer-packet.ps1 -Json -FeatureDir <feature-dir>
 ---
 
 ## User Input
@@ -34,7 +35,7 @@ lesson candidate.
 
 This stage writes feature-local retrospective artifacts only. 不自动修改 spec-kit,
 memory, team governance, product code, git history, branch state, remotes, or
-promote lessons into long-term policy.
+promote lessons or knowledge into long-term policy.
 
 ## Language Rules
 
@@ -58,11 +59,8 @@ promote lessons into long-term policy.
      quick acceptance was required after simplify.
    - If acceptance is missing, stop and return to `speckit.acceptance`.
 4. Inspect current repository state for affected repositories:
-   - Current branch.
-   - Changed files.
-   - Validation commands and latest results.
-   - Known untracked temp/generated artifacts that were ignored.
-   - Remaining dirty files that will matter for commit.
+   - Current branch, changed files, validation commands/latest results, ignored
+     temp/generated artifacts, and remaining dirty files that matter for commit.
 5. Create or update `FEATURE_DIR/workflow-record.md` with:
    - Basic feature metadata: feature name, branch, repositories,
      delivery_profile, risk_level, acceptance status.
@@ -130,20 +128,31 @@ promote lessons into long-term policy.
      efficiency, judgment quality, or evidence sufficiency. If it does not
      improve context efficiency, explain why the candidate is still worth
      keeping.
-8. Update `FEATURE_DIR/workflow-state.json` retrospective state:
-   - Set `retrospective.status` to `completed`.
-   - Set `retrospective.workflow_record` to `workflow-record.md`.
-   - Set `retrospective.improvement_candidates` to
-     `improvement-candidates.md`.
-   - Preserve attempts, validations, fact-layer, acceptance, and promotion
-     fields.
-9. Do not modify spec-kit, `.specify/memory`, team governance files, or
+8. Create or update `FEATURE_DIR/knowledge-candidates.md`.
+   - This file records project long-term knowledge candidates only; it never
+     modifies `ai/knowledge` during retrospective.
+   - New candidates must default to `人工审核结论: pending`.
+   - Include source evidence, applicability boundaries, recommended knowledge
+     layer, recommended guide, confidence, and pollution risk.
+   - If no stable reusable project knowledge exists, write
+     `status: no-candidates`.
+9. Run `collect-workflow-observer-packet` to produce
+   `FEATURE_DIR/workflow-observer-packet.json` for the next
+   `speckit.workflow-observer` stage. Do not write `workflow-observation.md`
+   in this stage unless the workflow-observer command is being executed inline.
+10. Update `FEATURE_DIR/workflow-state.json`: set `retrospective.status` to
+    `completed`, link `workflow-record.md`, `improvement-candidates.md`, and
+    `knowledge-candidates.md`, and preserve attempts, validations, fact-layer,
+    acceptance, and promotion fields.
+11. Do not modify spec-kit, `.specify/memory`, team governance files, or
    generated global rules from this stage. High-value lessons require human
    approval before promotion.
-10. Update `review.md` when present so the human navigation page links to
-   `workflow-record.md` and `improvement-candidates.md`.
-11. Continue to `speckit.promote-lessons` only when there are human-approved
-    improvement candidates; otherwise continue to `speckit.commit`.
+12. Update `review.md` when present so the human navigation page links to
+   `workflow-record.md`, `improvement-candidates.md`, and
+   `knowledge-candidates.md`.
+13. Continue to `speckit.workflow-observer`. Only after workflow-observer,
+    continue to `speckit.promote-lessons` or `speckit.promote-knowledge` when
+    there are human-approved candidates; otherwise continue to `speckit.commit`.
 
 ## Workflow Record Template
 
@@ -157,14 +166,12 @@ promote lessons into long-term policy.
 - Delivery profile:
 - Risk level:
 - Final acceptance:
-
 ## 2. 关键用户输入
 - 初始需求:
 - 关键补充:
 - 用户提供的证据:
 - 用户纠偏:
 - 最终验收:
-
 ## 3. AI 输出与动作链
 - 阶段:
 - 输出:
@@ -172,14 +179,12 @@ promote lessons into long-term policy.
 - 验证命令:
 - CDP截图目录:
 - 结果:
-
 ## 4. 错误、返工与状态变化
 - 现象:
 - 错误判断或失败尝试:
 - 暴露问题的证据:
 - 解决动作:
 - 最终验证:
-
 ## 5. 根因归类
 - 信息不足:
 - 运行时证据缺失:
@@ -188,13 +193,11 @@ promote lessons into long-term policy.
 - 工具链问题:
 - 多仓或分支流程问题:
 - 其他:
-
 ## 6. 可复用经验
 - 经验:
 - 适用条件:
 - 不适用条件:
 - 证据:
-
 ## 7. 自动化机会
 - 可新增脚本:
 - 可新增 checklist:
@@ -203,36 +206,30 @@ promote lessons into long-term policy.
 - 可新增测试:
 - 可新增 workflow gate:
 - automation-first 判断:
-
 ## 8. 现有约束审计
 - 相关已有约束:
 - 约束状态:
 - 失败归因:
 - 优先修复位置:
-
 ## 9. 团队知识候选
 - 候选事实:
 - 稳定性判断:
 - 来源证据:
 - 推荐落盘位置:
 - 审核状态:
-
 ## 10. 自动化 / LLM 分工判断
 - 适合规则化/脚本化:
 - 保留 LLM 判断:
 - 避免自动化的原因:
-
 ## 11. Accepted Gaps
 - 已接受缺口:
 - 接受依据:
 - 后续范围:
-
 ## 12. 质量判断
 - 任务输出质量:
 - Spec Kit 流程质量:
 - AI 执行质量:
 - 剩余风险:
-
 ## 13. Rubric 审计评分
 | 维度 | 权重 | 得分/状态 | 证据 | 备注 |
 |------|------|-----------|------|------|
@@ -246,7 +243,6 @@ promote lessons into long-term policy.
 - 总分:
 - 硬门禁结论:
 - 是否可交给人类验收:
-
 ## 14. 高级模型上下文效率复盘
 - 决策关键事实:
 - 本次过量上下文:
@@ -280,11 +276,34 @@ Allowed review states are `pending | approved | rejected`. `retrospective`
 must create new candidates as `pending`. A later `speckit.promote-lessons` stage
 may promote only candidates that a human explicitly changes to `approved`.
 
+## Knowledge Candidates Template
+
+```md
+# 知识候选清单
+
+## Candidate 1
+- 类型: project-knowledge | workflow-rule | validation-evidence | tool-policy
+- 经验:
+- 适用条件:
+- 不适用条件:
+- 推荐知识层:
+- 推荐 guide:
+- source_refs:
+- 置信度: low | medium | high
+- 污染风险:
+- 人工审核结论: pending
+```
+
+Allowed review states are `pending | approved | rejected`. Retrospective must
+create project knowledge candidates as `pending`. A later
+`speckit.promote-knowledge` stage may promote only candidates that a human
+explicitly changes to `approved`.
+
 ## Quality Rules
 
 - Do not treat this stage as acceptance. Acceptance must already be explicit.
-- Do not promote lessons automatically. `pending` candidates are review input,
-  not team policy.
+- Do not promote lessons or knowledge automatically. `pending` candidates are
+  review input, not team policy.
 - Do not ask humans to confirm AI-owned judgments such as test sufficiency or
   root-cause correctness. If the evidence is insufficient, mark the candidate
   as low confidence or omit it.
@@ -318,11 +337,13 @@ Report in Chinese:
 
 - `workflow-record.md` path.
 - `improvement-candidates.md` path.
+- `knowledge-candidates.md` path.
+- `workflow-observer-packet.json` path.
 - `workflow-state.json` retrospective status update.
 - Acceptance evidence used.
 - Highest-value improvement candidates.
 - Confirmation that this stage did not modify spec-kit, memory, team
-  governance, product code, git history, branches, or remotes.
-- Required next stage: `speckit.promote-lessons` / `$speckit-promote-lessons`
-  only if approved candidates exist; otherwise `speckit.commit` /
-  `$speckit-commit`.
+  governance, long-term knowledge, product code, git history, branches, or
+  remotes.
+- Required next stage: `speckit.workflow-observer` /
+  `$speckit-workflow-observer`.

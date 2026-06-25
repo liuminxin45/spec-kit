@@ -41,6 +41,8 @@
     "status": "pending",
     "workflow_record": "",
     "improvement_candidates": "",
+    "knowledge_candidates": "",
+    "workflow_observation": "",
     "language": "Chinese-first, preserving technical identifiers"
   },
   "promotion": {
@@ -48,5 +50,19 @@
     "approved_candidates": [],
     "pending_candidates": [],
     "rejected_candidates": []
+  },
+  "commit": {
+    "status": "pending",
+    "commit_hash": "",
+    "message": ""
+  },
+  "post_commit_self_check": {
+    "status": "pending",
+    "artifact": "post-commit-self-check.md"
+  },
+  "rubric_score": {
+    "status": "pending",
+    "artifact": "rubric-score.md",
+    "overall_weighted_score": null
   }
 }

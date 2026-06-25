@@ -160,7 +160,7 @@
 - [ ] CHK019 该能力使用本地 Spec branch，不需要 remote push、remote tracking
   或 GitHub issue generation。
 - [ ] CHK020 多仓任务已识别每个受影响仓库，并要求它们使用同名本地 Spec branch，
-  完成前合回配置的 base branch。
+  完成前 cherry-pick 回创建 spec 分支时记录的入口分支。
 - [ ] CHK021 分支 cherry-pick 完成动作必须在 agent 执行 completion command 前取得
   用户明确确认；默认保留 spec branch，不删除，不 push。
 - [ ] CHK022 当前阶段完成后的衔接遵守 `ai/workflows/task-routing.md` 中央

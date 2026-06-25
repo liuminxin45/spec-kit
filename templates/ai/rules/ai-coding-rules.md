@@ -151,10 +151,14 @@ or historical process documents unless the current task needs them.
   of the default workflow.
 - Commit and branch completion are automated after hard gates pass; do not push
   or create remote tracking branches.
-- Branch completion cherry-picks spec commits back to base and keeps local spec
-  branches by default.
+- Branch completion cherry-picks spec commits back to the recorded entry branch
+  and keeps local spec branches by default.
 - After commit, run exactly one post-commit self-check, then final Rubric
   scoring. `validate-rubric-score` must pass before complete-branch.
+- Before final response after human acceptance or commit evidence, run
+  `inspect-workflow-closure`; if it reports `next_required_stage`, continue
+  that stage instead of claiming completion. Local branch/push policy does not
+  skip retrospective, workflow-observer, post-commit self-check, or rubric.
 
 ## Long-Term Asset Protection
 
@@ -163,3 +167,6 @@ or historical process documents unless the current task needs them.
 - Retrospective/留痕 is mandatory before commit for standard-bugfix and
   full-sdd delivery. Lesson promotion remains optional and only applies to
   human-approved candidates or explicit audit/promotion requests.
+- `knowledge-candidates.md` is candidate-only. Promote project knowledge into
+  `ai/knowledge` only after explicit human approval, then run
+  `validate-knowledge-index` and optional delta-overlay repack.

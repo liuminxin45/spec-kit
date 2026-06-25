@@ -112,7 +112,8 @@ validation tasks and do not produce implementation slices.
    - Final phase: validation, required test-case update, cleanup,
      documentation, `review.md`, `progress.md`, `lessons.md`, acceptance,
      simplify, quick acceptance, optional test-hardening, retrospective/留痕,
-     optional promote-lessons, commit, and branch completion handoff.
+     workflow-observer, optional promote-lessons/promote-knowledge, commit,
+     post-commit self-check, rubric-score, and branch completion handoff.
    - For `migration`, include source Qt behavior review/parity tasks.
    - For `bugfix`, include repro confirmation and regression-test tasks.
    - For `new-feature`, include contract/design acceptance tasks.
@@ -209,14 +210,17 @@ validation tasks and do not produce implementation slices.
   - Ask for quick user acceptance after simplify.
   - Treat `test-hardening` as optional extra protection, not required
     implementation closure.
-  - Run mandatory `speckit.retrospective` / 留痕 after quick acceptance and before
-    commit; run `speckit.promote-lessons` only for human-approved candidates.
+  - Run mandatory `speckit.retrospective` / 留痕 and
+    `speckit.workflow-observer` after quick acceptance and before commit; run
+    `speckit.promote-lessons` and `speckit.promote-knowledge` only for
+    human-approved candidates.
   - Use `commit-message` skill for commits; stage/commit automatically only
     after commit preflight and message validation pass.
   - After commit, run exactly one post-commit self-check, then final Rubric
     scoring; if self-check amends, do not run another self-check.
-  - Run branch completion only after retrospective/留痕, commit, self-check, and
-    `validate-rubric-score` pass; cherry-pick back to the base branch, 保留 spec
+  - Run branch completion only after retrospective/留痕, workflow-observer,
+    commit, self-check, and `validate-rubric-score` pass; cherry-pick back to
+    the recorded entry branch, 保留 spec
     branch, 不删除 local spec branch by default, and 不 push.
 - Migration tasks must preserve or explicitly change source Qt behavior.
 - UI-interaction or operation-availability migration tasks must trace every Qt
@@ -271,7 +275,7 @@ Report in Chinese:
 - Test-case update gaps or explicit N/A reasons.
 - Implementation Slices summary and any missing slice stop conditions.
 - `review.md`, `progress.md`, and `lessons.md` status.
-- Acceptance/simplify/test-hardening/retrospective/commit/complete-branch
+- Acceptance/simplify/test-hardening/retrospective/workflow-observer/commit/complete-branch
   closure tasks.
 - Post-commit self-check, Rubric score, branch completion task, 保留 spec branch
   policy, and any repositories that still need manual cherry-pick/completion

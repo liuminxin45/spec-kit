@@ -159,6 +159,19 @@ function Test-BranchHasUpstream {
     return ($LASTEXITCODE -eq 0)
 }
 
+function Get-CurrentBranch {
+    param([string]$Path)
+    $branch = git -C $Path rev-parse --abbrev-ref HEAD 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($branch)) {
+        throw "Could not resolve current branch in $Path."
+    }
+    $branch = [string]$branch
+    if ($branch -eq "HEAD") {
+        throw "Detached HEAD is not supported for Spec Kit branch creation in $Path."
+    }
+    return $branch
+}
+
 function Get-NextSpecNumber {
     param([string]$RepoRoot, [array]$Repositories)
     $max = 0
@@ -213,8 +226,15 @@ foreach ($repo in $workspace.repositories) {
         continue
     }
     $dirtyState = Get-DirtyState -Path $repo.path
+    try {
+        $currentBranch = Get-CurrentBranch -Path $repo.path
+    } catch {
+        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; role = $repo.role; required = [bool]$repo.required; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; status = "current-branch-error"; branch = $branchName; planned_action = "error"; dirty_state = $dirtyState }
+        $errors += $_.Exception.Message
+        continue
+    }
     if ($dirtyState.has_tracked_dirty) {
-        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; role = $repo.role; required = [bool]$repo.required; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; status = "tracked-dirty"; branch = $branchName; planned_action = "error"; dirty_state = $dirtyState }
+        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; role = $repo.role; required = [bool]$repo.required; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; status = "tracked-dirty"; branch = $branchName; current_branch = $currentBranch; completion_base_branch = $currentBranch; planned_action = "error"; dirty_state = $dirtyState }
         $errors += "Repository has tracked uncommitted changes: $($repo.name). Stop before branch creation; ask the user whether to stash, clean up, or commit first. Tracked entries: $($dirtyState.tracked_dirty -join '; ')"
         continue
     }
@@ -222,13 +242,13 @@ foreach ($repo in $workspace.repositories) {
     $exists = Test-BranchExists -Path $repo.path -BranchName $branchName
     if ($exists) {
         if (Test-BranchHasUpstream -Path $repo.path -BranchName $branchName) {
-            $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; role = $repo.role; required = [bool]$repo.required; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; status = "branch-has-upstream"; branch = $branchName; planned_action = "error"; dirty_state = $dirtyState }
+            $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; role = $repo.role; required = [bool]$repo.required; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; status = "branch-has-upstream"; branch = $branchName; current_branch = $currentBranch; completion_base_branch = $currentBranch; planned_action = "error"; dirty_state = $dirtyState }
             $errors += "Spec branch '$branchName' in $($repo.name) has an upstream; Spec Kit branches must stay local-only."
             continue
         }
-        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; role = $repo.role; required = [bool]$repo.required; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; status = "ready"; branch = $branchName; planned_action = "switch"; dirty_state = $dirtyState }
+        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; role = $repo.role; required = [bool]$repo.required; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; status = "ready"; branch = $branchName; current_branch = $currentBranch; completion_base_branch = $currentBranch; planned_action = "switch"; dirty_state = $dirtyState }
     } else {
-        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; role = $repo.role; required = [bool]$repo.required; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; status = "ready"; branch = $branchName; planned_action = "create"; dirty_state = $dirtyState }
+        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; role = $repo.role; required = [bool]$repo.required; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; status = "ready"; branch = $branchName; current_branch = $currentBranch; completion_base_branch = $currentBranch; planned_action = "create"; dirty_state = $dirtyState }
     }
 }
 
@@ -264,10 +284,18 @@ New-Item -ItemType Directory -Path (Join-Path $repoRoot ".specify") -Force | Out
 
 $featureJson = Join-Path $repoRoot ".specify/feature.json"
 $featureConfig = [ordered]@{}
+$existingSpecBranch = ""
+$existingCompletionTargets = @{}
 if (Test-Path -LiteralPath $featureJson -PathType Leaf) {
     try {
         $existing = Get-Content -LiteralPath $featureJson -Raw | ConvertFrom-Json
         foreach ($prop in $existing.PSObject.Properties) { $featureConfig[$prop.Name] = $prop.Value }
+        $existingSpecBranch = [string]$existing.spec_branch
+        foreach ($target in @($existing.completion_targets)) {
+            if ($target.repository -and $target.branch) {
+                $existingCompletionTargets[[string]$target.repository] = [string]$target.branch
+            }
+        }
     } catch {
         throw "Failed to parse .specify/feature.json: $_"
     }
@@ -287,6 +315,24 @@ $featureConfig["dirty_risks"] = @($preflight | Where-Object {
 })
 $featureConfig["workspace_root"] = $workspace.workspace_root
 $featureConfig["default_base_branch"] = $workspace.default_base_branch
+$completionTargets = @($preflight | Where-Object {
+    $_.participates_in_spec_branches -and $_.status -eq "ready"
+} | ForEach-Object {
+    $recordedBranch = [string]$_.completion_base_branch
+    if ($existingSpecBranch -eq $branchName -and $_.current_branch -eq $branchName -and $existingCompletionTargets.ContainsKey([string]$_.repository)) {
+        $recordedBranch = $existingCompletionTargets[[string]$_.repository]
+    }
+    [ordered]@{
+        repository = $_.repository
+        path = $_.path
+        branch = $recordedBranch
+        captured_from_branch = $_.current_branch
+    }
+})
+$primaryCompletionTarget = @($completionTargets | Select-Object -First 1)
+$featureConfig["entry_branch"] = if ($primaryCompletionTarget.Count -gt 0) { $primaryCompletionTarget[0].branch } else { $workspace.default_base_branch }
+$featureConfig["base_branch"] = $featureConfig["entry_branch"]
+$featureConfig["completion_targets"] = $completionTargets
 $featureConfig["repository_map"] = $repositoryMap
 $featureConfig["workspace_repositories"] = @($workspace.repositories | ForEach-Object {
     [ordered]@{
@@ -307,6 +353,8 @@ $payload = [PSCustomObject]@{
     dirty_risks = @($featureConfig["dirty_risks"])
     workspace_root = $workspace.workspace_root
     default_base_branch = $workspace.default_base_branch
+    entry_branch = $featureConfig["entry_branch"]
+    completion_targets = $completionTargets
     repository_map = $repositoryMap
     preflight = $preflight
     repositories = $results
@@ -320,6 +368,7 @@ if ($Json) {
     Write-Output "LOCAL_ONLY: true"
     Write-Output "WORKSPACE_ROOT: $($workspace.workspace_root)"
     Write-Output "DEFAULT_BASE_BRANCH: $($workspace.default_base_branch)"
+    Write-Output "ENTRY_BRANCH: $($featureConfig["entry_branch"])"
     Write-Output "REPOSITORY_MAP: $repositoryMap"
     Write-Output "PREFLIGHT: passed"
     foreach ($result in $results) {

@@ -2,6 +2,7 @@
 description: Generate and validate the final Spec Kit Rubric score after post-commit self-check.
 scripts:
   ps: scripts/powershell/validate-rubric-score.ps1 -Json -FeatureDir <feature-dir>
+  closure_ps: scripts/powershell/inspect-workflow-closure.ps1 -Json -FeatureDir <feature-dir> -Stage rubric-score
 ---
 
 ## User Input
@@ -66,7 +67,9 @@ Block `complete-branch` when:
 
 ## Execution Steps
 
-1. Confirm post-commit self-check completed.
+1. Run `inspect-workflow-closure`; if it reports a stage before
+   `speckit.rubric-score`, return to `facts.next_required_stage`.
+2. Confirm post-commit self-check completed.
 2. Generate `rubric-score.md`, or write the final Rubric section into
    `validation.md`, using final commit/amend state.
 3. Run `validate-rubric-score`.

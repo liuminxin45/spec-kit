@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -33,7 +34,17 @@ def _resolve_path(value: str | None, *, base: Path | None = None) -> Path | None
 
 
 def _require_project(project_dir: str | None = None) -> Path:
-    project_root = _resolve_path(project_dir) or Path.cwd().resolve()
+    project_root = _resolve_path(project_dir)
+    if project_root is None:
+        project_root = _resolve_path(os.environ.get("SPECIFY_INIT_DIR"))
+    if project_root is None:
+        current = Path.cwd().resolve()
+        for path in [current, *current.parents]:
+            if (path / ".specify").is_dir():
+                project_root = path
+                break
+    if project_root is None:
+        project_root = Path.cwd().resolve()
     if (project_root / ".specify").is_dir():
         return project_root
     console.print(f"[red]Error:[/red] Not a spec-kit project: {project_root}")
@@ -477,6 +488,27 @@ def knowledge_evaluate_synthesis(
     _append_arg(args, "-FailBelowMinimum", fail_below_minimum)
     result = _invoke_script("evaluate-knowledge-pack-synthesis.ps1", project_root=project_root, args=args)
     _emit_result(result, json_output=json_output, title="knowledge evaluate-synthesis")
+
+
+@knowledge_app.command("promote-candidates")
+def knowledge_promote_candidates(
+    project_dir: str | None = typer.Option(None, "--project-dir", "--dir", "-C", help="Spec Kit project root"),
+    feature_dir: str = typer.Option(..., "--feature-dir", help="Feature directory containing knowledge-candidates.md"),
+    candidates_path: str | None = typer.Option(None, "--candidates-path", help="Explicit knowledge-candidates.md path"),
+    repack: bool = typer.Option(False, "--repack", help="Repack the active knowledge layer after approved promotions"),
+    pack_id: str | None = typer.Option(None, "--pack-id", help="Pack id used when --repack is set"),
+    force: bool = typer.Option(False, "--force", help="Overwrite repack output when needed"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Promote approved retrospective knowledge candidates into ai/knowledge."""
+    project_root = _require_project(project_dir)
+    args = ["-RepoRoot", str(project_root), "-FeatureDir", str(_resolve_path(feature_dir, base=project_root))]
+    _append_arg(args, "-CandidatesPath", _resolve_path(candidates_path, base=project_root))
+    _append_arg(args, "-Repack", repack)
+    _append_arg(args, "-PackId", pack_id)
+    _append_arg(args, "-Force", force)
+    result = _invoke_script("promote-knowledge-candidates.ps1", project_root=project_root, args=args)
+    _emit_result(result, json_output=json_output, title="knowledge promote-candidates")
 
 
 @knowledge_app.command("validate-pack")

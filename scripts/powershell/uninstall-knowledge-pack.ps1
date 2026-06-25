@@ -74,6 +74,7 @@ try {
         if (Test-Path -LiteralPath $installedPackRoot -PathType Container) {
             Remove-KnowledgePackDirectorySafe -Root $packsRoot -Path $installedPackRoot
         }
+        $removedInstallRecord = Remove-KnowledgePackInstallRecord -RepoRoot $root -PackId $slug
         $removedPublishedCapabilities = @(Remove-KnowledgePackPublishedArtifactsForPackId -RepoRoot $root -PackId $slug)
 
         $installedAfter = @()
@@ -136,6 +137,7 @@ try {
         $result.facts.repo_root = $root
         $result.facts.pack_id = $slug
         $result.facts.removed_installed_path = $installedPackRoot
+        $result.facts.removed_install_record = $removedInstallRecord
         $result.facts.removed_published_capabilities = $removedPublishedCapabilities
         $result.facts.active_before = $activeBefore
         $result.facts.remaining_active = $remainingActive

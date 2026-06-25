@@ -10,6 +10,7 @@ $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\knowledge-pack-common.ps1"
 
 $result = New-KnowledgePackResult "update-knowledge-pack"
+$treeBefore = ""
 
 try {
     $root = Resolve-KnowledgePackPath -Path $RepoRoot
@@ -42,6 +43,8 @@ try {
         $packsRoot = Join-Path $knowledgeRoot "packs"
         $installedPackRoot = Join-Path $packsRoot $incomingPackId
         $wasInstalled = Test-Path -LiteralPath $installedPackRoot -PathType Container
+        $recordBefore = Get-KnowledgePackInstallRecord -RepoRoot $root -PackId $incomingPackId
+        $treeBefore = if ($recordBefore -and $recordBefore.hashes -and $recordBefore.hashes.tree_sha256) { $recordBefore.hashes.tree_sha256 } else { "" }
         if (-not $wasInstalled -and -not $Force) {
             Set-KnowledgePackBlocked $result "Pack is not installed; use apply-knowledge-pack.ps1 first or pass -Force to install as update: $incomingPackId"
         }
@@ -95,6 +98,9 @@ try {
     $result.facts.active_after = $activeAfter
     $result.facts.removed_published_capabilities = $removedPublishedCapabilities
     $result.facts.install = $install
+    $result.facts.previous_tree_sha256 = $treeBefore
+    $result.facts.new_tree_sha256 = if ($install -and $install.facts -and $install.facts.tree_sha256) { $install.facts.tree_sha256 } else { "" }
+    $result.facts.tree_changed = (-not [string]::IsNullOrWhiteSpace($result.facts.new_tree_sha256) -and $result.facts.previous_tree_sha256 -ne $result.facts.new_tree_sha256)
     $result.facts.compose = $compose
     $result.facts.validation = $validation
     if ($result.status -eq "ok" -and -not $targetWasActive) {

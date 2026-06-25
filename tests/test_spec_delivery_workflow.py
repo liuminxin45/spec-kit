@@ -2,6 +2,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import yaml
@@ -35,6 +36,8 @@ def write_retrospective_artifacts(repo: Path, branch: str = "feature") -> None:
     feature_dir.mkdir(parents=True, exist_ok=True)
     (feature_dir / "workflow-record.md").write_text("# Workflow Record\n", encoding="utf-8")
     (feature_dir / "improvement-candidates.md").write_text("# Improvement Candidates\n", encoding="utf-8")
+    (feature_dir / "knowledge-candidates.md").write_text("# Knowledge Candidates\nstatus: no-candidates\n", encoding="utf-8")
+    (feature_dir / "workflow-observation.md").write_text("# Workflow Observation\n", encoding="utf-8")
 
 
 def load_workflow() -> dict:
@@ -45,6 +48,28 @@ def read_wrapper_text(name: str) -> str:
     wrapper_path = REPO_ROOT / "scripts" / "powershell" / name
     assert wrapper_path.is_file(), f"Spec Kit wrapper is missing: {wrapper_path}"
     return wrapper_path.read_text(encoding="utf-8")
+
+
+def run_specify_cli(project: Path, *args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    cli_env = os.environ.copy()
+    cli_env["PYTHONPATH"] = str(REPO_ROOT / "src") + os.pathsep + cli_env.get("PYTHONPATH", "")
+    if env:
+        cli_env.update(env)
+    return subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import specify_cli; specify_cli.main()",
+            *args,
+        ],
+        cwd=project,
+        env=cli_env,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        timeout=120,
+    )
 
 
 def test_workflow_uses_lean_default_chain_with_conditional_stages():
@@ -87,9 +112,11 @@ def test_workflow_uses_lean_default_chain_with_conditional_stages():
         "analyze",
         "checklist",
         "implement",
+        "converge",
         "acceptance",
         "human-acceptance",
         "retrospective",
+        "workflow-observer",
         "commit",
         "post-commit-self-check",
         "rubric-score",
@@ -104,10 +131,13 @@ def test_workflow_uses_lean_default_chain_with_conditional_stages():
     assert "requires_confirmation" not in by_id["complete-branch"]
     assert "exactly one" in by_id["post-commit-self-check"]["input"]["args"]
     assert "validate-rubric-score" in by_id["rubric-score"]["input"]["args"]
+    assert "collect-workflow-observer-packet" in by_id["workflow-observer"]["input"]["args"]
     assert by_id["validation"]["profiles"] == ["validation-only"]
     assert by_id["fact-layer"]["profiles"] == ["blocked-investigation"]
     assert by_id["analyze"]["profiles"] == ["standard-bugfix", "full-sdd"]
     assert by_id["implement"]["skip_profiles"] == ["validation-only", "blocked-investigation"]
+    assert by_id["converge"]["skip_profiles"] == ["validation-only", "blocked-investigation"]
+    assert "convergence.md" in by_id["converge"]["input"]["args"]
     assert "keep" in by_id["complete-branch"]["input"]["args"].lower()
     assert "spec branch" in by_id["complete-branch"]["input"]["args"].lower()
     assert "do not push" in by_id["complete-branch"]["input"]["args"].lower()
@@ -125,6 +155,7 @@ def test_workflow_uses_lean_default_chain_with_conditional_stages():
         "simplify",
         "test-hardening",
         "promote-lessons",
+        "promote-knowledge",
     ]:
         assert stage in conditional
     assert "retrospective" not in conditional
@@ -155,6 +186,71 @@ def test_conditional_stage_descriptions_do_not_weaken_hard_gates():
     assert stage_gate_policy["hard_implementation_preflight"]["command"] == "validate-feature-artifacts"
     assert stage_gate_policy["generated_context_drift"]["command"] == "validate-generated-context"
     assert stage_gate_policy["knowledge_index_drift"]["command"] == "validate-knowledge-index"
+
+
+def test_workflow_cli_json_status_and_env_project_targeting(tmp_path):
+    project = tmp_path / "project"
+    workflows = project / ".specify" / "workflows" / "demo"
+    workflows.mkdir(parents=True)
+    (workflows / "workflow.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "workflow:",
+                '  id: "demo"',
+                '  name: "Demo"',
+                '  version: "1.0.0"',
+                "steps:",
+                '  - id: "echo"',
+                '    type: "shell"',
+                f"    run: '{Path(sys.executable).as_posix()} -c \"print(''ok'')\"'",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    nested = project / "packages" / "app"
+    nested.mkdir(parents=True)
+    run = run_specify_cli(nested, "workflow", "run", "demo", "--json")
+    assert run.returncode == 0, run.stdout + run.stderr
+    payload = json.loads(run.stdout)
+    assert payload["workflow_id"] == "demo"
+    assert payload["status"] == "completed"
+    assert payload["current_step_id"] == "echo"
+
+    status = run_specify_cli(nested, "workflow", "status", payload["run_id"], "--json")
+    assert status.returncode == 0, status.stdout + status.stderr
+    status_payload = json.loads(status.stdout)
+    assert status_payload["run_id"] == payload["run_id"]
+    assert status_payload["status"] == "completed"
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    env_status = run_specify_cli(
+        outside,
+        "workflow",
+        "status",
+        "--json",
+        env={"SPECIFY_INIT_DIR": str(project)},
+    )
+    assert env_status.returncode == 0, env_status.stdout + env_status.stderr
+    list_payload = json.loads(env_status.stdout)
+    assert list_payload["runs"][0]["run_id"] == payload["run_id"]
+
+
+def test_integration_status_reports_codex_only_project_diagnostics(tmp_path):
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    status = run_specify_cli(project, "integration", "status", "--json")
+    assert status.returncode == 0, status.stdout + status.stderr
+    payload = json.loads(status.stdout)
+    assert payload["project_root"] == str(project)
+    assert payload["codex_only"] is True
+    assert payload["integration_state_exists"] is False
+    codex = next(item for item in payload["integrations"] if item["key"] == "codex")
+    assert codex["requires_cli"] is True
+    assert "context_file" in codex["paths"]
+    assert codex["paths"]["context_file"].endswith("AGENTS.md")
 
 
 def test_new_command_templates_define_delivery_stages():
@@ -221,18 +317,35 @@ def test_new_command_templates_define_delivery_stages():
             "PASS",
             "FAIL",
             "BLOCKED",
+            "speckit-converge",
             "CDP",
             "console",
             "logs",
         ],
+        "templates/commands/converge.md": [
+            "convergence.md",
+            "promised-vs-delivered",
+            "speckit.implement",
+            "status: passed",
+            "speckit.acceptance",
+        ],
         "templates/commands/retrospective.md": [
             "workflow-record.md",
             "improvement-candidates.md",
+            "knowledge-candidates.md",
+            "workflow-observer-packet.json",
             "用户验收通过",
             "不自动修改 spec-kit",
             "Existing Constraint Audit",
             "Team knowledge candidates",
             "高级模型上下文效率复盘",
+        ],
+        "templates/commands/workflow-observer.md": [
+            "workflow-observer-packet.json",
+            "workflow-observation.md",
+            "collect-workflow-observer-packet",
+            "expected path vs actual path",
+            "bounded packet",
         ],
         "templates/commands/promote-lessons.md": [
             "improvement-candidates.md",
@@ -242,6 +355,13 @@ def test_new_command_templates_define_delivery_stages():
             "TEAM-README",
             ".specify/memory",
             "高级模型上下文收益",
+        ],
+        "templates/commands/promote-knowledge.md": [
+            "knowledge-candidates.md",
+            "knowledge-promotion-report.md",
+            "promote-knowledge-candidates",
+            "approved",
+            "validate-knowledge-index",
         ],
         "templates/commands/fact-layer.md": [
             "fact-pack.md",
@@ -254,6 +374,7 @@ def test_new_command_templates_define_delivery_stages():
         ],
         "templates/commands/commit.md": [
             "validate-feature-artifacts",
+            "inspect-workflow-closure",
             "validate-test-plan",
             "validate-ai-self-acceptance",
             "validate-plugin-package",
@@ -261,12 +382,14 @@ def test_new_command_templates_define_delivery_stages():
             "68 display columns",
             "spec 文档是否随代码提交",
             "retrospective.status",
+            "workflow-observation.md",
             "不 push",
             "speckit.post-commit-self-check",
         ],
         "templates/commands/post-commit-self-check.md": [
             "exactly one",
             "post-commit self-check",
+            "inspect-workflow-closure",
             "amend the commit once",
             "speckit.rubric-score",
         ],
@@ -281,7 +404,7 @@ def test_new_command_templates_define_delivery_stages():
             "post-commit-self-check",
             "validate-rubric-score",
             "preflight",
-            "master",
+            "recorded entry branch",
             "cherry-pick",
             "保留 spec branch",
             "不删除",
@@ -301,8 +424,11 @@ def test_retrospective_stage_is_mandatory_before_commit_and_completion():
     cli = read_text("src/specify_cli/__init__.py")
 
     assert "retrospective" in step_ids
+    assert "workflow-observer" in step_ids
     assert "retrospective" not in workflow_doc["conditional_stages"]
     assert step_ids.index("retrospective") < step_ids.index("commit")
+    assert step_ids.index("retrospective") < step_ids.index("workflow-observer")
+    assert step_ids.index("workflow-observer") < step_ids.index("commit")
     assert step_ids.index("commit") < step_ids.index("post-commit-self-check")
     assert step_ids.index("post-commit-self-check") < step_ids.index("rubric-score")
     assert step_ids.index("rubric-score") < step_ids.index("complete-branch")
@@ -314,6 +440,8 @@ def test_retrospective_stage_is_mandatory_before_commit_and_completion():
     for text in [retrospective_template]:
         assert "workflow-record.md" in text
         assert "improvement-candidates.md" in text
+        assert "knowledge-candidates.md" in text
+        assert "workflow-observer-packet.json" in text
         assert "关键用户输入" in text
         assert "AI 输出与动作链" in text
         assert "错误、返工" in text
@@ -323,7 +451,10 @@ def test_retrospective_stage_is_mandatory_before_commit_and_completion():
     assert "human approval" in " ".join(retrospective_template.lower().split())
     assert "workflow-record.md" in commit_args
     assert "improvement-candidates.md" in commit_args
+    assert "knowledge-candidates.md" in commit_args
+    assert "workflow-observation.md" in commit_args
     assert "retrospective/留痕" in commit_args
+    assert "workflow-observer" in commit_args
     assert "retrospective/留痕" in complete_args
     assert "speckit.retrospective" in read_text("templates/commands/commit.md")
     assert "validate-feature-artifacts" in read_text("templates/commands/commit.md")
@@ -335,14 +466,19 @@ def test_retrospective_stage_is_mandatory_before_commit_and_completion():
     for text in [complete_template, powershell_script]:
         assert "workflow-record.md" in text
         assert "improvement-candidates.md" in text
+        assert "knowledge-candidates.md" in text
+        assert "workflow-observation.md" in text
     assert "retrospective_gate" in powershell_script
     step_ids = [step["id"] for step in workflow_doc["steps"]]
     assert "retrospective" in step_ids
+    assert "workflow-observer" in step_ids
     assert step_ids.index("retrospective") < step_ids.index("commit")
+    assert step_ids.index("workflow-observer") < step_ids.index("commit")
     assert step_ids.index("commit") < step_ids.index("post-commit-self-check")
     assert step_ids.index("post-commit-self-check") < step_ids.index("rubric-score")
     assert step_ids.index("rubric-score") < step_ids.index("complete-branch")
     assert "promote-lessons" not in step_ids
+    assert "promote-knowledge" not in step_ids
     by_id = {step["id"]: step for step in workflow_doc["steps"]}
     assert by_id["analyze"]["profiles"] == ["standard-bugfix", "full-sdd"]
     assert by_id["tasks"]["profiles"] == ["full-sdd"]
@@ -361,9 +497,13 @@ def test_stage_handoffs_acceptance_retrospective_and_commit_are_rule_driven():
 
     task_routing = read_text("templates/ai/workflows/task-routing.md")
     assert "Implementation completion gate" in implement
-    assert "do not continue to `speckit.acceptance` while AI-owned validation is still pending" in implement
+    assert "do not continue to `speckit.converge` while AI-owned validation is still pending" in implement
     assert "Stage Continuation" in task_routing
+    assert "Final Response Guard" in task_routing
+    assert "inspect-workflow-closure" in task_routing
+    assert "workflow-observer" in task_routing
     assert "automatic_stage_continuation" in yaml.safe_load(read_text("workflows/speckit/workflow.yml"))["stage_gate_policy"]
+    assert "final_response_guard" in yaml.safe_load(read_text("workflows/speckit/workflow.yml"))["stage_gate_policy"]
     assert "execution_contract" in yaml.safe_load(read_text("workflows/speckit/workflow.yml"))["stage_gate_policy"]["automatic_stage_continuation"]
     assert "Auto-continue is a stage contract" in task_routing
     assert "A plain completion summary" in task_routing
@@ -376,6 +516,7 @@ def test_stage_handoffs_acceptance_retrospective_and_commit_are_rule_driven():
     assert "If no product code changed during simplify" in simplify
     assert "reuse the existing user acceptance" in simplify
     assert "commit automatically" in commit
+    assert "inspect-workflow-closure" in commit
     assert "Show the scope first" in commit
     assert "ignored by `.gitignore`" in commit
     assert "Never force-add a whole ignored directory" in read_text("templates/commands/commit.md")
@@ -453,7 +594,7 @@ def test_quality_vision_rubric_and_ai_self_acceptance_are_routed_on_demand():
     assert "quality-vision" in routing
     assert "acceptance-rubric.md" in routing
     assert "ai-self-acceptance" in routing
-    assert "PASS is required before" in routing
+    assert "PASS continues to\n  `speckit-converge`" in routing
     assert "Quality Vision Link" in plan_template
     assert "Acceptance Rubric Link" in plan_template
     assert "AI Self-Acceptance Contract" in plan_template
@@ -602,7 +743,7 @@ def test_host_frontend_delivery_chain_and_cdp_target_gate_are_enforced():
     assert "removed stale" in implement.lower()
     assert "Implementation completion gate" in implement
     assert "宿主运行时验证待执行" in implement
-    assert "do not continue to\n     `speckit.acceptance` while AI-owned validation is still pending" in implement
+    assert "do not continue to\n     `speckit.converge` while AI-owned validation is still pending" in implement
     assert "Removed stale runtime files" in validation_template
     assert "Runtime replacement removed stale count" in evidence_template
     assert "runtime replacement directory" in checklist
@@ -690,9 +831,12 @@ def test_promote_lessons_stage_applies_only_approved_candidates_when_requested()
     step_ids = [step["id"] for step in workflow_doc["steps"]]
 
     assert "promote-lessons" not in step_ids
+    assert "promote-knowledge" not in step_ids
     assert "promote-lessons" in workflow_doc["conditional_stages"]
+    assert "promote-knowledge" in workflow_doc["conditional_stages"]
 
     promote_template = read_text("templates/commands/promote-lessons.md")
+    promote_knowledge_template = read_text("templates/commands/promote-knowledge.md")
     retrospective_template = read_text("templates/commands/retrospective.md")
 
     for text in [promote_template]:
@@ -710,6 +854,9 @@ def test_promote_lessons_stage_applies_only_approved_candidates_when_requested()
     assert "Required next stage: `speckit.commit`" in promote_template
     assert "Required next stage: `speckit.complete-branch`" not in promote_template
     assert "pending | approved | rejected" in retrospective_template
+    assert "knowledge-candidates.md" in retrospective_template
+    assert "promote-knowledge-candidates" in promote_knowledge_template
+    assert "Pending/rejected candidates skipped" in promote_knowledge_template
     assert "approved promotion candidates" in read_text("templates/commands/commit.md")
 
 
@@ -819,6 +966,8 @@ def test_l5_validation_evidence_and_retrospective_contract_is_standardized():
     assert "Evidence: validation/evidence/retrospective flow" in retrospective
     assert "pending | approved | rejected" in retrospective
     assert "only candidates that a human explicitly changes to `approved`" in retrospective
+    assert "knowledge-candidates.md" in retrospective
+    assert "workflow-observer-packet.json" in retrospective
     assert "spec-kit/templates/ai/templates/*.md" not in promote
     assert "pending` candidates" in promote
     assert "rejected` candidates" in promote
@@ -1193,6 +1342,21 @@ def test_completion_scripts_keep_spec_branch_by_default():
     assert "git merge --no-ff" not in powershell_script
 
 
+def test_workspace_template_defines_spec_persistence_policy():
+    workspace_template = read_text("templates/workspace-template.yml")
+    readme = read_text("README.md")
+
+    assert "spec_persistence:" in workspace_template
+    assert 'model: "flow-back"' in workspace_template
+    assert "keep_feature_artifacts: true" in workspace_template
+    assert "promote_only_with_human_approval: true" in workspace_template
+    assert 'durable_knowledge_target: "ai/knowledge"' in workspace_template
+    assert "Spec Persistence 策略" in readme
+    assert "model: \"flow-back\"" in readme
+    assert "specify workflow status <run-id> --json" in readme
+    assert "specify integration status --json" in readme
+
+
 def test_complete_branch_blocks_without_retrospective_artifacts(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -1237,6 +1401,8 @@ def test_complete_branch_blocks_without_retrospective_artifacts(tmp_path):
     assert payload["retrospective_gate"]["missing"] == [
         "workflow-record.md",
         "improvement-candidates.md",
+        "knowledge-candidates.md",
+        "workflow-observation.md",
     ]
     assert "Run speckit.retrospective before complete-branch" in payload["errors"][0]
 
@@ -1290,6 +1456,80 @@ def test_complete_branch_cherry_picks_without_merge_commit(tmp_path):
     assert run_git(repo, "log", "--reverse", "--pretty=%s", f"{base_commit}..master").splitlines() == [
         "feature change 1",
         "feature change 2",
+    ]
+
+
+def test_complete_branch_uses_recorded_entry_branch_by_default(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "master")
+    run_git(repo, "config", "user.email", "spec-kit@example.invalid")
+    run_git(repo, "config", "user.name", "Spec Kit Test")
+
+    (repo / "file.txt").write_text("base\n", encoding="utf-8")
+    run_git(repo, "add", "file.txt")
+    run_git(repo, "commit", "-m", "base")
+    run_git(repo, "switch", "-c", "develop")
+    (repo / "file.txt").write_text("develop\n", encoding="utf-8")
+    run_git(repo, "commit", "-am", "develop base")
+    develop_commit = run_git(repo, "rev-parse", "HEAD")
+
+    create_script = REPO_ROOT / "scripts" / "powershell" / "create-spec-branch.ps1"
+    create_result = subprocess.run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(create_script),
+            "-FeatureName",
+            "record-entry-branch",
+            "-Json",
+        ],
+        cwd=repo,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=True,
+    )
+    create_payload = json.loads(create_result.stdout)
+    branch = create_payload["branch"]
+    feature_cfg = json.loads((repo / ".specify" / "feature.json").read_text(encoding="utf-8-sig"))
+    assert feature_cfg["entry_branch"] == "develop"
+    assert feature_cfg["base_branch"] == "develop"
+    assert feature_cfg["completion_targets"][0]["branch"] == "develop"
+
+    (repo / "file.txt").write_text("feature\n", encoding="utf-8")
+    run_git(repo, "commit", "-am", "feature change")
+    write_retrospective_artifacts(repo, branch=branch)
+
+    complete_script = REPO_ROOT / "scripts" / "powershell" / "complete-spec-branches.ps1"
+    complete_result = subprocess.run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(complete_script),
+            "-Branch",
+            branch,
+            "-ConfirmCompletion",
+            "-Json",
+        ],
+        cwd=repo,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=True,
+    )
+    complete_payload = json.loads(complete_result.stdout)
+
+    assert complete_payload["base_branch_source"] == "feature.completion_targets"
+    assert complete_payload["preflight"][0]["base"] == "develop"
+    assert complete_payload["repositories"][0]["status"] == "cherry-picked-to-develop; kept-local-branch"
+    assert run_git(repo, "branch", "--show-current") == "develop"
+    assert run_git(repo, "log", "--reverse", "--pretty=%s", f"{develop_commit}..develop").splitlines() == [
+        "feature change"
     ]
 
 
@@ -2140,7 +2380,7 @@ def test_init_wrapper_documents_layered_assets_and_cherry_pick_completion():
     for phrase in [
         "Initialization also installs the layered Spec Kit assets",
         "`ai/rules`, `ai/knowledge`, `ai/workflows`, `ai/tools`, and `ai/templates`",
-        "human-acceptance gate -> retrospective -> commit",
+        "human-acceptance gate -> retrospective -> workflow-observer",
         "post-commit-self-check -> rubric-score -> complete-branch",
         "cherry-pick the local Spec",
         "Cherry-pick completion is automated after commit",

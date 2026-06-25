@@ -11,7 +11,6 @@ policy:
     - "Do not pre-load the internal skill directory."
     - "Do not duplicate gate-pack, knowledge-guide, or command details in this map."
     - "Do not treat this map as source truth for product behavior."
-
 stage_skills:
   intake: "speckit-intake"
   specify: "speckit-specify"
@@ -26,15 +25,17 @@ stage_skills:
   simplify: "speckit-simplify"
   test-hardening: "speckit-test-hardening"
   retrospective: "speckit-retrospective"
+  workflow-observer: "speckit-workflow-observer"
   promote-lessons: "speckit-promote-lessons"
+  promote-knowledge: "speckit-promote-knowledge"
   commit: "speckit-commit"
+  post-commit-self-check: "speckit-post-commit-self-check"
+  rubric-score: "speckit-rubric-score"
   complete-branch: "speckit-complete-branch"
-
 profile_skills:
   micro-fix: "speckit-micro-fix"
   blocked-investigation: "speckit-bounded-investigation"
   validation-only: "speckit-validation"
-
 capability_skills:
   fact-layer:
     skill: "speckit-fact-layer"
@@ -83,7 +84,6 @@ capability_skills:
     when:
       - "AI has changed code and believes a slice or implementation is complete"
       - "AI acceptance PASS is required before human acceptance"
-
 load_paths:
   stage_or_profile: ".agents/spec-kit/skills/<skill>/SKILL.md"
   capability: ".agents/spec-kit/skills/<skill>/SKILL.md"

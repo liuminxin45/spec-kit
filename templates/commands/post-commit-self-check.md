@@ -2,6 +2,7 @@
 description: Run the single automated post-commit Spec Kit self-check before final Rubric scoring.
 scripts:
   ps: scripts/powershell/post-commit-self-check.ps1 -Json -FeatureDir <feature-dir>
+  closure_ps: scripts/powershell/inspect-workflow-closure.ps1 -Json -FeatureDir <feature-dir> -Stage post-commit-self-check
 ---
 
 ## User Input
@@ -37,13 +38,16 @@ evidence; it does not output the final Rubric score.
 
 1. Run `post-commit-self-check` for the active `FEATURE_DIR`.
 2. Confirm required artifacts exist: `validation.md`, `acceptance.md`,
-   `workflow-record.md`, `improvement-candidates.md`, and
+   `workflow-record.md`, `improvement-candidates.md`,
+   `knowledge-candidates.md`, `workflow-observation.md`, and
    `workflow-state.json`.
-3. Confirm `retrospective.status = completed`.
-4. Confirm `AI Self-Acceptance = PASS`, API/E2E test-plan status, applicable
+3. Run `inspect-workflow-closure`; if it reports a stage before this self-check,
+   return to `facts.next_required_stage`.
+4. Confirm `retrospective.status = completed`.
+5. Confirm `AI Self-Acceptance = PASS`, API/E2E test-plan status, applicable
    `.plugin` package evidence, CDP/host/runtime evidence or true blockers, and
    post-commit message validation are recorded in the feature evidence.
-5. If a deterministic fix is required, apply it, amend the commit once, and do
+6. If a deterministic fix is required, apply it, amend the commit once, and do
    not run another self-check.
 
 ## Quality Rules

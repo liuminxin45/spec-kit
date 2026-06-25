@@ -8,6 +8,7 @@ scripts:
   update_ps: scripts/powershell/update-knowledge-pack.ps1 -Json
   uninstall_ps: scripts/powershell/uninstall-knowledge-pack.ps1 -Json
   repack_ps: scripts/powershell/repack-knowledge-pack.ps1 -Json
+  promote_candidates_ps: scripts/powershell/promote-knowledge-candidates.ps1 -Json
   validate_ps: scripts/powershell/validate-knowledge-pack.ps1 -Json
   compare_ps: scripts/powershell/compare-knowledge-pack-equivalence.ps1 -Json
 ---
@@ -79,7 +80,11 @@ capabilities are installed under namespaced workspace-local paths.
    - local capability overlays live under `.specify/capabilities/overlays/local/<layer>/`
    - full-snapshot repack preserves active `ai/knowledge`, namespaced skills,
      tool policies, scripts, prompts, resources, and templates when present
-7. Compare a pack with its source knowledge tree:
+7. Promote approved retrospective knowledge candidates:
+   - `scripts/powershell/promote-knowledge-candidates.ps1 -RepoRoot . -FeatureDir specs/<feature> -Json`
+   - With repack: `scripts/powershell/promote-knowledge-candidates.ps1 -RepoRoot . -FeatureDir specs/<feature> -Repack -PackId <id> -Force -Json`
+   - Pending and rejected candidates must stay untouched.
+8. Compare a pack with its source knowledge tree:
    - `scripts/powershell/compare-knowledge-pack-equivalence.ps1 -SourceKnowledgeDir <source-ai-knowledge> -PackRoot <pack-dir> -UseSpecKitInit -Json`
    - the comparison reads `<pack-dir>/evaluation/scenarios.json` by default;
      use `-ScenarioFile <json>` to override the routing canaries

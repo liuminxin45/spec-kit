@@ -124,7 +124,8 @@ Do not paste full gate details into `plan.md`; cite selected gate ids and record
   require human review before implementation.
 - Do not let AI self-acceptance judge UI without a baseline in `quality-vision.md` or an explicit owner-approved `N/A`.
 - `acceptance-rubric.md` must include self-contained Essential and Pitfall criteria before code changes for non-trivial implementation work.
-- Plan acceptance, simplify, optional test-hardening, retrospective, optional promote-lessons, commit, one post-commit self-check, final Rubric score, and complete-branch as separate stages.
+- Plan acceptance, simplify, optional test-hardening, retrospective,
+  workflow-observer, optional promote-lessons/promote-knowledge, commit, one post-commit self-check, final Rubric score, and complete-branch as separate stages.
 
 ## Human Review Rules
 

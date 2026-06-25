@@ -97,7 +97,7 @@ Optional artifacts such as `research.md`, `data-model.md`, `contracts/`, `quicks
       evidence required by the plan and selected gates.
     - Write `validation.md` AI Self-Acceptance status: `PASS`, `FAIL`, or
       `BLOCKED`.
-    - `PASS` may continue to `speckit.acceptance`; `FAIL` loops back to this
+    - `PASS` may continue to `speckit.converge`; `FAIL` loops back to this
       stage or fact-layer; `BLOCKED` requires concrete external blocker evidence.
 11. Stop and route back when validation fails, the original symptom persists, scope expands, source behavior is missing, root cause evidence fails, or a user/owner decision is required.
 
@@ -127,7 +127,7 @@ Optional artifacts such as `research.md`, `data-model.md`, `contracts/`, `quicks
 ## Implementation completion gate
 
 - Do not report `/speckit-implement 完成` and do not continue to
-     `speckit.acceptance` while AI-owned validation is still pending.
+     `speckit.converge` while AI-owned validation is still pending.
 - A report that lists "宿主运行时验证待执行", "CDP 验证待执行", or "需启动 HostApplication Electron" as normal residual risk is non-compliant.
 - When AI changed code, completion requires explicit AI acceptance `PASS` in `validation.md` or an evidence-backed blocker.
 - Completion also requires the `speckit-ai-self-acceptance` skill result to be
@@ -149,5 +149,5 @@ Report in Chinese:
 - `review.md` / `lessons.md` updates when relevant.
 - Confirmation that no commit, branch cherry-pick/delete, push, or remote tracking action was performed.
 - Remaining gaps or blocked tasks.
-- Required next stage: `speckit.acceptance` / `$speckit-acceptance`.
+- Required next stage: `speckit.converge` / `$speckit-converge`.
 - Human review prompt: do not ask for root cause correctness or test sufficiency; report a blocker instead when those remain uncertain.
