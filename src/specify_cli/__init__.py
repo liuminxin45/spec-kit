@@ -92,6 +92,7 @@ from ._version import (
     self_check as self_check,
     self_upgrade as self_upgrade,
 )
+from ._knowledge import knowledge_app as _knowledge_app
 
 def _locate_bundled_preset(_: str) -> Path | None:
     """Preset bundles are disabled in the Codex-only build."""
@@ -1057,6 +1058,7 @@ def upgrade(
     force: bool = typer.Option(False, "--force", help="Overwrite customized managed assets"),
     source: str | None = typer.Option(None, "--source", help="Use a local spec-kit source checkout instead of the installed package"),
     version: str | None = typer.Option(None, "--version", help="Require the upgrade source to match this version"),
+    project_dir: str | None = typer.Option(None, "--project-dir", "--dir", "-C", help="Spec Kit project root to upgrade"),
     skip_validation: bool = typer.Option(False, "--skip-validation", help="Do not run post-upgrade validation gates"),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
@@ -1073,7 +1075,7 @@ def upgrade(
         run_post_upgrade_validations,
     )
 
-    project_root = _require_specify_project()
+    project_root = _require_specify_project(project_dir)
     current_version = _current_project_speckit_version(project_root)
     try:
         source_info = resolve_upgrade_source(
@@ -1245,6 +1247,7 @@ def version(
     console.print(panel)
     console.print()
 
+app.add_typer(_knowledge_app, name="knowledge")
 app.add_typer(_self_app, name="self")
 
 
@@ -1475,13 +1478,22 @@ def _set_default_integration_or_exit(*args: Any, **kwargs: Any) -> None:
         raise typer.Exit(1)
 
 
-def _require_specify_project() -> Path:
+def _resolve_project_root_arg(project_dir: str | Path | None = None) -> Path:
+    if project_dir is None or str(project_dir).strip() == "":
+        return Path.cwd()
+    path = Path(project_dir).expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    return path.resolve()
+
+
+def _require_specify_project(project_dir: str | Path | None = None) -> Path:
     """Return the current project root if it is a spec-kit project, else exit."""
-    project_root = Path.cwd()
+    project_root = _resolve_project_root_arg(project_dir)
     if (project_root / ".specify").is_dir():
         return project_root
-    console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-    console.print("Run this command from a spec-kit project root")
+    console.print(f"[red]Error:[/red] Not a spec-kit project: {project_root}")
+    console.print("Pass --project-dir <dir> or run this command from a spec-kit project root.")
     raise typer.Exit(1)
 
 

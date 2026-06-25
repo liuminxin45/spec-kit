@@ -1194,7 +1194,7 @@ def test_specify_upgrade_uses_lock_manifest_and_dry_run(tmp_path):
     assert manifest["version"] == expected_version
     assert ".specify/workflows/speckit/workflow.yml" in manifest["files"]
 
-    dry_run = run_specify_cli(project, "upgrade", "--dry-run", "--json")
+    dry_run = run_specify_cli(tmp_path, "upgrade", "--project-dir", str(project), "--dry-run", "--json")
     assert dry_run.returncode == 0, dry_run.stdout + dry_run.stderr
     dry_payload = json.loads(dry_run.stdout)
     assert dry_payload["status"] == "planned"
@@ -1222,6 +1222,119 @@ def test_specify_upgrade_uses_lock_manifest_and_dry_run(tmp_path):
     assert upgraded_payload["applied"]["manifest"] == ".specify/integrations/speckit.manifest.json"
     upgraded_lock = yaml.safe_load(lock_path.read_text(encoding="utf-8"))
     assert "source_path" not in upgraded_lock["spec_kit"]
+
+
+def test_specify_knowledge_commands_wrap_project_scripts(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+
+    initialized = run_specify_cli(
+        project,
+        "init",
+        "--here",
+        "--force",
+        "--ignore-agent-tools",
+        "--no-git",
+    )
+    assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+
+    bootstrap = run_specify_cli(
+        tmp_path,
+        "knowledge",
+        "bootstrap",
+        "--project-dir",
+        str(project),
+        "--json",
+    )
+    assert bootstrap.returncode == 0, bootstrap.stdout + bootstrap.stderr
+    bootstrap_payload = json.loads(bootstrap.stdout)
+    assert_standard_shape(bootstrap_payload, "bootstrap-knowledge")
+    assert bootstrap_payload["facts"]["generated_review_packet"] is True
+    assert ".specify" in bootstrap_payload["facts"]["draft_knowledge_dir"]
+
+    generated = run_specify_cli(
+        tmp_path,
+        "knowledge",
+        "generate-pack",
+        "--project-dir",
+        str(project),
+        "--pack-id",
+        "generated-demo",
+        "--force",
+        "--json",
+    )
+    assert generated.returncode == 0, generated.stdout + generated.stderr
+    generated_payload = json.loads(generated.stdout)
+    assert_standard_shape(generated_payload, "generate-knowledge-pack")
+    assert generated_payload["facts"]["ai_synthesis_required"] is True
+    assert generated_payload["facts"]["synthesis_knowledge_dir"].endswith("ai\\knowledge")
+
+    pack_dir = tmp_path / "demo-pack"
+    exported = run_specify_cli(
+        tmp_path,
+        "knowledge",
+        "export-pack",
+        "--project-dir",
+        str(project),
+        "--pack-id",
+        "demo-pack",
+        "--output-dir",
+        str(pack_dir),
+        "--force",
+        "--json",
+    )
+    assert exported.returncode == 0, exported.stdout + exported.stderr
+    exported_payload = json.loads(exported.stdout)
+    assert_standard_shape(exported_payload, "export-knowledge-pack")
+    assert exported_payload["facts"]["pack_id"] == "demo-pack"
+    assert (pack_dir / "knowledge-pack.yml").exists()
+
+    validated = run_specify_cli(
+        tmp_path,
+        "knowledge",
+        "validate-pack",
+        str(pack_dir),
+        "--json",
+    )
+    assert validated.returncode == 0, validated.stdout + validated.stderr
+    validated_payload = json.loads(validated.stdout)
+    assert_standard_shape(validated_payload, "validate-knowledge-pack")
+    assert validated_payload["status"] == "ok"
+
+    applied = run_specify_cli(
+        tmp_path,
+        "knowledge",
+        "apply-pack",
+        str(pack_dir),
+        "--project-dir",
+        str(project),
+        "--force",
+        "--json",
+    )
+    assert applied.returncode == 0, applied.stdout + applied.stderr
+    applied_payload = json.loads(applied.stdout)
+    assert_standard_shape(applied_payload, "apply-knowledge-pack")
+    assert applied_payload["facts"]["pack_id"] == "demo-pack"
+
+    repack_dir = tmp_path / "demo-repack"
+    repacked = run_specify_cli(
+        tmp_path,
+        "knowledge",
+        "repack",
+        "--project-dir",
+        str(project),
+        "--pack-id",
+        "demo-repack",
+        "--output-dir",
+        str(repack_dir),
+        "--force",
+        "--json",
+    )
+    assert repacked.returncode == 0, repacked.stdout + repacked.stderr
+    repacked_payload = json.loads(repacked.stdout)
+    assert_standard_shape(repacked_payload, "repack-knowledge-pack")
+    assert repacked_payload["facts"]["pack_id"] == "demo-repack"
+    assert (repack_dir / "knowledge-pack.yml").exists()
 
 
 def test_ai_knowledge_pack_generator_assets_define_ai_loop():

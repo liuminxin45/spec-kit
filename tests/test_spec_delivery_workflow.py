@@ -2107,8 +2107,10 @@ def test_open_source_readme_documents_pack_and_generated_knowledge_starts():
     assert "specify init --here --knowledge-pack <pack-dir>" in readme
     assert "--knowledge-pack-apply-profiles" in readme
     assert "does not generate an AI review packet" in readme
-    assert "bootstrap-knowledge.ps1 -RepoRoot . -Json" in readme
-    assert "generate-knowledge-pack.ps1 -RepoRoot . -PackId <id> -IncludeProfiles -Json" in readme
+    assert "specify knowledge bootstrap --project-dir . --json" in readme
+    assert "specify knowledge generate-pack --project-dir . --pack-id <id> --include-profiles --json" in readme
+    assert "specify knowledge finalize-pack --project-dir . --pack-id <id> --include-profiles --apply --force" in readme
+    assert "specify knowledge repack --project-dir . --pack-id <id> --include-profiles --force --json" in readme
     assert ".specify/knowledge-pack-generation/ai-synthesis/ai/knowledge/" in readme
     assert "source-coverage-ledger.json" in readme
     assert "evaluate-knowledge-pack-synthesis.ps1" in readme
@@ -2117,7 +2119,7 @@ def test_open_source_readme_documents_pack_and_generated_knowledge_starts():
     assert "validate-knowledge-pack.ps1" in readme
     assert "github/spec-kit" in readme
     assert "本仓库不是 GitHub 官方项目" in readme
-    assert "specify upgrade --dry-run" in readme
+    assert "specify upgrade --project-dir <project-dir> --dry-run" in readme
     assert ".specify/spec-kit.lock.yml" in readme
     assert ".specify/integrations/speckit.manifest.json" in readme
 
