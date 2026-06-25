@@ -605,6 +605,7 @@ def test_host_frontend_delivery_chain_and_cdp_target_gate_are_enforced():
     assert "do not continue to\n     `speckit.acceptance` while AI-owned validation is still pending" in implement
     assert "Removed stale runtime files" in validation_template
     assert "Runtime replacement removed stale count" in evidence_template
+    assert "runtime replacement directory" in checklist
 
     for text in [implement, validation, routing, rules, build_notes, repo_map, checklist, common_rules]:
         assert "inspect-host-cdp-target" in text or "/json/list" in text
