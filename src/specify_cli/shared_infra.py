@@ -515,6 +515,15 @@ def install_shared_infra(
                         rel = dst_path.relative_to(project_path).as_posix()
                         if not _safe_dest_or_bucket(dst_path, rel, parent_must_exist=False):
                             continue
+                        content = src_path.read_bytes()
+                        if (
+                            dst_path.exists()
+                            and dst_path.is_file()
+                            and not dst_path.is_symlink()
+                            and dst_path.read_bytes() == content
+                        ):
+                            manifest.record_existing(rel)
+                            continue
                         write, bucket = _decide_overwrite(rel, dst_path)
                         if not write:
                             if bucket == "preserved":
@@ -525,7 +534,7 @@ def install_shared_infra(
 
                         if not _ensure_or_bucket_dir(dst_path.parent):
                             continue
-                        planned_copies.append((dst_path, rel, src_path.read_bytes(), src_path.stat().st_mode & 0o777))
+                        planned_copies.append((dst_path, rel, content, src_path.stat().st_mode & 0o777))
 
     templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)
     if templates_src.is_dir():
@@ -550,6 +559,14 @@ def install_shared_infra(
 
                 content = src.read_text(encoding="utf-8")
                 content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+                if (
+                    dst.exists()
+                    and dst.is_file()
+                    and not dst.is_symlink()
+                    and dst.read_text(encoding="utf-8") == content
+                ):
+                    manifest.record_existing(rel)
+                    continue
                 planned_templates.append((dst, rel, content))
 
     ai_templates_src = shared_ai_templates_source(core_pack=core_pack, repo_root=repo_root)
@@ -578,6 +595,16 @@ def install_shared_infra(
                 rel = dst_path.relative_to(project_path).as_posix()
                 if not _safe_dest_or_bucket(dst_path, rel, parent_must_exist=False):
                     continue
+                content = src_path.read_text(encoding="utf-8")
+                content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+                if (
+                    dst_path.exists()
+                    and dst_path.is_file()
+                    and not dst_path.is_symlink()
+                    and dst_path.read_text(encoding="utf-8") == content
+                ):
+                    manifest.record_existing(rel)
+                    continue
                 write, bucket = _decide_overwrite(rel, dst_path)
                 if not write:
                     if bucket == "preserved":
@@ -588,8 +615,6 @@ def install_shared_infra(
 
                 if not _ensure_or_bucket_dir(dst_path.parent):
                     continue
-                content = src_path.read_text(encoding="utf-8")
-                content = IntegrationBase.resolve_command_refs(content, invoke_separator)
                 planned_templates.append((dst_path, rel, content))
 
     checklist_rules_src = shared_checklist_rules_source(core_pack=core_pack, repo_root=repo_root)
@@ -605,6 +630,15 @@ def install_shared_infra(
                 rel = dst_path.relative_to(project_path).as_posix()
                 if not _safe_dest_or_bucket(dst_path, rel, parent_must_exist=False):
                     continue
+                content = src_path.read_bytes()
+                if (
+                    dst_path.exists()
+                    and dst_path.is_file()
+                    and not dst_path.is_symlink()
+                    and dst_path.read_bytes() == content
+                ):
+                    manifest.record_existing(rel)
+                    continue
                 write, bucket = _decide_overwrite(rel, dst_path)
                 if not write:
                     if bucket == "preserved":
@@ -615,7 +649,7 @@ def install_shared_infra(
 
                 if not _ensure_or_bucket_dir(dst_path.parent):
                     continue
-                planned_copies.append((dst_path, rel, src_path.read_bytes(), src_path.stat().st_mode & 0o777))
+                planned_copies.append((dst_path, rel, content, src_path.stat().st_mode & 0o777))
 
     for dst_path, rel, content, mode in planned_copies:
         if not _ensure_or_bucket_dir(dst_path.parent):

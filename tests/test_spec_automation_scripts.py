@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import yaml
@@ -60,6 +61,9 @@ AUTOMATION_TOOLS = [
     "repack-knowledge-pack",
     "validate-knowledge-pack",
     "compare-knowledge-pack-equivalence",
+    "get-spec-kit-version",
+    "validate-spec-kit-version",
+    "bump-spec-kit-version",
 ]
 
 
@@ -95,6 +99,26 @@ def run_ps(tool: str, *args: str, cwd: Path | None = None) -> dict:
         check=True,
     )
     return json.loads(result.stdout)
+
+
+def run_specify_cli(project: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(REPO_ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
+    return subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import specify_cli; specify_cli.main()",
+            *args,
+        ],
+        cwd=project,
+        env=env,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        timeout=120,
+    )
 
 
 def assert_standard_shape(output: dict, tool: str):
@@ -1078,6 +1102,126 @@ def test_all_automation_scripts_exist_in_powershell():
         assert (REPO_ROOT / "scripts" / "powershell" / f"{tool}.ps1").exists()
     script_dirs = sorted(path.name for path in (REPO_ROOT / "scripts").iterdir() if path.is_dir())
     assert script_dirs == ["powershell"]
+
+
+def test_spec_kit_core_version_scripts_use_pyproject_as_source(tmp_path):
+    pyproject = tomllib.loads(read_text("pyproject.toml"))
+    expected_version = pyproject["project"]["version"]
+    expected_package = pyproject["project"]["name"]
+
+    version_info = run_ps("get-spec-kit-version", "-RepoRoot", str(REPO_ROOT))
+
+    assert_standard_shape(version_info, "get-spec-kit-version")
+    assert version_info["status"] == "ok"
+    assert version_info["facts"]["version_source"] == "pyproject.toml"
+    assert version_info["facts"]["package_name"] == expected_package
+    assert version_info["facts"]["version"] == expected_version
+    assert version_info["facts"]["tag_name"] == f"v{expected_version}"
+
+    validation = run_ps("validate-spec-kit-version", "-RepoRoot", str(REPO_ROOT))
+
+    assert_standard_shape(validation, "validate-spec-kit-version")
+    assert validation["status"] == "ok"
+    assert validation["facts"]["version"] == version_info["facts"]["version"]
+    assert validation["facts"]["package_name"] == expected_package
+    assert validation["facts"]["version_source"] == "pyproject.toml"
+    assert "pyproject.toml" in read_text("src/specify_cli/_assets.py")
+    assert 'importlib.metadata.version("specify-cli")' in read_text("src/specify_cli/_assets.py")
+
+    temp_repo = tmp_path / "spec-kit"
+    temp_repo.mkdir()
+    (temp_repo / "pyproject.toml").write_text(
+        '[project]\nname = "specify-cli"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+
+    bumped = subprocess.run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(REPO_ROOT / "scripts" / "powershell" / "bump-spec-kit-version.ps1"),
+            "-RepoRoot",
+            str(temp_repo),
+            "-Version",
+            "0.1.1",
+            "-Json",
+        ],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=True,
+    )
+    output = json.loads(bumped.stdout)
+
+    assert_standard_shape(output, "bump-spec-kit-version")
+    assert output["status"] == "ok"
+    assert output["facts"]["previous_version"] == "0.1.0"
+    assert output["facts"]["version"] == "0.1.1"
+    assert output["facts"]["tag_name"] == "v0.1.1"
+    assert 'version = "0.1.1"' in (temp_repo / "pyproject.toml").read_text(encoding="utf-8")
+
+
+def test_specify_upgrade_uses_lock_manifest_and_dry_run(tmp_path):
+    pyproject = tomllib.loads(read_text("pyproject.toml"))
+    expected_version = pyproject["project"]["version"]
+    project = tmp_path / "project"
+    project.mkdir()
+
+    initialized = run_specify_cli(
+        project,
+        "init",
+        "--here",
+        "--force",
+        "--ignore-agent-tools",
+        "--no-git",
+    )
+
+    assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+
+    lock_path = project / ".specify" / "spec-kit.lock.yml"
+    manifest_path = project / ".specify" / "integrations" / "speckit.manifest.json"
+    assert lock_path.exists()
+    assert manifest_path.exists()
+
+    lock = yaml.safe_load(lock_path.read_text(encoding="utf-8"))
+    assert lock["spec_kit"]["version"] == expected_version
+    assert "source_path" not in lock["spec_kit"]
+    assert lock["managed_assets"]["manifest"] == ".specify/integrations/speckit.manifest.json"
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["version"] == expected_version
+    assert ".specify/workflows/speckit/workflow.yml" in manifest["files"]
+
+    dry_run = run_specify_cli(project, "upgrade", "--dry-run", "--json")
+    assert dry_run.returncode == 0, dry_run.stdout + dry_run.stderr
+    dry_payload = json.loads(dry_run.stdout)
+    assert dry_payload["status"] == "planned"
+    assert dry_payload["dry_run"] is True
+    assert dry_payload["plan"]["current_version"] == expected_version
+    assert dry_payload["plan"]["target_version"] == expected_version
+    assert dry_payload["plan"]["lock_file"] == ".specify/spec-kit.lock.yml"
+
+    managed_script = project / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    managed_script.write_text(
+        managed_script.read_text(encoding="utf-8") + "\n# local customization\n",
+        encoding="utf-8",
+    )
+    customized_plan = run_specify_cli(project, "upgrade", "--dry-run", "--json")
+    assert customized_plan.returncode == 0, customized_plan.stdout + customized_plan.stderr
+    customized_payload = json.loads(customized_plan.stdout)
+    assert ".specify/scripts/powershell/check-prerequisites.ps1" in customized_payload["plan"]["preserved_customized"]
+
+    managed_script.write_bytes((REPO_ROOT / "scripts" / "powershell" / "check-prerequisites.ps1").read_bytes())
+    upgraded = run_specify_cli(project, "upgrade", "--skip-validation", "--json")
+    assert upgraded.returncode == 0, upgraded.stdout + upgraded.stderr
+    upgraded_payload = json.loads(upgraded.stdout)
+    assert upgraded_payload["status"] == "ok"
+    assert upgraded_payload["applied"]["version"] == expected_version
+    assert upgraded_payload["applied"]["manifest"] == ".specify/integrations/speckit.manifest.json"
+    upgraded_lock = yaml.safe_load(lock_path.read_text(encoding="utf-8"))
+    assert "source_path" not in upgraded_lock["spec_kit"]
 
 
 def test_ai_knowledge_pack_generator_assets_define_ai_loop():

@@ -74,7 +74,6 @@ from ._console import (
     show_banner,
 )
 from ._assets import (
-    _locate_bundled_workflow,
     _locate_core_pack,
     _repo_root,
     get_speckit_version as get_speckit_version,
@@ -776,34 +775,28 @@ def init(
 
             # Install bundled speckit workflow
             try:
-                bundled_wf = _locate_bundled_workflow("speckit")
-                if bundled_wf:
-                    from .workflows.catalog import WorkflowRegistry
-                    from .workflows.engine import WorkflowDefinition
-                    wf_registry = WorkflowRegistry(project_path)
-                    if not wf_registry.is_installed("speckit") or force:
-                        import shutil as _shutil
-                        dest_wf = project_path / ".specify" / "workflows" / "speckit"
-                        dest_wf.mkdir(parents=True, exist_ok=True)
-                        _shutil.copy2(
-                            bundled_wf / "workflow.yml",
-                            dest_wf / "workflow.yml",
-                        )
-                        definition = WorkflowDefinition.from_yaml(dest_wf / "workflow.yml")
-                        wf_registry.add("speckit", {
-                            "name": definition.name,
-                            "version": definition.version,
-                            "description": definition.description,
-                            "source": "bundled",
-                        })
-                        tracker.complete(
-                            "workflow",
-                            "speckit refreshed" if force else "speckit installed",
-                        )
-                    else:
-                        tracker.complete("workflow", "already installed")
-                else:
+                from ._upgrade import install_bundled_workflow, resolve_upgrade_source
+
+                source_info = resolve_upgrade_source(
+                    source=None,
+                    core_pack=_locate_core_pack(),
+                    repo_root=_repo_root(),
+                    installed_version=get_speckit_version(),
+                )
+                workflow_status = install_bundled_workflow(
+                    project_path,
+                    source_info=source_info,
+                    version=get_speckit_version(),
+                    force=force,
+                )
+                if workflow_status == "missing-source":
                     tracker.skip("workflow", "bundled workflow not found")
+                elif workflow_status == "unchanged":
+                    tracker.complete("workflow", "already installed")
+                elif workflow_status == "preserved-customized":
+                    tracker.complete("workflow", "customized workflow preserved")
+                else:
+                    tracker.complete("workflow", f"speckit {workflow_status}")
             except Exception as wf_err:
                 sanitized_wf = str(wf_err).replace('\n', ' ').strip()
                 tracker.error("workflow", f"install failed: {sanitized_wf[:120]}")
@@ -838,6 +831,16 @@ def init(
                     "id": applied_pack.get("facts", {}).get("pack_id", ""),
                 }
             save_init_options(project_path, init_opts)
+            try:
+                from ._upgrade import write_spec_kit_lock
+
+                write_spec_kit_lock(
+                    project_path,
+                    version=get_speckit_version(),
+                    source="init",
+                )
+            except Exception as lock_err:
+                console.print(f"[yellow]Warning:[/yellow] Could not write spec-kit lockfile: {lock_err}")
 
             tracker.complete("final", "project ready")
         except (typer.Exit, SystemExit):
@@ -970,6 +973,203 @@ def check():
 
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install a coding agent for the best experience[/dim]")
+
+
+def _current_project_speckit_version(project_root: Path) -> str:
+    """Return the version recorded in project state, falling back conservatively."""
+    from ._upgrade import read_spec_kit_lock
+
+    lock = read_spec_kit_lock(project_root)
+    spec_kit = lock.get("spec_kit") if isinstance(lock.get("spec_kit"), dict) else {}
+    version = str(spec_kit.get("version", "")).strip()
+    if version:
+        return version
+
+    init_options = load_init_options(project_root)
+    version = str(init_options.get("speckit_version", "")).strip()
+    if version:
+        return version
+
+    try:
+        from .shared_infra import load_speckit_manifest
+
+        manifest = load_speckit_manifest(project_root, version=get_speckit_version())
+        if manifest.version:
+            return manifest.version
+    except Exception:
+        pass
+
+    return "unknown"
+
+
+def _upgrade_invoke_separator(project_root: Path) -> str:
+    """Resolve the current integration command separator for template refresh."""
+    from .integrations import get_integration
+
+    current = _read_integration_json(project_root)
+    key = _default_integration_key(current) or INIT_INTEGRATION
+    integration = get_integration(key)
+    if integration is None:
+        return "."
+    try:
+        _, parsed_options = _resolve_integration_options(integration, current, key, None)
+        return _invoke_separator_for_integration(integration, current, key, parsed_options)
+    except Exception:
+        return integration.effective_invoke_separator()
+
+
+def _print_upgrade_plan(plan: dict[str, Any]) -> None:
+    table = Table(title="Spec Kit Upgrade Plan")
+    table.add_column("Item")
+    table.add_column("Count", justify="right")
+    for key, label in [
+        ("added", "Add managed assets"),
+        ("updated", "Update unchanged managed assets"),
+        ("forced_overwrite", "Force overwrite"),
+        ("preserved_customized", "Preserve customized assets"),
+        ("skipped_untracked", "Skip untracked existing assets"),
+        ("removed_stale", "Remove stale tracked assets"),
+        ("preserved_stale", "Preserve stale customized assets"),
+        ("unchanged", "Already current"),
+    ]:
+        table.add_row(label, str(len(plan.get(key, []))))
+    workflow = plan.get("workflow", {})
+    table.add_row("Bundled workflow", workflow.get("status", "unknown"))
+    console.print(table)
+    console.print(
+        f"Current: [cyan]{plan['current_version']}[/cyan]  "
+        f"Target: [cyan]{plan['target_version']}[/cyan]  "
+        f"Source: [cyan]{plan['source']}[/cyan]"
+    )
+    for key in ["preserved_customized", "skipped_untracked", "preserved_stale"]:
+        values = plan.get(key, [])
+        if values:
+            console.print(f"[yellow]{key}[/yellow]:")
+            for rel in values[:20]:
+                console.print(f"  {rel}")
+            if len(values) > 20:
+                console.print(f"  ... {len(values) - 20} more")
+
+
+@app.command("upgrade")
+def upgrade(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show the upgrade plan without writing files"),
+    force: bool = typer.Option(False, "--force", help="Overwrite customized managed assets"),
+    source: str | None = typer.Option(None, "--source", help="Use a local spec-kit source checkout instead of the installed package"),
+    version: str | None = typer.Option(None, "--version", help="Require the upgrade source to match this version"),
+    skip_validation: bool = typer.Option(False, "--skip-validation", help="Do not run post-upgrade validation gates"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Upgrade Spec Kit-managed assets in the current project.
+
+    This command upgrades project assets from a confirmed Spec Kit source:
+    the installed package/core pack by default, or a local source checkout
+    passed with ``--source``. It does not pull a remote branch implicitly.
+    """
+    from ._upgrade import (
+        apply_project_upgrade,
+        build_upgrade_plan,
+        resolve_upgrade_source,
+        run_post_upgrade_validations,
+    )
+
+    project_root = _require_specify_project()
+    current_version = _current_project_speckit_version(project_root)
+    try:
+        source_info = resolve_upgrade_source(
+            source=source,
+            core_pack=_locate_core_pack(),
+            repo_root=_repo_root(),
+            installed_version=get_speckit_version(),
+        )
+    except ValueError as exc:
+        if json_output:
+            console.print(json.dumps({"status": "blocked", "blockers": [str(exc)]}, ensure_ascii=False))
+        else:
+            console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    if version and source_info["version"] != version:
+        blocker = (
+            f"Requested version {version} does not match upgrade source version "
+            f"{source_info['version']}."
+        )
+        if json_output:
+            console.print(json.dumps({"status": "blocked", "blockers": [blocker]}, ensure_ascii=False))
+        else:
+            console.print(f"[red]Error:[/red] {blocker}")
+            console.print("Install or select the desired Spec Kit release first, then rerun upgrade.")
+        raise typer.Exit(1)
+
+    invoke_separator = _upgrade_invoke_separator(project_root)
+    plan = build_upgrade_plan(
+        project_root,
+        source_info=source_info,
+        current_version=current_version,
+        invoke_separator=invoke_separator,
+        force=force,
+    )
+
+    result: dict[str, Any] = {
+        "status": "planned" if dry_run else "ok",
+        "dry_run": dry_run,
+        "plan": plan,
+        "applied": None,
+        "validations": [],
+        "blockers": [],
+    }
+
+    if dry_run:
+        if json_output:
+            console.print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            _print_upgrade_plan(plan)
+        return
+
+    applied = apply_project_upgrade(
+        project_root,
+        source_info=source_info,
+        current_version=current_version,
+        invoke_separator=invoke_separator,
+        force=force,
+        console=console,
+    )
+    result["applied"] = applied
+
+    init_options = load_init_options(project_root)
+    init_options["speckit_version"] = source_info["version"]
+    init_options["speckit_upgrade_lock"] = applied.get("lock_file", "")
+    save_init_options(project_root, init_options)
+
+    if not skip_validation:
+        validations = run_post_upgrade_validations(project_root)
+        result["validations"] = validations
+        blocked = [
+            item.get("tool", "validation")
+            for item in validations
+            if item.get("status") == "blocked"
+        ]
+        if blocked:
+            result["status"] = "blocked"
+            result["blockers"].append(
+                "Post-upgrade validation blocked: " + ", ".join(blocked)
+            )
+
+    if json_output:
+        console.print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        console.print(
+            f"[green]OK[/green] Spec Kit project assets upgraded "
+            f"{current_version} -> {source_info['version']}"
+        )
+        console.print(f"Lockfile: [cyan]{applied['lock_file']}[/cyan]")
+        console.print(f"Manifest: [cyan]{applied['manifest']}[/cyan]")
+        if result["blockers"]:
+            for blocker in result["blockers"]:
+                console.print(f"[red]Blocked:[/red] {blocker}")
+
+    if result["status"] == "blocked":
+        raise typer.Exit(1)
 
 
 def _feature_capabilities() -> dict[str, bool]:

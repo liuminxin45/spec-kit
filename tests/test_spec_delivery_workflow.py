@@ -2114,6 +2114,11 @@ def test_open_source_readme_documents_pack_and_generated_knowledge_starts():
     assert ".specify/knowledge-bootstrap/ai-review/" in readme
     assert "Project-specific facts belong" in readme
     assert "validate-knowledge-pack.ps1" in readme
+    assert "github/spec-kit" in readme
+    assert "本仓库不是 GitHub 官方项目" in readme
+    assert "specify upgrade --dry-run" in readme
+    assert ".specify/spec-kit.lock.yml" in readme
+    assert ".specify/integrations/speckit.manifest.json" in readme
 
 
 def test_init_wrapper_documents_layered_assets_and_cherry_pick_completion():
