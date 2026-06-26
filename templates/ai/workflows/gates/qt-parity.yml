@@ -11,7 +11,7 @@ required_when:
 minimal_context:
   - "Qt UI source path/function."
   - "Target frontend component."
-  - "Native/Biz/SDK execution path when behavior crosses layers."
+  - "Native/service/SDK execution path when behavior crosses layers."
 steps:
   - "Read the Qt behavior map before broad source search."
   - "Treat the map as preloaded team knowledge only when it has concrete rows; placeholders are not behavior evidence."

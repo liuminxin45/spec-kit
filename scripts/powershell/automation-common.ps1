@@ -777,8 +777,12 @@ function Invoke-ValidateKnowledgeIndex {
 function Invoke-ValidateFeatureArtifacts {
     $result = New-Result "validate-feature-artifacts"
     $manifestPath = Get-LayerManifestPath
-    $required = Get-RequiredArtifacts -ManifestPath $manifestPath
     $routing = Read-FeatureRouting -Result $result
+    $required = Get-RequiredArtifacts -ManifestPath $manifestPath
+    if ($manifestPath -and $routing.profile -and $Stage) {
+        $profileRequired = Get-YamlListForKey -Path $manifestPath -Section "artifact_sets" -Key "$($routing.profile)-$Stage"
+        $required = Add-UniqueItems -Items $required -Extra $profileRequired
+    }
     $stageGateRequired = Get-StageGateRequiredArtifacts -Routing $routing
     $required = Add-UniqueItems -Items $required -Extra $stageGateRequired
     $requiredSource = if ($manifestPath) { "layer-manifest.yml" } else { "fallback" }
@@ -910,50 +914,58 @@ function Invoke-ValidateFeatureArtifacts {
 
 function Invoke-ValidateGeneratedContext {
     $result = New-Result "validate-generated-context"
-    $canonicalContextFile = "AGENTS.md"
+    $isSourceCheckout = (
+        (Test-Path -LiteralPath (Join-Path $RepoRoot "templates/agents-template.md") -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $RepoRoot "workflows/speckit/workflow.yml") -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $RepoRoot "scripts/powershell") -PathType Container) -and
+        -not (Test-Path -LiteralPath (Join-Path $RepoRoot ".specify") -PathType Container) -and
+        -not (Test-Path -LiteralPath (Join-Path $RepoRoot "ai") -PathType Container)
+    )
+    $canonicalContextFile = if ($isSourceCheckout) { "templates/agents-template.md" } else { "AGENTS.md" }
     $internalSkillsDir = ".agents/spec-kit/skills"
-    $workflowPath = "spec-kit/workflows/speckit/workflow.yml"
-    if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot $workflowPath)) -and
+    $workflowPath = if ($isSourceCheckout) { "workflows/speckit/workflow.yml" } else { "spec-kit/workflows/speckit/workflow.yml" }
+    if (-not $isSourceCheckout -and -not (Test-Path -LiteralPath (Join-Path $RepoRoot $workflowPath)) -and
         (Test-Path -LiteralPath (Join-Path $RepoRoot ".specify/workflows/speckit/workflow.yml"))) {
         $workflowPath = ".specify/workflows/speckit/workflow.yml"
     }
     $knowledgeLockPath = Join-Path $RepoRoot ".specify/knowledge/lock.yml"
     $repositoryMapPhrases = @("Project Path Categories", "CDP target inventory", "Do not write machine-specific absolute paths here")
     if (-not (Test-Path -LiteralPath $knowledgeLockPath -PathType Leaf)) {
-        $repositoryMapPhrases += "<workspace-root>/FrontendPlugin/<plugin-id>/"
+        $repositoryMapPhrases += "<workspace-root>/<app-path>/"
+        $repositoryMapPhrases += "Optional Host / CDP Defaults"
     }
     $checks = @()
     $checks += @(
         [ordered]@{
             path = $canonicalContextFile
-            phrases = @("Project Path Categories", "source-to-runtime copy", "best-effort self-validation", "direct runtime replacement", "host CDP validation", "ensure-host-cdp", "stale/current-feature hint", "read the current plan only", "select-knowledge", "select-gates", "validate-knowledge-index", "validate-context-budget", "inspect-validation-capabilities", "inspect-workflow-closure", "knowledge-candidates.md")
+            phrases = @("Project Path Categories", "source-to-runtime copy", "best-effort self-validation", "direct runtime replacement", "host CDP validation", "ensure-host-cdp", "stale/current-feature hint", "read the current plan only", "standard-bugfix-lite", "workpack.md", "select-knowledge", "select-gates", "validate-knowledge-index", "validate-context-budget", "inspect-validation-capabilities", "inspect-workflow-closure", "knowledge-candidates.md", "preflight-push")
         },
         [ordered]@{
-            path = ".specify/memory/repository-map.md"
+            path = if ($isSourceCheckout) { "templates/repository-map-template.md" } else { ".specify/memory/repository-map.md" }
             phrases = $repositoryMapPhrases
         },
         [ordered]@{
-            path = ".specify/templates/layer-manifest.yml"
-            phrases = @("stage_gates:", "read_strategies:", "Knowledge", "gate_routing", "select-gates", "validate-context-budget", "validate-knowledge-index", "checklists/implementation-readiness.md")
+            path = if ($isSourceCheckout) { "templates/layer-manifest.yml" } else { ".specify/templates/layer-manifest.yml" }
+            phrases = @("stage_gates:", "read_strategies:", "Knowledge", "gate_routing", "select-gates", "validate-context-budget", "validate-knowledge-index", "checklists/implementation-readiness.md", "workpack.md")
         },
         [ordered]@{
-            path = "ai/workflows/task-routing.md"
-            phrases = @("tasks -> analyze -> checklist", "skill-routing.yml", "validate-generated-context", "validate-knowledge-index", "validate-context-budget", "select-knowledge", "select-gates", "artifact_sections", "Stage Continuation", "Final Response Guard", "inspect-workflow-closure", "workflow-observer", "promote-candidates", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "do not apply stale feature risk flags")
+            path = if ($isSourceCheckout) { "templates/ai/workflows/task-routing.md" } else { "ai/workflows/task-routing.md" }
+            phrases = @("tasks -> analyze -> checklist", "standard-bugfix-lite", "workpack.md", "resolve-next-stage", "skill-routing.yml", "validate-generated-context", "validate-knowledge-index", "validate-context-budget", "select-knowledge", "select-gates", "artifact_sections", "Stage Continuation", "Final Response Guard", "inspect-workflow-closure", "workflow-observer", "promote-candidates", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "do not apply stale feature risk flags")
         },
         [ordered]@{
-            path = "ai/workflows/skill-routing.yml"
+            path = if ($isSourceCheckout) { "templates/ai/workflows/skill-routing.yml" } else { "ai/workflows/skill-routing.yml" }
             phrases = @("internal_skill_root", ".agents/spec-kit/skills", "load_only_selected_skill", "speckit-fact-layer", "speckit-test-plan", "speckit-quality-vision", "speckit-acceptance-rubric", "speckit-ai-self-acceptance", "speckit-workflow-observer", "speckit-promote-knowledge", "commit-message")
         },
         [ordered]@{
-            path = "ai/rules/ai-coding-rules.md"
-            phrases = @("Generated Context Drift", "analysis.md", "validate-generated-context", "validate-knowledge-index", "Stage Continuation Contract", "Host Frontend Delivery Chain", "ensure-host-cdp", "Retrospective", "inspect-workflow-closure", "knowledge-candidates.md")
+            path = if ($isSourceCheckout) { "templates/ai/rules/ai-coding-rules.md" } else { "ai/rules/ai-coding-rules.md" }
+            phrases = @("Generated Context Drift", "standard-bugfix-lite", "workpack.md", "resolve-next-stage", "analysis.md", "validate-generated-context", "validate-knowledge-index", "Stage Continuation Contract", "Host Frontend Delivery Chain", "ensure-host-cdp", "Retrospective", "inspect-workflow-closure", "knowledge-candidates.md", "preflight-push")
         },
         [ordered]@{
             path = $workflowPath
-            phrases = @("id: retrospective", "id: workflow-observer", "id: commit", "Require workflow-record.md", "knowledge-candidates.md", "workflow-observation.md", "automatic_stage_continuation", "post_human_acceptance_closure", "promote_knowledge_candidates", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "validate-knowledge-index", "validate-context-budget", "select-gates", "current-feature state only")
+            phrases = @("id: retrospective", "id: workflow-observer", "id: commit", "standard-bugfix-lite", "requires_confirmation: true", "Require workflow-record.md", "knowledge-candidates.md", "workflow-observation.md", "automatic_stage_continuation", "deterministic_next_stage", "post_human_acceptance_closure", "promote_knowledge_candidates", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "validate-knowledge-index", "validate-context-budget", "select-gates", "current-feature state only")
         },
         [ordered]@{
-            path = "spec-kit/TEAM-README.md"
+            path = if ($isSourceCheckout) { "TEAM-README.md" } else { "spec-kit/TEAM-README.md" }
             optional = $true
             phrases = @("source edit -> frontend build -> direct runtime replacement -> real host CDP verification", "select-knowledge", "select-gates", "validate-context-budget", "full-text/BM25 search")
         }
@@ -964,51 +976,102 @@ function Invoke-ValidateGeneratedContext {
             phrases = @("generated_by: `"compose-knowledge-packs`"", "materialized: `"ai/knowledge`"", "packs:", "aliases_applied:")
         }
     }
-    $checks += [ordered]@{
-        path = ".agents/skills/speckit-specify/SKILL.md"
-        phrases = @("Internal Stage Loading", ".agents/spec-kit/skills/speckit-<stage>/SKILL.md", "Do not pre-load")
-    }
-    $checks += [ordered]@{
-        path = "$internalSkillsDir/speckit-commit/SKILL.md"
-        phrases = @("validate-feature-artifacts", "Stage commit", "workflow-record.md", "improvement-candidates.md", "retrospective.status")
-    }
-    $checks += [ordered]@{
-        path = "$internalSkillsDir/speckit-implement/SKILL.md"
-        phrases = @("ensure-host-cdp", "CDP host recovery ladder", "manual acceptance", "select-gates")
-    }
-    $checks += [ordered]@{
-        path = "$internalSkillsDir/speckit-retrospective/SKILL.md"
-        phrases = @("Existing Constraint Audit", "AI workflow self-check", "Team knowledge candidates", "knowledge-candidates.md", "workflow-observer-packet.json", "retrospective.status")
-    }
-    $checks += [ordered]@{
-        path = "$internalSkillsDir/speckit-tasks/SKILL.md"
-        phrases = @("Run mandatory", "speckit.retrospective", "after quick acceptance and before", "optional test-hardening")
-    }
-    $checks += [ordered]@{
-        path = "$internalSkillsDir/speckit-test-plan/SKILL.md"
-        phrases = @("API/E2E", "select-knowledge", "approved-by-ai-obvious", "needs-human-review")
-    }
-    $checks += [ordered]@{
-        path = "$internalSkillsDir/speckit-quality-vision/SKILL.md"
-        phrases = @("quality-vision.md", "UI Baseline", "needs-human-baseline", "owner-approved-n/a")
-    }
-    $checks += [ordered]@{
-        path = "$internalSkillsDir/speckit-acceptance-rubric/SKILL.md"
-        phrases = @("acceptance-rubric.md", "Essential", "Pitfall", "L1", "L4")
-    }
-    $checks += [ordered]@{
-        path = "$internalSkillsDir/speckit-ai-self-acceptance/SKILL.md"
-        phrases = @("AI Self-Acceptance", "PASS", "FAIL", "BLOCKED", "CDP", "console", "logs", "cdp-screenshots")
-    }
-    $checks += [ordered]@{
-        path = ".specify/templates/acceptance-rubric-template.md"
-        source_path = "spec-kit/templates/acceptance-rubric-template.md"
-        phrases = @("Layer weights for actual workflow scoring", "workflow_score", "Actual Workflow Rubric Audit", "AI acceptance decision", "Human acceptance readiness")
-    }
-    $checks += [ordered]@{
-        path = ".specify/templates/checklist-template.md"
-        source_path = "spec-kit/templates/checklist-template.md"
-        phrases = @("next_required_human_action", "CHK010N", "runtime 替换目录")
+    if ($isSourceCheckout) {
+        $checks += [ordered]@{
+            path = "templates/commands/specify.md"
+            phrases = @("speckit-repository-map", ".specify/memory/repository-map.md")
+        }
+        $checks += [ordered]@{
+            path = "templates/commands/commit.md"
+            phrases = @("validate-feature-artifacts", "Stage commit", "workflow-record.md", "improvement-candidates.md", "retrospective.status")
+        }
+        $checks += [ordered]@{
+            path = "templates/commands/complete-branch.md"
+            phrases = @("explicit human approval", "-ConfirmCompletion", "preflight")
+        }
+        $checks += [ordered]@{
+            path = "templates/commands/implement.md"
+            phrases = @("ensure-host-cdp", "CDP host recovery ladder", "manual acceptance", "select-gates")
+        }
+        $checks += [ordered]@{
+            path = "templates/commands/retrospective.md"
+            phrases = @("Existing Constraint Audit", "AI workflow self-check", "Team knowledge candidates", "knowledge-candidates.md", "workflow-observer-packet.json", "retrospective.status")
+        }
+        $checks += [ordered]@{
+            path = "templates/commands/tasks.md"
+            phrases = @("Run mandatory", "speckit.retrospective", "after quick acceptance and before", "optional test-hardening")
+        }
+        $checks += [ordered]@{
+            path = "templates/commands/test-plan.md"
+            phrases = @("API/E2E", "select-knowledge", "approved-by-ai-obvious", "needs-human-review")
+        }
+        $checks += [ordered]@{
+            path = "templates/commands/quality-vision.md"
+            phrases = @("quality-vision.md", "UI Baseline", "needs-human-baseline", "owner-approved-n/a")
+        }
+        $checks += [ordered]@{
+            path = "templates/commands/acceptance-rubric.md"
+            phrases = @("acceptance-rubric.md", "Essential", "Pitfall", "L1", "L4")
+        }
+        $checks += [ordered]@{
+            path = "templates/commands/ai-self-acceptance.md"
+            phrases = @("AI Self-Acceptance", "PASS", "FAIL", "BLOCKED", "CDP", "console", "logs", "cdp-screenshots")
+        }
+        $checks += [ordered]@{
+            path = "templates/acceptance-rubric-template.md"
+            phrases = @("Layer weights for actual workflow scoring", "workflow_score", "Actual Workflow Rubric Audit", "AI acceptance decision", "Human acceptance readiness")
+        }
+        $checks += [ordered]@{
+            path = "templates/checklist-template.md"
+            phrases = @("next_required_human_action", "CHK010N", "runtime 替换目录")
+        }
+    } else {
+        $checks += [ordered]@{
+            path = ".agents/skills/speckit-specify/SKILL.md"
+            phrases = @("Internal Stage Loading", ".agents/spec-kit/skills/speckit-<stage>/SKILL.md", "Do not pre-load")
+        }
+        $checks += [ordered]@{
+            path = "$internalSkillsDir/speckit-commit/SKILL.md"
+            phrases = @("validate-feature-artifacts", "Stage commit", "workflow-record.md", "improvement-candidates.md", "retrospective.status")
+        }
+        $checks += [ordered]@{
+            path = "$internalSkillsDir/speckit-implement/SKILL.md"
+            phrases = @("ensure-host-cdp", "CDP host recovery ladder", "manual acceptance", "select-gates")
+        }
+        $checks += [ordered]@{
+            path = "$internalSkillsDir/speckit-retrospective/SKILL.md"
+            phrases = @("Existing Constraint Audit", "AI workflow self-check", "Team knowledge candidates", "knowledge-candidates.md", "workflow-observer-packet.json", "retrospective.status")
+        }
+        $checks += [ordered]@{
+            path = "$internalSkillsDir/speckit-tasks/SKILL.md"
+            phrases = @("Run mandatory", "speckit.retrospective", "after quick acceptance and before", "optional test-hardening")
+        }
+        $checks += [ordered]@{
+            path = "$internalSkillsDir/speckit-test-plan/SKILL.md"
+            phrases = @("API/E2E", "select-knowledge", "approved-by-ai-obvious", "needs-human-review")
+        }
+        $checks += [ordered]@{
+            path = "$internalSkillsDir/speckit-quality-vision/SKILL.md"
+            phrases = @("quality-vision.md", "UI Baseline", "needs-human-baseline", "owner-approved-n/a")
+        }
+        $checks += [ordered]@{
+            path = "$internalSkillsDir/speckit-acceptance-rubric/SKILL.md"
+            phrases = @("acceptance-rubric.md", "Essential", "Pitfall", "L1", "L4")
+        }
+        $checks += [ordered]@{
+            path = "$internalSkillsDir/speckit-ai-self-acceptance/SKILL.md"
+            phrases = @("AI Self-Acceptance", "PASS", "FAIL", "BLOCKED", "CDP", "console", "logs", "cdp-screenshots")
+        }
+        $checks += [ordered]@{
+            path = ".specify/templates/acceptance-rubric-template.md"
+            source_path = "spec-kit/templates/acceptance-rubric-template.md"
+            phrases = @("Layer weights for actual workflow scoring", "workflow_score", "Actual Workflow Rubric Audit", "AI acceptance decision", "Human acceptance readiness")
+        }
+        $checks += [ordered]@{
+            path = ".specify/templates/checklist-template.md"
+            source_path = "spec-kit/templates/checklist-template.md"
+            phrases = @("next_required_human_action", "CHK010N", "runtime 替换目录")
+        }
     }
 
     $details = @()
@@ -1069,12 +1132,14 @@ function Invoke-ValidateGeneratedContext {
         "capture-cdp-screenshot.ps1",
         "cdp-common.ps1",
         "validate-context-budget.ps1",
+        "resolve-next-stage.ps1",
+        "preflight-push.ps1",
         "sync-native-runtime-artifacts.ps1",
         "validate-rpc-proto-bundle.ps1"
     )
     $runtimeScriptDetails = @()
     foreach ($scriptName in $requiredRuntimeScripts) {
-        $rel = ".specify/scripts/powershell/$scriptName"
+        $rel = if ($isSourceCheckout) { "scripts/powershell/$scriptName" } else { ".specify/scripts/powershell/$scriptName" }
         $path = Join-Path $RepoRoot $rel
         $exists = Test-Path -LiteralPath $path -PathType Leaf
         $runtimeScriptDetails += [ordered]@{ path = $rel; exists = $exists }
@@ -1354,7 +1419,7 @@ function Invoke-NormalizeWorkflowState {
     }
     try {
         $state = Get-Content -LiteralPath $WorkflowState -Raw | ConvertFrom-Json
-        foreach ($field in @("attempts", "validations", "fact_layer", "acceptance", "retrospective", "promotion", "commit", "post_commit_self_check", "rubric_score")) {
+        foreach ($field in @("stage_statuses", "human_gates", "selected_gates", "next_stage_decision", "attempts", "validations", "fact_layer", "acceptance", "retrospective", "promotion", "commit", "post_commit_self_check", "rubric_score")) {
             if ($null -eq $state.$field) {
                 Set-Blocked $result "workflow-state.json missing field: $field"
             }
@@ -1537,10 +1602,20 @@ function Invoke-ValidateAiSelfAcceptance {
 function Invoke-InspectPluginBuildPlan {
     $result = New-Result "inspect-plugin-build-plan"
     $candidates = @()
-    $packageFiles = @(
-        (Join-Path $RepoRoot "package.json"),
-        (Join-Path $RepoRoot "HostApplication/HostApplication/package.json")
-    ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
+    $packageCandidates = @((Join-Path $RepoRoot "package.json"))
+    $workspaceFile = Join-Path $RepoRoot ".specify/workspace.yml"
+    if (Test-Path -LiteralPath $workspaceFile -PathType Leaf) {
+        foreach ($line in Get-Content -LiteralPath $workspaceFile) {
+            if ($line -match '^\s*path:\s*"?([^"]+)"?\s*$') {
+                $repoPath = $Matches[1].Trim("'`"")
+                if (-not [System.IO.Path]::IsPathRooted($repoPath)) {
+                    $repoPath = Join-Path $RepoRoot $repoPath
+                }
+                $packageCandidates += (Join-Path $repoPath "package.json")
+            }
+        }
+    }
+    $packageFiles = @($packageCandidates | Select-Object -Unique | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
 
     foreach ($packageFile in $packageFiles) {
         try {

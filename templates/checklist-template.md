@@ -49,11 +49,11 @@
 - [ ] CHK007 如相关，已覆盖 Public API、SDK、plugin、UI state 或 script contracts。
 - [ ] CHK008 已记录兼容性和迁移风险，或明确标记为 `N/A`。
 - [ ] CHK008A 如涉及 UI 状态、UI interaction、operation availability 或操作权限，`spec.md`/`plan.md` 已明确
-  `ServiceBridge` 仅做 API forwarding bridge，不实现业务逻辑；非 UI 专属 runtime/
-  permission/capability 事实来自 `CoreRuntime`；仅用于 UI 展示的结构、顺序和
+  `forwarding bridge` 仅做 API forwarding bridge，不实现业务逻辑；非 UI 专属 runtime/
+  permission/capability 事实来自 `runtime/domain owner`；仅用于 UI 展示的结构、顺序和
   visible/enabled 组织位于 frontend plugin。
 - [ ] CHK008B 如涉及 UI interaction/action availability，已覆盖 frontend-owned interaction/action id、顺序、可见性、
-  可用性、action id、依赖的 `CoreRuntime` permission/status/capability 来源和刷新时机。
+  可用性、action id、依赖的 `runtime/domain owner` permission/status/capability 来源和刷新时机。
 - [ ] CHK008C 如为 Qt UI interaction 或 operation availability 迁移，已列出 Qt 源行为覆盖清单，
   覆盖对象/设备类型、设备状态、UI element/action 顺序、visible/enabled 规则、action handler 和目标契约来源；
   可使用表格、分组清单、决策表、状态机说明、fixture matrix 或按 Qt 函数分段的规则清单。
@@ -63,25 +63,25 @@
 - [ ] CHK009 除非明确存在 simulation boundary，否则 device/runtime/cache/handle/
   permission behavior 基于真实状态。
 - [ ] CHK010 如相关，已记录 encoding 和 localization boundaries。
-- [ ] CHK010A 如相关，已确认 `ServiceBridge` 未实现业务规则；frontend plugin 未用
+- [ ] CHK010A 如相关，已确认 `forwarding bridge` 未实现业务规则；frontend plugin 未用
   label/string 推断 runtime/permission 事实、未长期缓存 device/runtime/permission
   业务状态。
 
 ## 身份 / 状态 / API 边界
 
-- [ ] CHK010D 跨 `CoreRuntime` facade、`ServiceBridge`、N-API/JSON/RPC、JS/UI 的设备身份
+- [ ] CHK010D 跨 `runtime/domain owner` facade、`forwarding bridge`、N-API/JSON/RPC、JS/UI 的设备身份
   只使用 UUID decimal string；未新增 `deviceIndex`、`deviceId`、`handleId`、
   `virtualDeviceId` 等平行身份。
 - [ ] CHK010E UUID 生成入口唯一：`device::identity::generateUUID()`；`DeviceManager`、
   `SdkService`、UI 只使用身份，不实现生成规则。
-- [ ] CHK010F SDK native id、virtual id、handle 仅留在底层内部，未泄漏到 Libs facade、
-  Biz、JS 或 UI。
+- [ ] CHK010F SDK native id、virtual id、handle 仅留在底层内部，未泄漏到 runtime libraries facade、
+  service layer、JS 或 UI。
 - [ ] CHK010G 前端业务操作只读 `node.uuid`；未使用 `node.id`、`entityId`、
   `metadata.uuid` 等兜底操作设备。
-- [ ] CHK010H `ServiceBridge` 未缓存设备列表、连接状态、采集状态或 runtime state；
-  事件仅触发刷新，刷新后重新获取 `CoreRuntime` snapshot/runtime facts。
+- [ ] CHK010H `forwarding bridge` 未缓存设备列表、连接状态、采集状态或 runtime state；
+  事件仅触发刷新，刷新后重新获取 `runtime/domain owner` snapshot/runtime facts。
 - [ ] CHK010I 功能等价旧 API 已删除或迁移；若暂时保留，已有 owner-approved temporary gap。
-- [ ] CHK010J 调试 API、测试 facade、临时 SDK 直通能力未进入生产 Biz exports。
+- [ ] CHK010J 调试 API、测试 facade、临时 SDK 直通能力未进入生产 service layer exports。
 - [ ] CHK010K 字段命名表达真实语义，例如 `uuid`、`deviceUuids`、`nodeId`、
   `listIndex`；未使用 `deviceId` 等含混词作为跨层身份。
 - [ ] CHK010L 虚拟设备和真实设备在 SDK 外部都表现为同一套 UUID 语义。
@@ -117,7 +117,7 @@
 - [ ] CHK014E 如涉及裁剪、空白、挤压、滚动条影响外部 UI、嵌入式布局或首轮 CSS 修复失败，
   已要求 runtime DOM / computed style / box metrics 证据，或已进入 bounded UI runtime investigation。
 - [ ] CHK014H Host-embedded frontend UI 如修改高度、flex、overflow、底部间距、详情栏/信息栏，
-  已在真实 HostApplication 宿主通过 CDP 记录 plugin root、shell、main panel、detail/footer panel、
+  已在真实 host application 宿主通过 CDP 记录 plugin root、shell、main panel、detail/footer panel、
   scroll owner、last visible row/control 的 top/bottom/height；没有使用裸 `100vh` 或单插件预览高度
   作为嵌入式裁切问题的唯一依据。
 - [ ] CHK014F 如涉及 UI parity、截图对齐或 0px 级视觉修复，`plan.md` 已包含 UI element traversal

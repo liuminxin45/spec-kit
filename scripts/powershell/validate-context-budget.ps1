@@ -73,26 +73,34 @@ $checks = [System.Collections.ArrayList]::new()
 $blockers = @()
 $hints = @()
 $sourceOnlySpecKitRoot = (
-    (Test-Path -LiteralPath (Join-Path $RepoRoot "spec-kit/templates") -PathType Container) -and
+    (
+        (Test-Path -LiteralPath (Join-Path $RepoRoot "templates") -PathType Container) -or
+        (Test-Path -LiteralPath (Join-Path $RepoRoot "spec-kit/templates") -PathType Container)
+    ) -and
     -not (Test-Path -LiteralPath (Join-Path $RepoRoot ".specify") -PathType Container) -and
     -not (Test-Path -LiteralPath (Join-Path $RepoRoot "ai") -PathType Container)
 )
+$nearBudgetThreshold = 10
 
 foreach ($item in @(
     @("default-context", @("AGENTS.md"), 130),
     @("default-context", @(".specify/memory/repository-map.md"), 140),
     @("default-context", @("ai/workflows/task-routing.md"), 180),
-    @("workflow-map", @("spec-kit/templates/ai/workflows/skill-routing.yml", "ai/workflows/skill-routing.yml"), 90),
-    @("core-command", @("spec-kit/templates/commands/implement.md", ".agents/spec-kit/skills/speckit-implement/SKILL.md"), 220),
-    @("core-command", @("spec-kit/templates/commands/plan.md", ".agents/spec-kit/skills/speckit-plan/SKILL.md"), 220),
-    @("core-template", @("spec-kit/templates/plan-template.md", ".specify/templates/plan-template.md"), 220),
-    @("core-template", @("spec-kit/templates/layer-manifest.yml", ".specify/templates/layer-manifest.yml"), 380),
-    @("knowledge-index", @("spec-kit/templates/ai/knowledge/index.yml", "ai/knowledge/index.yml"), 140)
+    @("workflow-map", @("templates/ai/workflows/skill-routing.yml", "spec-kit/templates/ai/workflows/skill-routing.yml", "ai/workflows/skill-routing.yml"), 90),
+    @("core-command", @("templates/commands/implement.md", "spec-kit/templates/commands/implement.md", ".agents/spec-kit/skills/speckit-implement/SKILL.md"), 220),
+    @("core-command", @("templates/commands/plan.md", "spec-kit/templates/commands/plan.md", ".agents/spec-kit/skills/speckit-plan/SKILL.md"), 220),
+    @("core-template", @("templates/plan-template.md", "spec-kit/templates/plan-template.md", ".specify/templates/plan-template.md"), 220),
+    @("core-template", @("templates/workpack-template.md", "spec-kit/templates/workpack-template.md", ".specify/templates/workpack-template.md"), 120),
+    @("core-template", @("templates/layer-manifest.yml", "spec-kit/templates/layer-manifest.yml", ".specify/templates/layer-manifest.yml"), 430),
+    @("knowledge-index", @("templates/ai/knowledge/index.yml", "spec-kit/templates/ai/knowledge/index.yml", "ai/knowledge/index.yml"), 140)
 )) {
     Add-CheckCandidate $checks $item[0] $item[1] $item[2]
 }
 
-$gatesRoot = Join-Path $RepoRoot "spec-kit/templates/ai/workflows/gates"
+$gatesRoot = Join-Path $RepoRoot "templates/ai/workflows/gates"
+if (-not (Test-Path -LiteralPath $gatesRoot -PathType Container)) {
+    $gatesRoot = Join-Path $RepoRoot "spec-kit/templates/ai/workflows/gates"
+}
 if (-not (Test-Path -LiteralPath $gatesRoot -PathType Container)) {
     $gatesRoot = Join-Path $RepoRoot "ai/workflows/gates"
 }
@@ -112,7 +120,10 @@ if (Test-Path -LiteralPath $internalSkillsRoot -PathType Container) {
     }
 }
 
-$knowledgeRoot = Join-Path $RepoRoot "spec-kit/templates/ai/knowledge"
+$knowledgeRoot = Join-Path $RepoRoot "templates/ai/knowledge"
+if (-not (Test-Path -LiteralPath $knowledgeRoot -PathType Container)) {
+    $knowledgeRoot = Join-Path $RepoRoot "spec-kit/templates/ai/knowledge"
+}
 if (-not (Test-Path -LiteralPath $knowledgeRoot -PathType Container)) {
     $knowledgeRoot = Join-Path $RepoRoot "ai/knowledge"
 }
@@ -139,13 +150,30 @@ foreach ($check in $nearBudget) {
     $hints += "$($check.path) is near its context budget ($($check.lines)/$($check.max_lines) lines)"
 }
 
+$optimizationCandidates = @($nearBudget | Sort-Object -Property @{ Expression = { $_.lines / [Math]::Max(1, $_.max_lines) }; Descending = $true } | ForEach-Object {
+    [ordered]@{
+        path = $_.path
+        lines = $_.lines
+        max_lines = $_.max_lines
+        recommendation = "Split the stage contract into a short entry file plus references, or move details behind a selector script."
+    }
+})
+
+$status = if ($blockers.Count -gt 0) { "blocked" } elseif ($nearBudget.Count -gt $nearBudgetThreshold) { "warning" } else { "ok" }
+if ($nearBudget.Count -gt $nearBudgetThreshold) {
+    $hints += "near-budget count $($nearBudget.Count) exceeds warning threshold $nearBudgetThreshold; release/process optimization tasks must record a disposition for the optimization candidates."
+}
+
 $payload = [ordered]@{
     tool = "validate-context-budget"
-    status = if ($blockers.Count -gt 0) { "blocked" } else { "ok" }
+    status = $status
     facts = [ordered]@{
         checked = @($checks)
         over_budget = @($checks | Where-Object { $_.status -eq "over_budget" })
         near_budget = @($nearBudget)
+        near_budget_count = $nearBudget.Count
+        near_budget_threshold = $nearBudgetThreshold
+        optimization_candidates = @($optimizationCandidates)
     }
     blockers = $blockers
     unknowns = @()

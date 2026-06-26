@@ -19,7 +19,7 @@ $ErrorActionPreference = "Stop"
 
 if ($Help) {
     Write-Output "Usage: ensure-host-cdp.ps1 [-Endpoint http://127.0.0.1:9222] [-TargetKind host-app|workbench] [-HostRoot <dir>] [-StartCommand <cmd>] [-TargetsJson <json>] [-PortOwnersJson <json>] [-AllowProcessRecovery] [-DryRunRecovery] [-Json]"
-    Write-Output "Probes host CDP readiness, reports target inventory, and can safely recover known HostApplication debug processes before UI validation."
+    Write-Output "Probes host CDP readiness, reports target inventory, and can safely recover verified host debug processes before UI validation."
     exit 0
 }
 
@@ -111,14 +111,14 @@ function Get-PortOwnerFacts {
     return $facts
 }
 
-function Test-KnownHostApplicationOwner {
+function Test-KnownHostOwner {
     param($Owner, [string]$Root)
     if ([string]::IsNullOrWhiteSpace($Root)) { return $false }
     $rootFull = [System.IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
     $name = ([string]$Owner.process_name).ToLowerInvariant()
     $path = [string]$Owner.process_path
     $command = [string]$Owner.command_line
-    $knownName = $name -in @("hostapplication", "electron", "node", "npm", "npm.cmd")
+    $knownName = $name -in @("host", "electron", "node", "npm", "npm.cmd")
     $underRoot = $false
     foreach ($candidate in @($path, $command)) {
         if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
@@ -145,7 +145,7 @@ function Invoke-ProcessRecovery {
     if (-not $AllowProcessRecovery) { return [PSCustomObject]$recovery }
 
     foreach ($owner in @($Owners)) {
-        if (Test-KnownHostApplicationOwner -Owner $owner -Root $HostRoot) {
+        if (Test-KnownHostOwner -Owner $owner -Root $HostRoot) {
             $recovery.safe_owners += $owner
         } else {
             $recovery.unsafe_owners += $owner
@@ -177,9 +177,9 @@ function Invoke-ProcessRecovery {
 $blockers = @()
 $unknowns = @()
 $hints = @(
-    "If a usable HostApplication target is already running, reuse it instead of starting a second host.",
-    "If CDP is unreachable and no process owns the port, start HostApplication from <host-app-root> with npm run debug, then rerun this probe.",
-    "If CDP is blocked by a known HostApplication debug process, rerun with HostRoot and AllowProcessRecovery so the script can stop that process and re-probe.",
+    "If a usable host target is already running, reuse it instead of starting a second host.",
+    "If CDP is unreachable and no process owns the port, start the host from <host-app-root> with the configured debug command, then rerun this probe.",
+    "If CDP is blocked by a verified host debug process, rerun with HostRoot and AllowProcessRecovery so the script can stop that process and re-probe.",
     "Unknown port owners are not killed; record them as blockers.",
     "Do not switch to human acceptance until this probe and the target inventory prove host/CDP is unavailable."
 )
@@ -209,14 +209,14 @@ try {
     if (@($facts.port_owners).Count -gt 0) {
         $facts.recovery = Invoke-ProcessRecovery -Owners $facts.port_owners
         if ($AllowProcessRecovery -and @($facts.recovery.safe_owners).Count -gt 0 -and @($facts.recovery.unsafe_owners).Count -eq 0) {
-            $blockers += "CDP endpoint was unreachable and known HostApplication debug process recovery was attempted; rerun this probe after the host restarts before manual acceptance."
+            $blockers += "CDP endpoint was unreachable and verified host debug process recovery was attempted; rerun this probe after the host restarts before manual acceptance."
         } elseif ($AllowProcessRecovery -and @($facts.recovery.unsafe_owners).Count -gt 0) {
-            $blockers += "CDP endpoint is unreachable and at least one port owner is not a verified HostApplication process; unknown owners were not killed."
+            $blockers += "CDP endpoint is unreachable and at least one port owner is not a verified host process; unknown owners were not killed."
         } else {
-            $blockers += "CDP endpoint is unreachable, but the port is already owned by another process; rerun with HostRoot and AllowProcessRecovery for verified HostApplication owners, or resolve unknown owners before manual acceptance."
+            $blockers += "CDP endpoint is unreachable, but the port is already owned by another process; rerun with HostRoot and AllowProcessRecovery for verified host owners, or resolve unknown owners before manual acceptance."
         }
     } else {
-        $blockers += "CDP endpoint is unreachable and no listening process was identified; start HostApplication with npm run debug, then rerun this probe."
+        $blockers += "CDP endpoint is unreachable and no listening process was identified; start the host with the configured debug command, then rerun this probe."
     }
     Write-Result (New-Result -Status "blocked" -Facts $facts -Blockers $blockers -Unknowns $unknowns -Hints $hints)
 }
@@ -250,9 +250,9 @@ foreach ($target in @($facts.page_targets)) {
 if (-not $facts.selected_target) {
     $chromeErrorTargets = @($facts.page_targets | Where-Object { $_.url -match "^chrome-error://chromewebdata/" })
     if ($chromeErrorTargets.Count -gt 0) {
-        $blockers += "CDP returned chrome-error://chromewebdata/ page targets; recover/restart the HostApplication host and rerun target inventory before manual acceptance."
+        $blockers += "CDP returned chrome-error://chromewebdata/ page targets; recover/restart the host and rerun target inventory before manual acceptance."
     }
-    $blockers += "CDP is reachable, but no matching HostApplication target was found for TargetKind '$TargetKind'; navigate/reuse the host before manual acceptance."
+    $blockers += "CDP is reachable, but no matching host target was found for TargetKind '$TargetKind'; navigate/reuse the host before manual acceptance."
 }
 if (@($facts.page_targets).Count -eq 0) {
     $unknowns += "No page targets were returned by CDP."

@@ -12,17 +12,17 @@ replace generated examples with reviewed facts from `.specify/memory/repository-
 
 ## Plugin Path Knowledge
 
-- Frontend source: `<workspace-root>/FrontendPlugin/<plugin-id>/src/`
-- Frontend build output: `<workspace-root>/FrontendPlugin/<plugin-id>/dist/`
-- Frontend package staging: `<workspace-root>/FrontendPlugin/<plugin-id>/plugin-out/<version>/staging/`
+- Frontend source: `<workspace-root>/<frontend-plugin-path>/src/`
+- Frontend build output: `<workspace-root>/<frontend-plugin-path>/dist/`
+- Frontend package staging: `<workspace-root>/<frontend-plugin-path>/plugin-out/<version>/staging/`
 - Host-served frontend runtime: `<host-app-root>/frontend/<location>/<plugin-id>/`
 - Host descriptor mock: `<host-app-root>/mock_data/api/pluginManager/v1/getFrontDescriptorList.json`
-- Native source: `<workspace-root>/NativePlugin/<plugin-id>/src/`
-- Native build cache: `<workspace-root>/NativePlugin/<plugin-id>/build/<generator>/<arch>/<config>/`
-- Native export output: `<workspace-root>/NativePlugin/<plugin-id>/export/`
+- Native source: `<workspace-root>/<native-plugin-path>/src/`
+- Native build cache: `<workspace-root>/<native-plugin-path>/build/<generator>/<arch>/<config>/`
+- Native export output: `<workspace-root>/<native-plugin-path>/export/`
 - Native runtime root: `<host-app-root>/app-data/plugins/<plugin-id>/<version>/`
 - Native addon directory: `<host-app-root>/app-data/plugins/<plugin-id>/<version>/native/`
-- Host project root: `<workspace-root>/HostApplication/HostApplication/`
+- Host project root: `<workspace-root>/<host-app-path>/`
 - Legacy host runtime directory: `<host-app-root>/plugins/<legacy-plugin-id>`
 
 Keep machine-specific absolute paths out of long-term knowledge. Runtime paths

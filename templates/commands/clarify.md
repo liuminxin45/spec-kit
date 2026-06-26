@@ -1,5 +1,5 @@
 ---
-description: Identify underspecified CoreRuntime capability areas and write the answers back into spec.md.
+description: Identify underspecified capability areas and write the answers back into spec.md.
 scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json -SpecOnly
 ---

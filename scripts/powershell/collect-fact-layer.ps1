@@ -1,6 +1,9 @@
 param(
-    [string]$SdkLogDir = "",
+    [string]$RuntimeLogDir = "",
     [string]$BridgeLogDir = "",
+    [string]$RuntimeLogPattern = "*.log",
+    [string]$BridgeLogPattern = "*.log",
+    [string]$SdkLogDir = "",
     [string]$BrowserUrl = "http://127.0.0.1:9222",
     [string]$TargetUrlPattern = "app-home|app-main-window|frontend/static/index.html",
     [switch]$Json
@@ -8,11 +11,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if ([string]::IsNullOrWhiteSpace($SdkLogDir)) {
-    $SdkLogDir = Join-Path ([System.IO.Path]::GetTempPath()) "SDKLog"
+if ([string]::IsNullOrWhiteSpace($RuntimeLogDir) -and -not [string]::IsNullOrWhiteSpace($SdkLogDir)) {
+    $RuntimeLogDir = $SdkLogDir
+}
+if ([string]::IsNullOrWhiteSpace($RuntimeLogDir)) {
+    $RuntimeLogDir = Join-Path ([System.IO.Path]::GetTempPath()) "RuntimeLog"
 }
 if ([string]::IsNullOrWhiteSpace($BridgeLogDir)) {
-    $BridgeLogDir = Join-Path ([System.IO.Path]::GetTempPath()) "ServiceBridgeLog"
+    $BridgeLogDir = Join-Path ([System.IO.Path]::GetTempPath()) "BridgeRuntimeLog"
 }
 
 function Get-LatestLog {
@@ -317,15 +323,20 @@ function Get-DirectCdpSnapshot {
 $result = [ordered]@{
     generatedAt = (Get-Date).ToString("o")
     defaults = [ordered]@{
-        sdkLogDir = $SdkLogDir
+        runtimeLogDir = $RuntimeLogDir
+        sdkLogDir = $RuntimeLogDir
         bridgeLogDir = $BridgeLogDir
+        runtimeLogPattern = $RuntimeLogPattern
+        bridgeLogPattern = $BridgeLogPattern
         browserUrl = "http://127.0.0.1:9222"
         targetUrlPattern = "app-home|app-main-window|frontend/static/index.html"
     }
-    sdkLog = Get-LatestLog -Directory $SdkLogDir -Pattern "SDK_*.log"
-    bridgeLog = Get-LatestLog -Directory $BridgeLogDir -Pattern "ServiceBridge_*.log"
+    runtimeLog = Get-LatestLog -Directory $RuntimeLogDir -Pattern $RuntimeLogPattern
+    bridgeLog = Get-LatestLog -Directory $BridgeLogDir -Pattern $BridgeLogPattern
     devtools = Get-DevToolsInfo -Url $BrowserUrl
 }
+
+$result.sdkLog = $result.runtimeLog
 
 if ($Json) {
     $result | ConvertTo-Json -Depth 8 -Compress

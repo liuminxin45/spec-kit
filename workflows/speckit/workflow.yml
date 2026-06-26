@@ -51,7 +51,7 @@ inputs:
   delivery_profile:
     type: string
     default: "auto"
-    enum: ["auto", "micro-fix", "standard-bugfix", "full-sdd", "blocked-investigation", "validation-only"]
+    enum: ["auto", "micro-fix", "standard-bugfix-lite", "standard-bugfix", "full-sdd", "blocked-investigation", "validation-only"]
     prompt: "Workflow weight profile"
   base_branch:
     type: string
@@ -68,19 +68,19 @@ steps:
     command: speckit.intake
     integration: "{{ inputs.integration }}"
     input:
-      args: "Classify risk/profile from facts, not keyword matching. Record delivery_profile in .specify/feature.json. Use micro-fix for small evidenced internal fixes; standard-bugfix for compact behavior fixes; full-sdd for public API, architecture, migration, cross-repo, real-device, or broad UI/Biz/Libs boundary work; blocked-investigation when root cause or validation evidence is missing. {{ inputs.spec }}"
+      args: "Classify risk/profile from facts, not keyword matching. Record delivery_profile in .specify/feature.json. Use micro-fix for 1-3 file, single-repository, evidenced internal fixes; standard-bugfix-lite for compact low/medium-risk bugfixes summarized in workpack.md; standard-bugfix for compact behavior fixes that still need spec.md/plan.md and analyze; full-sdd for public API, architecture, migration, cross-repo, real-device, or optional desktop host/plugin/native delivery-chain work; blocked-investigation when root cause or validation evidence is missing. {{ inputs.spec }}"
 
   - id: specify
     command: speckit.specify
     integration: "{{ inputs.integration }}"
     input:
-      args: "Create only the minimum intent artifact required by the selected profile. For micro-fix, use lightweight progress/micro-fix notes. For standard/full work, create or update spec.md with scope, non-goals, acceptance, affected repos from repository-map, and known risks. Do not scan the workspace to infer repository roles. Do not push or create remote tracking."
+      args: "Create only the minimum intent artifact required by the selected profile. For micro-fix, use lightweight progress/micro-fix notes. For standard-bugfix-lite, create or update workpack.md with root cause, slice, validation, and acceptance-rubric summary. For standard/full work, create or update spec.md with scope, non-goals, acceptance, affected repos from repository-map, and known risks. Do not scan the workspace to infer repository roles. Do not push or create remote tracking."
 
   - id: plan
     command: speckit.plan
     integration: "{{ inputs.integration }}"
     input:
-      args: "Create the smallest executable plan. Standard-bugfix may keep Implementation Slices inside plan.md and skip tasks.md. Draft and negotiate the API/E2E/interface test-case plan through speckit-test-plan; continue only when obvious or reviewed. For UI/UX/copy/parity work, create quality-vision.md through speckit-quality-vision with baseline screenshot/design/Qt source or owner-approved N/A. Create acceptance-rubric.md through speckit-acceptance-rubric before implementation. Full-sdd may add tasks.md/research/contracts only when required by risk or scope. For UI/layout repeated failure, require fact-layer evidence before another patch. For Qt-to-frontend migrations that cross UI/Biz/SDK or real-device state semantics, include a Source Behavior Execution Map: Qt UI source, native/Biz/SDK execution path, runtime state bit/DTO field, and validation fact. For source/runtime/plugin work, plan repository source-file edits, not installed runtime plugin directories or built artifacts."
+      args: "Create the smallest executable plan. Standard-bugfix-lite uses workpack.md instead of full spec.md/plan.md unless a high-risk gate is selected. Standard-bugfix may keep Implementation Slices inside plan.md and skip tasks.md. Draft and negotiate the API/E2E/interface test-case plan through speckit-test-plan; continue only when obvious or reviewed. For UI/UX/copy/parity work, create quality-vision.md through speckit-quality-vision with baseline screenshot/design/source or owner-approved N/A. Create acceptance-rubric.md through speckit-acceptance-rubric before implementation unless the lite workpack contains a sufficient rubric summary. Full-sdd may add tasks.md/research/contracts only when required by risk or scope. For UI/layout repeated failure, require fact-layer evidence before another patch. Optional desktop host/plugin/native gate packs may require a Source Behavior Execution Map, source/runtime/package delivery evidence, or real host validation. For source/runtime/plugin work, plan repository source-file edits, not installed runtime plugin directories or built artifacts."
 
   - id: validation
     command: speckit.validation
@@ -122,7 +122,7 @@ steps:
     integration: "{{ inputs.integration }}"
     skip_profiles: ["validation-only", "blocked-investigation"]
     input:
-      args: "Implement from plan slices, tasks.md when present, or micro-fix evidence. Keep searches bounded to affected repos. Update progress.md. Required validation belongs here. After any code change, run speckit-ai-self-acceptance against acceptance-rubric.md; PASS may continue to converge, FAIL loops to implement/fact-layer, BLOCKED requires a true external dependency. If a first UI/CSS/layout patch fails, stop and collect/request runtime DOM/CSS/computed style/box metrics before a second patch. Product and plugin fixes must target repository source, not installed runtime plugin directories or built artifacts. For host-embedded frontend plugin source edits, follow source edit -> frontend build -> direct runtime replacement -> real host CDP verification, first running ensure-host-cdp with safe process recovery to reuse, launch, kill verified HostApplication debug blockers, or diagnose the real host instead of jumping to manual acceptance. For native plugin source edits, build/package or export native output, sync explicit runtime artifacts with sync-native-runtime-artifacts when validating locally, validate RPC proto bundle fields when bridge/proto changes, restart host, then run real host/CDP validation. Do not commit, push, merge, or delete branches."
+      args: "Implement from plan slices, tasks.md when present, or micro-fix evidence. Keep searches bounded to affected repos. Update progress.md. Required validation belongs here. After any code change, run speckit-ai-self-acceptance against acceptance-rubric.md; PASS may continue to converge, FAIL loops to implement/fact-layer, BLOCKED requires a true external dependency. If a first UI/CSS/layout patch fails, stop and collect/request runtime DOM/CSS/computed style/box metrics before a second patch. Product and plugin fixes must target repository source, not installed runtime plugin directories or built artifacts. For selected host-embedded frontend plugin gates, follow source edit -> frontend build -> direct runtime replacement -> real host CDP verification, first running ensure-host-cdp with safe process recovery to reuse, launch, stop verified host debug blockers, or diagnose the real host instead of jumping to manual acceptance. For selected native/plugin bridge gates, build/package or export native output, sync explicit runtime artifacts with sync-native-runtime-artifacts when validating locally, validate RPC proto bundle fields when bridge/proto changes, restart host, then run real host/CDP validation. Do not commit, push, merge, or delete branches."
 
   - id: converge
     command: speckit.converge
@@ -185,14 +185,15 @@ steps:
     integration: "{{ inputs.integration }}"
     skip_profiles: ["validation-only", "blocked-investigation"]
     input:
-      args: "Final automated local operation after retrospective/留痕, commit, one post-commit self-check, and rubric-score pass. Preflight first, classify generated/temp/excluded dirty entries, report remote divergence, then cherry-pick local spec branch commits to the entry branch recorded by create-spec-branch (or {{ inputs.base_branch }} only when explicitly supplied), keep the spec branch, switch every affected repository back to that recorded branch, and do not push or create remote tracking. Do not create merge commits."
+      args: "Final local branch-state mutation after retrospective/留痕, commit, one post-commit self-check, and rubric-score pass. Preflight first, classify generated/temp/excluded dirty entries, report remote divergence, and require explicit human approval before cherry-picking. After approval, cherry-pick local spec branch commits to the entry branch recorded by create-spec-branch (or {{ inputs.base_branch }} only when explicitly supplied), keep the spec branch, switch every affected repository back to that recorded branch, and do not push or create remote tracking. Do not create merge commits."
+    requires_confirmation: true
 
 conditional_stages:
   clarify: "Use only for high-impact ambiguity or owner-approved gaps."
   tasks: "Use for full-sdd or when plan.md lacks executable slices."
-  analyze: "Required before implementation for standard-bugfix and full-sdd; optional only for micro-fix/validation-only unless risk or evidence requires it."
-  checklist: "Required before implementation for full-sdd and high-risk UI/runtime/cross-repo/SDK-Biz boundary work; optional otherwise."
-  fact-layer: "Use for repeated failures, unclear runtime behavior, SDK/Biz logs, or UI DOM/CSS/box metrics."
+  analyze: "Required before implementation for standard-bugfix and full-sdd; optional only for micro-fix/standard-bugfix-lite/validation-only unless risk or evidence requires it."
+  checklist: "Required before implementation for full-sdd and high-risk UI/runtime/cross-repo/service boundary work; optional otherwise."
+  fact-layer: "Use for repeated failures, unclear runtime behavior, service/runtime logs, or UI DOM/CSS/box metrics."
   validation: "Use for validation-only work."
   simplify: "Use after acceptance only when behavior-preserving cleanup has clear value."
   test-hardening: "Use only when extra regression protection reduces real risk."
@@ -207,9 +208,11 @@ stage_gate_policy:
   next_stage_routing:
     micro-fix:
       after_plan: "implement when micro-fix evidence names files, validation, stop conditions, and root cause; otherwise return to micro-fix/plan."
+    standard-bugfix-lite:
+      after_plan: "implement when workpack.md covers root cause, one slice, validation, and acceptance-rubric summary; upgrade to standard-bugfix/full-sdd when high-risk gates or missing evidence appear."
     standard-bugfix:
       after_plan: "analyze when plan.md has complete Implementation Slices; tasks first when slices are missing or too broad."
-      before_implement: "run analyze; run checklist when risk is high, cross-repo, UI/runtime, SDK/Biz boundary, or validation readiness is non-trivial."
+      before_implement: "run analyze; run checklist when risk is high, cross-repo, UI/runtime, service/runtime boundary, or validation readiness is non-trivial."
     full-sdd:
       after_plan: "tasks"
       before_implement: "tasks -> analyze -> checklist must complete; implement preflight must find tasks.md, analysis.md, checklists/implementation-readiness.md, and workflow-state.json."
@@ -221,6 +224,9 @@ stage_gate_policy:
     command: "validate-feature-artifacts"
     stage: "implement"
     rule: "Infer delivery_profile, risk_level, and risk_flags from .specify/feature.json when CLI inputs are auto/empty. Block implementation when required prior-stage artifacts are missing."
+  deterministic_next_stage:
+    command: "resolve-next-stage"
+    rule: "Before agent auto-continuation, resolve current_stage, next_stage, blockers, required_human_action, commands_to_run, and missing_artifacts from feature state and artifacts. Stage skills consume this JSON instead of relying on natural-language next-stage inference."
   generated_context_drift:
     command: "validate-generated-context"
     rule: "After spec-kit template changes or shared-infra refresh, check AGENTS.md, .specify/memory/repository-map.md, .specify/templates/layer-manifest.yml, ai/workflows/task-routing.md, and ai/rules/ai-coding-rules.md for required gate phrases before relying on default context."
@@ -262,7 +268,7 @@ stage_gate_policy:
     rule: "During host CDP validation, save key-path screenshots under FEATURE_DIR/cdp-screenshots/ and report the screenshot directory to the human when CDP validation ends."
   hostapplication_cdp_host_recovery:
     command: "ensure-host-cdp"
-    rule: "Before giving up on AI-owned host/CDP validation, reuse an existing valid HostApplication target, launch the host when no process owns the CDP port, or run safe process recovery to stop verified HostApplication/Electron/node debug owners under <host-app-root>. Unknown owners are blockers. A running process, occupied port, chrome-error target, 502 product route, or Workbench-only inventory is not by itself a reason to skip to manual acceptance."
+    rule: "Before giving up on AI-owned host/CDP validation, reuse an existing valid host target, launch the host when no process owns the CDP port, or run safe process recovery to stop verified host/Electron/node debug owners under <host-app-root>. Unknown owners are blockers. A running process, occupied port, chrome-error target, 502 product route, or Workbench-only inventory is not by itself a reason to skip to manual acceptance."
   frontend_runtime_delivery_chain:
     command: "sync-ui-runtime-artifacts"
     rule: "After frontend plugin source edits, build source output, mirror it into the explicit host runtime plugin directory for validation, verify the real host target through CDP, and require final .plugin package evidence before commit/complete-branch."
