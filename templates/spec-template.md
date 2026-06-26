@@ -29,7 +29,7 @@
 - **一句话结论**: [这项能力、缺陷修复、迁移或工具变更最终交付什么]
 - **重点审核**: [最需要人工确认的 1-3 个行为、边界、取舍或开放问题]
 - **改动范围**: [主要模块、路径或仓库摘要；详细清单仍写在后续章节]
-- **不涉及 / N/A 汇总**: [压缩列出已确认不涉及的 SDK/Biz/UI/runtime/device 等边界]
+- **不涉及 / N/A 汇总**: [压缩列出已确认不涉及的 SDK/service/UI/runtime/device 等边界]
 - **主要风险**: [兼容性、验证、数据、设备、编码、分支或生成物风险；无则写 N/A 和原因]
 - **验收入口**: [最短人工验收路径、关键命令或预期输出]
 - **当前状态 / 下一步**: [Draft/Needs clarification/Ready for plan 等状态和下一阶段]
@@ -45,7 +45,7 @@
 **Task Type**: migration / bugfix / new-feature / needs-routing
 **Routing Confidence**: high / medium / low
 **Risk Level**: low / medium / high / blocked
-**Delivery Profile**: micro-fix / standard-bugfix / full-sdd / blocked-investigation / validation-only
+**Delivery Profile**: micro-fix / standard-bugfix-lite / standard-bugfix / full-sdd / blocked-investigation / validation-only
 **Intake Source**: [link to intake.md]
 **关键分流依据**:
 
@@ -102,10 +102,10 @@
 - **FR-003**: 系统必须 [可观察结果]。
 - **FR-004**: 系统必须 [错误处理、降级或兼容行为]。
 - **FR-LAYERING**: 若能力涉及 UI 状态、UI interaction、操作权限或设备运行态，系统必须明确
-  三层边界：`ServiceBridge` 只能作为 API forwarding bridge；非 UI 专属的业务/运行时
-  事实和可复用规则属于 `CoreRuntime`；仅用于当前 UI 展示的结构、顺序、
-  visible/enabled 组织和交互入口编排属于 frontend plugin，并必须基于经 Biz 转发获得的
-  `CoreRuntime` 事实数据。
+  三层边界：`forwarding bridge` 只能作为 API forwarding bridge；非 UI 专属的业务/运行时
+  事实和可复用规则属于 `runtime/domain owner`；仅用于当前 UI 展示的结构、顺序、
+  visible/enabled 组织和交互入口编排属于 frontend plugin，并必须基于经 service layer 转发获得的
+  `runtime/domain owner` 事实数据。
   不适用时必须说明 `N/A` 原因。
 
 ## 兼容性与集成边界
@@ -113,11 +113,11 @@
 列出相关边界。不适用项标记为 `N/A`，并用中文说明原因。
 
 - **Public SDK/API**: [Headers, exports, CLI, script API, or N/A]
-- **NativePlugin / ServiceBridge Bridge Contract**: [forwarded request/response fields; no business logic, or N/A]
-- **HostApplication / Plugin Contract**: [plugin API, events, assets, or N/A]
+- **Native / Bridge Contract**: [forwarded request/response fields; no business logic, or N/A]
+- **Host / Plugin Contract**: [plugin API, events, assets, or N/A]
 - **Frontend State/UI Contract**: [UUID string identity, statusKey, operationPermissions,
   display state, or N/A]
-- **UI Display Contract**: [frontend plugin 如何基于 Biz 转发的 CoreRuntime 事实组织
+- **UI Display Contract**: [frontend plugin 如何基于 service layer 转发的 runtime/domain owner 事实组织
   UI 展示、UI element/action 顺序、visible/enabled、临时 display state；或 N/A]
 - **UI Interaction Display Contract**: [frontend-owned interaction/action ids、order、enabled/disabled、
   visibility、action id、permission/capability facts source、refresh timing；或 N/A]
@@ -131,17 +131,17 @@
 涉及设备身份、设备列表、运行态、连接/采集状态、UI operation availability、RPC/N-API
 或 public API 时必填；否则标记 `N/A` 并说明原因。
 
-- **Canonical device identity**: [UUID decimal string / N/A；跨 Libs facade、Biz、
+- **Canonical device identity**: [UUID decimal string / N/A；跨 runtime libraries facade、service layer、
   N-API/JSON/RPC、JS/UI 边界只允许这一种语义]
 - **Internal native ids**: [SDK handle/native id/virtual id 仅存放在哪个底层实现内；
-  不得跨到 Libs facade/Biz/UI]
+  不得跨到 runtime facade/service layer/UI]
 - **UUID generation owner**: [`device::identity::generateUUID()` / N/A；其它模块只使用]
-- **Truth source**: [`CoreRuntime` snapshot/runtime facts fields；Biz 不缓存、不计算]
-- **Biz boundary**: [forwarding、参数校验、JSON/RPC/N-API 边界转换、事件转发；无业务逻辑]
+- **Truth source**: [`runtime/domain owner` snapshot/runtime facts fields；service layer 不缓存、不计算]
+- **service layer boundary**: [forwarding、参数校验、JSON/RPC/N-API 边界转换、事件转发；无业务逻辑]
 - **Frontend operation identity**: [业务操作只读 `node.uuid`；`node.id` 仅为 UI tree node id]
-- **Event semantics**: [事件只触发刷新；刷新后重新获取 Libs facts]
+- **Event semantics**: [事件只触发刷新；刷新后重新获取 runtime libraries facts]
 - **Deprecated API handling**: [remove / migrate / owner-approved temporary gap]
-- **Debug/test API handling**: [test/script/debug-only tooling / N/A；不进入生产 Biz exports]
+- **Debug/test API handling**: [test/script/debug-only tooling / N/A；不进入生产 service layer exports]
 - **Naming boundary**: [`uuid` / `deviceUuids` / `nodeId` / `listIndex` 等真实语义命名]
 
 ## Qt 源行为覆盖清单
@@ -158,7 +158,7 @@
 - visible/enabled 规则。
 - action handler / Qt slot。
 - 迁移要求：`keep` / `change` / `gap`。
-- 目标契约来源：`CoreRuntime` runtime/business facts、`ServiceBridge` forwarding bridge、
+- 目标契约来源：`runtime/domain owner` runtime/business facts、`forwarding bridge` forwarding bridge、
   frontend display composition / `N/A`。
 
 推荐使用表格；复杂场景可以按设备类型分组、使用决策表、状态机说明、
@@ -174,7 +174,7 @@ UI 相关的 `migration`、`new-feature`、bugfix、UX/文案/tooltip/icon/style
 |----------------|------|-------|
 | Original Qt UI/source | [path or N/A] | [迁移源 UI、QSS、resource、screenshot 或行为参考] |
 | Product design/mockup/export | [path or N/A] | [设计包、mockup、Figma export、图片集或规格文档] |
-| Target frontend/plugin | [path or N/A] | [FrontendPlugin、ProductModule plugin 或其他 UI 实现目标] |
+| Target frontend/plugin | [path or N/A] | [frontend plugin、product plugin 或其他 UI 实现目标] |
 | Shared assets/icons/screenshots | [path or N/A] | [平迁或验收需要的 assets] |
 
 ## UI / UX / 文案依据追踪

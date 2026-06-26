@@ -14,7 +14,7 @@ Use Chrome DevTools MCP when:
 
 - UI, layout, CSS, DOM, console, or live runtime state is part of the problem.
 - Host-embedded frontend plugin behavior must be validated in the real
-  HostApplication Electron container. Prefer CDP at `http://127.0.0.1:9222`
+  host application Electron container. Prefer CDP at `http://127.0.0.1:9222`
   and targets matching `app-home`, `app-main-window`, or
   `frontend/static/index.html`.
 - A fix has failed and source-only reasoning no longer explains the observed

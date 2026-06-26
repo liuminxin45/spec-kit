@@ -5,6 +5,10 @@ param(
     [string]$RepoRoot = (Get-Location).Path,
     [string]$FeatureDir = "",
     [string]$Stage = "",
+    [string[]]$AffectedRepositories = @(),
+    [string[]]$RiskFlags = @(),
+    [string[]]$CapabilityTags = @(),
+    [string[]]$Terms = @(),
     [switch]$Json,
     [switch]$Help
 )
@@ -12,7 +16,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ($Help) {
-    Write-Output "Usage: select-gates.ps1 [-RepoRoot <repo>] [-FeatureDir <dir>] [-Stage <stage>] [-Json]"
+    Write-Output "Usage: select-gates.ps1 [-RepoRoot <repo>] [-FeatureDir <dir>] [-Stage <stage>] [-AffectedRepositories <names>] [-RiskFlags <flags>] [-CapabilityTags <tags>] [-Terms <terms>] [-Json]"
     Write-Output "Selects the smallest useful Spec Kit workflow gate packs from ai/workflows/gates/index.yml."
     exit 0
 }
@@ -55,6 +59,40 @@ function Add-Term {
     foreach ($piece in ($lower -split "[^a-z0-9]+")) {
         if ($piece) { [void]$Terms.Add($piece) }
     }
+}
+
+function Add-UniqueValue {
+    param([object[]]$Items, [string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return @($Items) }
+    if (@($Items) -contains $Value) { return @($Items) }
+    return @($Items) + @($Value)
+}
+
+function Expand-SynonymValues {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return @() }
+    $lower = $Value.ToLowerInvariant()
+    $map = @{
+        "cross-repo-validation" = @("cross-repo-validation", "cross-repo")
+        "native-bridge" = @("native-bridge", "bridge-api", "native", "rpc", "proto")
+        "host-devtools" = @("host-devtools", "host-cdp", "host-embedded-ui", "cdp", "electron")
+        "plugin-runtime" = @("plugin-runtime", "plugin-package", "frontend-runtime-sync", "plugin", "runtime")
+    }
+    if ($map.ContainsKey($lower)) { return @($map[$lower]) }
+    return @($Value)
+}
+
+function Expand-InputValues {
+    param([object[]]$Values)
+    $expanded = @()
+    foreach ($value in @($Values)) {
+        if ([string]::IsNullOrWhiteSpace([string]$value)) { continue }
+        foreach ($piece in (([string]$value) -split ",")) {
+            $clean = $piece.Trim()
+            if ($clean) { $expanded += $clean }
+        }
+    }
+    return $expanded
 }
 
 function Get-InlineList {
@@ -158,6 +196,28 @@ function Read-Routing {
         }
     }
 
+    foreach ($value in Expand-InputValues $AffectedRepositories) {
+        $routing.affected_repositories = Add-UniqueValue $routing.affected_repositories $value
+        Add-Term $terms $value
+    }
+    foreach ($value in Expand-InputValues $RiskFlags) {
+        foreach ($expanded in Expand-SynonymValues $value) {
+            $routing.risk_flags = Add-UniqueValue $routing.risk_flags $expanded
+            Add-Term $terms $expanded
+        }
+    }
+    foreach ($value in Expand-InputValues $CapabilityTags) {
+        foreach ($expanded in Expand-SynonymValues $value) {
+            $routing.capability_tags = Add-UniqueValue $routing.capability_tags $expanded
+            Add-Term $terms $expanded
+        }
+    }
+    foreach ($value in Expand-InputValues $Terms) {
+        foreach ($expanded in Expand-SynonymValues $value) {
+            Add-Term $terms $expanded
+        }
+    }
+
     $planPath = if ($FeatureDir) { Join-Path $FeatureDir "plan.md" } else { "" }
     if ($planPath -and (Test-Path -LiteralPath $planPath)) {
         $routing.plan = $planPath
@@ -227,6 +287,10 @@ foreach ($entry in $entries) {
             $matched += $term
         }
     }
+    if ($routing.terms -contains $entry.id.ToLowerInvariant()) {
+        $score += 5
+        $matched += $entry.id
+    }
     if ($matched.Count -gt 0) {
         $reasons += "matched: " + (($matched | Select-Object -Unique) -join ", ")
     }
@@ -242,7 +306,9 @@ foreach ($entry in $entries) {
 }
 
 $maxSelected = Get-MaxSelected -Path $indexPath
-$selected = @($selected | Sort-Object -Property @{ Expression = { $_.score }; Descending = $true }, @{ Expression = { $_.path }; Descending = $false } | Select-Object -First $maxSelected)
+$ranked = @($selected | Sort-Object -Property @{ Expression = { $_.score }; Descending = $true }, @{ Expression = { $_.path }; Descending = $false })
+$selected = @($ranked | Select-Object -First $maxSelected)
+$omitted = @($ranked | Select-Object -Skip $maxSelected)
 $result.facts.index = $indexPath
 $result.facts.max_selected_gates = $maxSelected
 $result.facts.stage = $Stage
@@ -251,6 +317,7 @@ $result.facts.risk_flags = $routing.risk_flags
 $result.facts.capability_tags = $routing.capability_tags
 $result.facts.ai_context_terms = $routing.ai_context_terms
 $result.facts.selected = @($selected)
+$result.facts.omitted_due_to_limit = @($omitted)
 if ($selected.Count -eq 0) {
     $result.hints += "no workflow gate pack matched; keep the command contract and active artifacts only"
 }

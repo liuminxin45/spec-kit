@@ -70,13 +70,13 @@ trace to scenarios, requirements, or explicit risk.
 4. Build a scenario-to-test map:
    - Each capability scenario or changed requirement gets at least one planned
      validation row or an explicit `N/A` reason.
-    - Include `api-test` for public SDK/API, Biz bridge, RPC/N-API, CLI/script,
+    - Include `api-test` for public SDK/API, service bridge, RPC/N-API, CLI/script,
       DTO/field, or serialized contract behavior when affected.
       If no executable API test command is detected, API test planning is still
       required: record a manual/interface/regression/API row with the best
       available command or validation path.
-    - Include `e2e/interface-test` for cross-repo call paths, frontend-to-Biz,
-      Biz-to-Libs, host plugin route, or user-visible workflow behavior when
+    - Include `e2e/interface-test` for cross-repo call paths, frontend-to-service,
+      service-to-runtime, host plugin route, or user-visible workflow behavior when
       affected.
       If the current repository does not support E2E, mark E2E `N/A` with the
       script-provided reason; do not use E2E absence to skip the API plan.

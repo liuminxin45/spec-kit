@@ -10,10 +10,8 @@
 ## 2. 自动采集结果
 - collect command:
 - collected at:
-- SdkConsumer log directory: `<system-temp>/SDKLog`
-- SdkConsumer log pattern: `SDK_*.log`
-- CoreRuntime/Bridge log directory: `<system-temp>/ServiceBridgeLog`
-- CoreRuntime/Bridge log pattern: `ServiceBridge_*.log`
+- Configured project log directories:
+- Configured project log patterns:
 - Chrome debugging URL:
 - chrome-devtools target:
 - chrome-devtools selected target:
@@ -21,7 +19,7 @@
 
 ## 3. 运行态事实
 - DevTools MCP available:
-- Correct Electron/HostApplication target confirmed:
+- Correct runtime/browser/host target confirmed:
 - Current route/page:
 - DOM subtree:
 - computed style:
@@ -33,13 +31,10 @@
 - Screenshot or visual evidence:
 
 ## 4. 日志事实
-- Latest SdkConsumer log:
-- Latest SdkConsumer LastWriteTime:
-- Latest SdkConsumer key lines:
-- Latest CoreRuntime/Bridge log:
-- Latest CoreRuntime/Bridge LastWriteTime:
-- Latest CoreRuntime/Bridge key lines:
-- Whether logs were generated after HostApplication exit:
+- Latest configured project log:
+- Latest configured project log LastWriteTime:
+- Latest configured project log key lines:
+- Whether logs were generated after the relevant process exit:
 - Timeline mapping to user actions:
 
 ## 5. 源码与产物事实
@@ -76,8 +71,8 @@
 - No validation claim is complete without a cited evidence artifact.
 
 ## 9. 事实层规则
-- Do not use MCP for log files; read `<system-temp>/SDKLog\SDK_*.log`
-  and `<system-temp>/ServiceBridgeLog\ServiceBridge_*.log` directly.
+- Do not use MCP for local log files; read configured log paths directly from
+  disk when the repository map or selected gates define them.
 - Use chrome-devtools only for runtime DOM, console, computed style, and box
   metrics.
 - Before a second same-class fix, run `speckit.fact-layer` and create or update

@@ -1,5 +1,5 @@
 ---
-description: Create an implementation plan for a CoreRuntime capability while preserving upstream design artifacts.
+description: Create an implementation plan for a capability while preserving upstream design artifacts.
 scripts:
   ps: scripts/powershell/setup-plan.ps1 -Json
   select_knowledge_ps: scripts/powershell/select-knowledge.ps1 -Json -Stage plan -FeatureDir <feature-dir>
@@ -27,12 +27,18 @@ Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md
 
 Create `plan.md` from the active `spec.md`. The plan is a decision map, not a comprehensive design manual. It must identify the facts, slices, gate packs, and validation evidence required for implementation while leaving detailed truth in code, scripts, selected facts, and source artifacts.
 
-For `micro-fix`, keep the lightweight evidence path unless the bug is no longer micro. For `blocked-investigation`, plan facts to collect instead of implementation.
+For `micro-fix`, keep the lightweight evidence path unless the bug is no longer micro.
+For `standard-bugfix-lite`, fill `workpack.md` from
+`.specify/templates/workpack-template.md` and avoid full `spec.md`/`plan.md`
+unless risk upgrades. For `blocked-investigation`, plan facts to collect
+instead of implementation.
 
 ## Layered Artifact Contract
 
 - This command creates the L2 artifact set from `templates/layer-manifest.yml`.
 - Required L2 outputs are `plan.md` and `workflow-state.json`.
+- `standard-bugfix-lite` may use `workpack.md` plus `workflow-state.json` as
+  the L2 artifact set when no high-risk gate is selected.
 - `research.md`, `data-model.md`, `contracts/`, and `quickstart.md` are created when applicable or marked `N/A` with reasons.
 - `plan.md` must include `L2 Artifact Contract` from `.specify/templates/plan-template.md`.
 - `workflow-state.json` remains the structured source for attempts, validations, fact-layer, acceptance, retrospective, and promotion state.
@@ -82,6 +88,9 @@ For `micro-fix`, keep the lightweight evidence path unless the bug is no longer 
    - `Acceptance Rubric Link`: rubric path, Essential/Pitfall counts, and review state.
    - Implementation Slices with allowed scope, forbidden scope, validation, progress update, and stop conditions.
    - Validation plan and `AI Self-Acceptance Contract`.
+   For `standard-bugfix-lite`, place the same essentials in `workpack.md`:
+   root cause, one bounded change slice, validation, and acceptance-rubric
+   summary.
 9. Produce or update supporting artifacts only when the capability needs them:
    - `research.md`: unknowns, tradeoffs, prior art, source behavior discovery, and alternatives rejected.
    - `data-model.md`: durable state, DTOs, serialized fields, SDK structs, UI state, or database-like records.
@@ -99,7 +108,7 @@ Gate packs are load-on-demand workflow maps under `ai/workflows/gates/*`:
 - `frontend-runtime-sync`: requires source edit -> frontend build -> direct runtime replacement -> real host CDP verification, followed by final `.plugin` package evidence before commit/complete-branch.
 - `plugin-package`: all frontend/native/JS/plugin integration changes require the shared `.plugin` build/package gate; repository-local build/export is prerequisite evidence only.
 - `native-bridge`: requires native build/export, `sync-native-runtime-artifacts`, host restart, and `validate-rpc-proto-bundle` when RPC/proto fields change.
-- `real-device`: requires AI-owned SDK/Biz/device validation unless a real external blocker is proven.
+- `real-device`: requires AI-owned service/runtime/device validation unless a real external blocker is proven.
 
 Do not paste full gate details into `plan.md`; cite selected gate ids and record only the facts needed for this capability.
 
@@ -114,7 +123,7 @@ Do not paste full gate details into `plan.md`; cite selected gate ids and record
 - For UI/UX changes, every new or modified icon, tooltip, label, menu item, button, layout/style rule, and visible interaction state must cite a reliable source.
 - For UI parity work, selected gate packs must name source behavior, target UI, UI element traversal inventory, dynamic states, host validation, scrollbar, clipping, compression, and runtime DOM / computed style / box metrics evidence.
 - For host-embedded frontend work, static design files alone are insufficient; plan dynamic states, geometry constraints, runtime DOM/computed/box metrics, and host-level validation.
-- `ServiceBridge` is forwarding-only. Runtime facts belong in `CoreRuntime`; UI-display structure belongs in frontend plugin source.
+- `bridge/adaptor` is forwarding-only. Runtime facts belong in `owning runtime/domain repository`; UI-display structure belongs in frontend plugin source.
 - Cross-boundary device identity is UUID decimal string only. Do not expose SDK native ids, virtual ids, handles, or parallel frontend ids above their owner layer.
 - Do not dump unrelated responsibilities into one interface/data-layer file.
 - Do not use `Known Gaps` to pass the exact risk introduced by the fix. That is blocking or high risk, not PASS.
@@ -135,7 +144,7 @@ Do not paste full gate details into `plan.md`; cite selected gate ids and record
 
 ## Fact Layer Planning
 
-- Use `speckit.fact-layer` and plan `fact-pack.md` when runtime DOM, console, computed style, box metrics, latest SDK/Biz logs, or source/runtime/build/install consistency evidence is needed.
+- Use `speckit.fact-layer` and plan `fact-pack.md` when runtime DOM, console, computed style, box metrics, latest service/runtime logs, or source/runtime/build/install consistency evidence is needed.
 - Treat a second same-class fix without new facts as a planning risk and route to fact-layer before implementation. Use chrome-devtools or equivalent runtime evidence for computed style and box metrics.
 
 ## Output
@@ -151,6 +160,9 @@ Report in Chinese:
 - Validation plan and known gaps.
 - Required next stage:
   - `full-sdd`: `speckit.tasks` / `$speckit-tasks`.
+  - `standard-bugfix-lite`: `speckit.implement` / `$speckit-implement` when
+    `workpack.md` contains root cause, slice, validation, and acceptance
+    summary; otherwise upgrade to `standard-bugfix` or `blocked-investigation`.
   - `standard-bugfix`: `speckit.analyze` / `$speckit-analyze` when `plan.md` contains complete `Implementation Slices`; otherwise `speckit.tasks`.
   - `micro-fix`: `speckit.implement` only when lightweight evidence names changed files, validation, stop conditions, and root cause.
   - `blocked-investigation`: `speckit.fact-layer` or `speckit.bounded-investigation`.

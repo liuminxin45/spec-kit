@@ -21,6 +21,7 @@ RUNTIME_TEMPLATE_FILES = {
     "quality-vision-template.md",
     "spec-template.md",
     "tasks-template.md",
+    "workpack-template.md",
     "workflow-state-template.json",
 }
 """Templates that remain installed under ``.specify/templates``.

@@ -318,7 +318,7 @@ explicitly changes to `approved`.
 
 - Record 是否及时启用 fact-layer. For repeated UI/device-state fixes, unchanged
   rebuild/reinstall results, or a second same-class fix, `workflow-record.md`
-  must state whether `speckit.fact-layer` produced `fact-pack.md`, latest SDK/Biz
+  must state whether `speckit.fact-layer` produced `fact-pack.md`, latest service/runtime
   logs, and runtime DOM / computed style / box metrics were collected when needed.
 - Missing or late fact-layer usage should become an improvement candidate.
 

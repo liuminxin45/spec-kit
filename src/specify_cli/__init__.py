@@ -2640,7 +2640,7 @@ def preset_list():
     if not installed:
         console.print("[yellow]No presets installed.[/yellow]")
         console.print(
-            "The CoreRuntime team build has no remote preset catalog by default."
+            "This default build has no remote preset catalog by default."
         )
         console.print("Use bundled workflows/templates or configure an internal catalog.")
         return
@@ -2940,7 +2940,7 @@ def preset_info(
         return
 
     # Prefer project-local bundled preset metadata before consulting remote
-    # catalogs. This is the expected path for the CoreRuntime team fork:
+    # catalogs. This is the expected path for local source installs:
     # editable installs should show what lives under spec-kit/presets.
     bundled_path = _locate_bundled_preset(preset_id)
     if bundled_path:
@@ -3411,7 +3411,7 @@ def extension_list(
     if not installed and not (available or all_extensions):
         console.print("[yellow]No extensions installed.[/yellow]")
         console.print(
-            "The CoreRuntime team build has no remote extension catalog by default."
+            "This default build has no remote extension catalog by default."
         )
         console.print("Use bundled workflows/templates or configure an internal catalog.")
         return

@@ -69,8 +69,8 @@ Create or update `FEATURE_DIR/investigation.md` with:
   - Screenshots or inspector evidence for normal, hover, selected, disabled,
     expanded/collapsed, many-item, and scrollbar appear/disappear states.
   - Which repository/plugin owns each container that must change.
-- **Routing decision**: micro-fix, standard-bugfix, full-sdd, validation-only,
-  or still blocked.
+- **Routing decision**: micro-fix, standard-bugfix-lite, standard-bugfix,
+  full-sdd, validation-only, or still blocked.
 
 ## Search Rules
 
@@ -86,12 +86,11 @@ Create or update `FEATURE_DIR/investigation.md` with:
 
 - Use `speckit.fact-layer` when the investigation needs runtime facts instead
   of more source reading. Create or update `fact-pack.md` before a second same-class fix,
-  before another UI/CSS/layout patch after one failed attempt, or when SDK,
-  Biz, UI, and runtime state disagree.
+  before another UI/CSS/layout patch after one failed attempt, or when service,
+  UI, and runtime state disagree.
 - The investigation may call `scripts/powershell/collect-fact-layer.ps1 -Json`
-  probe the Chrome debugging endpoint. Read local logs directly from
-  `<system-temp>/SDKLog\SDK_*.log` and
-  `<system-temp>/ServiceBridgeLog\ServiceBridge_*.log`. Use chrome-devtools
+  probe the Chrome debugging endpoint. Read local logs directly from paths
+  documented in the repository map or selected gate packs. Use chrome-devtools
   only for DOM, console, computed style, and box metrics.
 
 ## Output

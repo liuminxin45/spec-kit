@@ -21,7 +21,7 @@ if ($Help) {
     Write-Output "Use -DeleteBranch only when the user explicitly asks to delete the local spec branch."
     Write-Output "Use -PreflightOnly to inspect every repository without cherry-picking commits."
     Write-Output "Requires feature closure artifacts before completion: workflow-record.md, improvement-candidates.md, knowledge-candidates.md, and workflow-observation.md."
-    Write-Output "-ConfirmCompletion is accepted for legacy callers but is no longer required after post-commit self-check and rubric gates pass."
+    Write-Output "Requires -ConfirmCompletion for the branch-state mutation path; preflight remains safe without confirmation."
     exit 0
 }
 
@@ -32,6 +32,7 @@ function Get-WorkspaceConfig {
     $configPath = Join-Path $RepoRoot ".specify/workspace.yml"
     $workspaceRoot = $RepoRoot
     $baseBranch = "master"
+    $primaryRepo = ""
     $repos = @([PSCustomObject]@{ name = (Split-Path -Leaf $RepoRoot); path = "."; required = $true; participates_in_spec_branches = $true })
 
     if (Test-Path -LiteralPath $configPath -PathType Leaf) {
@@ -42,6 +43,8 @@ function Get-WorkspaceConfig {
         }
         $baseText = Select-String -Path $configPath -Pattern '^\s*default_base_branch:\s*"?([^"]+)"?\s*$' -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($baseText) { $baseBranch = $baseText.Matches[0].Groups[1].Value.Trim("'`"") }
+        $primaryText = Select-String -Path $configPath -Pattern '^\s*primary_repo:\s*"?([^"]+)"?\s*$' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($primaryText) { $primaryRepo = $primaryText.Matches[0].Groups[1].Value.Trim("'`"") }
 
         $parsedRepos = @()
         $current = $null
@@ -64,6 +67,7 @@ function Get-WorkspaceConfig {
     $workspaceRoot = (Resolve-Path -LiteralPath $workspaceRoot).Path
     [PSCustomObject]@{
         default_base_branch = $baseBranch
+        primary_repo = $primaryRepo
         repositories = @($repos | ForEach-Object {
             $repoPath = if ([System.IO.Path]::IsPathRooted($_.path)) { $_.path } else { Join-Path $workspaceRoot $_.path }
             [PSCustomObject]@{ name = $_.name; path = $repoPath; required = [bool]$_.required; participates_in_spec_branches = [bool]$_.participates_in_spec_branches }
@@ -300,7 +304,15 @@ if ([string]::IsNullOrWhiteSpace($Branch)) {
     }
 }
 if ([string]::IsNullOrWhiteSpace($Branch)) {
-    $primaryRepo = @($workspace.repositories | Where-Object { $_.name -eq "CoreRuntime" } | Select-Object -First 1)
+    $primaryName = if ($workspace.PSObject.Properties.Name -contains "primary_repo" -and -not [string]::IsNullOrWhiteSpace([string]$workspace.primary_repo)) {
+        [string]$workspace.primary_repo
+    } else {
+        ""
+    }
+    $primaryRepo = @()
+    if (-not [string]::IsNullOrWhiteSpace($primaryName)) {
+        $primaryRepo = @($workspace.repositories | Where-Object { $_.name -eq $primaryName } | Select-Object -First 1)
+    }
     if ($primaryRepo.Count -eq 0) {
         $primaryRepo = @($workspace.repositories | Select-Object -First 1)
     }
@@ -445,6 +457,21 @@ if ($PreflightOnly) {
         }
     }
     exit 0
+}
+
+if (-not $ConfirmCompletion) {
+    $preflightPayload.action = "confirmation-required"
+    $preflightPayload.confirmed = $false
+    $preflightPayload.completion_ready = $false
+    $preflightPayload.merge_ready = $false
+    $preflightPayload.cherry_pick_ready = $false
+    $preflightPayload.errors = @("Branch completion changes local repository state and requires -ConfirmCompletion after explicit human approval.")
+    if ($Json) {
+        $preflightPayload | ConvertTo-Json -Depth 8 -Compress
+    } else {
+        [Console]::Error.WriteLine("ERROR: Branch completion requires -ConfirmCompletion after explicit human approval.")
+    }
+    exit 1
 }
 
 $results = @()

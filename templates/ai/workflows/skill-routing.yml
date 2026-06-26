@@ -41,7 +41,7 @@ capability_skills:
     skill: "speckit-fact-layer"
     when:
       - "repeated same-class failure or unchanged symptom"
-      - "runtime DOM, console, computed style, box metrics, SDK log, or Biz log evidence is needed"
+      - "runtime DOM, console, computed style, box metrics, SDK log, or service layer log evidence is needed"
   repository-map:
     skill: "speckit-repository-map"
     when:
