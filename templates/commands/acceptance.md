@@ -1,5 +1,5 @@
 ---
-description: Generate user acceptance instructions and checklist for a completed CoreRuntime capability.
+description: Generate user acceptance instructions and checklist for a completed capability.
 scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json -IncludeTasks
 ---
@@ -93,7 +93,7 @@ It explains how the user should test and how the workflow records whether
      agent-collected screenshots, screenshot comparisons, simulated clicks,
      hover/expand/collapse/scroll flows, DOM/computed/box metrics, and console
      checks when the host and MCP/CDP/browser automation are available. For
-     host-embedded frontend plugins, prefer real HostApplication Electron CDP
+     host-embedded frontend plugins, prefer real host application Electron CDP
      evidence at `http://127.0.0.1:9222` with targets matching
      `app-home`, `app-main-window`, or
      `frontend/static/index.html`; isolated plugin preview is fallback evidence.
@@ -102,11 +102,11 @@ It explains how the user should test and how the workflow records whether
      For `plugin-host` DevTools / Plugin Workbench changes, use the direct
      workbench target `Plugin Workbench|plugin-workbench.html` opened by
      `npm run debug`.
-     For real-device, connection, acquisition, permission, status, SDK/Biz, or
+     For real-device, connection, acquisition, permission, status, service/runtime, or
      host-embedded runtime work, include agent-run host/device smoke whenever
      the local host, device, permissions, and CDP/browser automation are
-     available: launch/reuse HostApplication, operate the flow, inspect
-     process liveness, latest SDK/Biz logs, console errors, and refreshed
+     available: launch/reuse host application, operate the flow, inspect
+     process liveness, latest service/runtime logs, console errors, and refreshed
      runtime/UI state.
    - `Human manual UI validation`: GUI smoke checks and user-visible flows that
      cannot be automated with available tools, seeing host rendering when no

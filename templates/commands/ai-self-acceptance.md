@@ -48,7 +48,7 @@ surface:
   style, box metrics, scrollbar/clipping/overflow geometry
 - source edit -> build -> runtime replacement -> host verification evidence
 - native build/export, runtime sync, proto/native export validation
-- latest SDK/Biz logs for runtime/device issues
+- latest service/runtime logs for runtime/device issues
 - device/host smoke when local device, host, and permissions are available
 
 ## Judge Steps

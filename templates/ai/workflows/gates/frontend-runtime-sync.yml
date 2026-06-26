@@ -6,7 +6,7 @@ source_of_truth:
   - "frontend-plugin.conf extMetaData.location when present"
   - "sync-ui-runtime-artifacts facts"
 required_when:
-  - "source edits under FrontendPlugin affect visible host-embedded frontend plugin behavior"
+  - "source edits under frontend plugin affect visible host-embedded frontend plugin behavior"
 minimal_context:
   - "Plugin id, source root, build output, and host runtime directory."
   - "Build command and result."

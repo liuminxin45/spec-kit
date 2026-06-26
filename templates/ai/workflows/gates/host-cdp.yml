@@ -1,8 +1,8 @@
 id: "host-cdp"
-title: "HostApplication Host CDP Gate"
+title: "host application Host CDP Gate"
 purpose: "Validate host-embedded UI through the real Electron host, not an unrelated target or standalone preview."
 source_of_truth:
-  - ".specify/memory/repository-map.md HostApplication Electron / CDP Defaults"
+  - ".specify/memory/repository-map.md host application Electron / CDP Defaults"
   - "ensure-host-cdp facts"
   - "inspect-host-cdp-target facts or /json/list target inventory"
 required_when:
@@ -15,7 +15,7 @@ minimal_context:
   - "Key screenshot checkpoint names, such as baseline, after-action, confirm-dialog, hover-state, or final-fixed-state."
 steps:
   - "Run ensure-host-cdp before declaring CDP blocked."
-  - "Recover verified HostApplication/Electron/node debug owners under <host-app-root> when safe; unknown owners are blockers."
+  - "Recover verified host application/Electron/node debug owners under <host-app-root> when safe; unknown owners are blockers."
   - "Inspect /json/list and record every page target."
   - "Select app-home, app-main-window, or frontend/static/index.html for product UI."
   - "Reject Plugin Workbench, base-win.html, devtools://, blank, and unrelated targets for product UI."
@@ -33,4 +33,4 @@ blockers:
   - "Only wrong targets are available."
   - "Required route returns chrome-error://chromewebdata/ or HTTP 502 after recovery."
 context_to_avoid:
-  - "Broad HostApplication source search before the host facts above are exhausted."
+  - "Broad host application source search before the host facts above are exhausted."

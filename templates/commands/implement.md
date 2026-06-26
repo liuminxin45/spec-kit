@@ -87,7 +87,7 @@ Optional artifacts such as `research.md`, `data-model.md`, `contracts/`, `quicks
    - `plugin-package`: for frontend, native, JS, or integrated plugin work, use `inspect-plugin-build-plan` to find the shared package command and `validate-plugin-package` to verify the final `.plugin` artifact. Local build/export/runtime replacement is not the final plugin delivery gate.
    - `native-bridge`: build/export native source, use `sync-native-runtime-artifacts`, restart host, and run `validate-rpc-proto-bundle` when bridge/proto fields change.
    - `qt-parity`: read `qt-source-behavior-map.md`, record source behavior, and require a Source Behavior Execution Map for cross-layer migration.
-   - `real-device`: keep SDK/Biz/device smoke AI-owned until a concrete device, host, permission, or automation blocker is proven.
+   - `real-device`: keep service/runtime/device smoke AI-owned until a concrete device, host, permission, or automation blocker is proven.
    - UI parity/layout anchors: dynamic states, scrollbar, clipping, compression, runtime DOM / computed style / box metrics, 0px-level visual repair, simulating core clicks, and best-effort AI self-validation. If the first CSS/layout patch fails, stop guessing CSS and collect facts.
 9. Add or update focused regression protection when feasible, then rerun affected tests.
    - If a unit/regression test is not feasible, record the narrowest substitute evidence and why.
@@ -105,7 +105,9 @@ Optional artifacts such as `research.md`, `data-model.md`, `contracts/`, `quicks
 
 - Do not invent SDK, device, permission, or status data.
 - Do not make global fallback/status/permission changes from a virtual/simulated bug unless the guard is explicit and proven.
-- `ServiceBridge` remains forwarding-only; reusable runtime facts belong in `CoreRuntime`, and UI-display composition belongs in frontend plugin source.
+- Respect repository ownership from `.specify/memory/repository-map.md`; shared
+  runtime facts, bridge/adaptor code, and UI composition must stay in their
+  documented owning repositories.
 - Cross-boundary device identity is UUID decimal string only; do not expose SDK handles, native ids, or parallel frontend ids above their owning layer.
 - Generated artifacts and built artifacts such as `dist/`, `build/`, `export/`, `plugin-out/`, app-data, and host-served frontend runtime are validation/deployment artifacts unless a repository explicitly says otherwise.
 - Product/plugin changes must not target installed runtime plugin directories as the durable fix.
@@ -122,13 +124,17 @@ Optional artifacts such as `research.md`, `data-model.md`, `contracts/`, `quicks
 
 - Before a second same-class fix, run `speckit.fact-layer` and create or update `fact-pack.md`.
 - For UI/CSS/layout failures, collect runtime DOM, console, computed style, box metrics, scroll owner, overflow, flex/grid grow/shrink, clipping, compression, and visible bounds with chrome-devtools or equivalent before the next patch.
-- For device, SDK, Biz, plugin, connection, acquisition, permission, or status issues, inspect the latest logs from `<system-temp>/SDKLog\SDK_*.log` and `<system-temp>/ServiceBridgeLog\ServiceBridge_*.log`.
+- For device, SDK, service, plugin, connection, acquisition, permission, or
+  status issues, inspect the latest logs documented in the repository map,
+  selected gate packs, or selected knowledge guides.
 
 ## Implementation completion gate
 
 - Do not report `/speckit-implement 完成` and do not continue to
      `speckit.converge` while AI-owned validation is still pending.
-- A report that lists "宿主运行时验证待执行", "CDP 验证待执行", or "需启动 HostApplication Electron" as normal residual risk is non-compliant.
+- A report that lists "宿主运行时验证待执行", "CDP 验证待执行", or "需启动真实宿主"
+  as normal residual risk is non-compliant when the selected gates make that
+  validation AI-owned.
 - When AI changed code, completion requires explicit AI acceptance `PASS` in `validation.md` or an evidence-backed blocker.
 - Completion also requires the `speckit-ai-self-acceptance` skill result to be
   reflected in `validation.md`; missing rubric judgment is incomplete work.

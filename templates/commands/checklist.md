@@ -1,5 +1,5 @@
 ---
-description: Generate a focused quality checklist for the active CoreRuntime capability.
+description: Generate a focused quality checklist for the active capability.
 scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json
 ---
@@ -82,14 +82,14 @@ Choose only items relevant to the feature:
 - Intake routing: migration, bugfix, new-feature, or needs-routing.
 - Interface and compatibility boundaries.
 - Affected modules and file ownership.
-- SDK, NativePlugin/ServiceBridge bridge, HostApplication, or frontend plugin contracts.
+- SDK, native plugin/bridge/adaptor bridge, host application, or frontend plugin contracts.
 - Runtime/device state, permissions, handles, cache, and refresh behavior.
 - Identity / State / API Boundary: UUID decimal string is the only
   cross-boundary device identity; `device::identity::generateUUID()` is the
   only UUID generation owner; SDK native IDs/handles remain bottom-layer
   internals; frontend business operations use `node.uuid`; events trigger
-  refresh but never replace `CoreRuntime` as the truth source.
-- UI/Biz/Libs layering: `ServiceBridge` only forwards APIs; `CoreRuntime`
+  refresh but never replace `owning runtime/domain repository` as the truth source.
+- UI/service/runtime layering: `bridge/adaptor` only forwards APIs; `owning runtime/domain repository`
   provides non-UI runtime/permission/capability facts; frontend plugin owns
   UI-display-specific structure, order, visibility, availability
   presentation, and action entry composition.
@@ -175,23 +175,21 @@ Choose only items relevant to the feature:
   built artifacts such as `app-data/plugins/**`, `frontend/plugins/**`,
   `dist/`, `build/`, `export/`, or `plugin-out/` as blocking unless the same
   change is ported to repository source before acceptance/commit.
-- Treat parallel cross-boundary device identities, Biz-side device/runtime
+- Treat parallel cross-boundary device identities, service-side device/runtime
   caches, UUID generation outside `device::identity::generateUUID()`, SDK
   native ID/handle leakage, frontend operation fallbacks such as `node.id`,
-  equivalent legacy production APIs, or debug/test APIs in production Biz
+  equivalent legacy production APIs, or debug/test APIs in production service
   exports as blocking unless an explicit owner-approved gap is recorded.
 - Treat missing `speckit.fact-layer` evidence as blocking when the work is a
   second same-class fix, a UI parity patch failed once, DOM/CSS/layout ownership
   is unclear, scrollbar/clipping/compression behavior is involved, device state
-  mismatches SDK/Biz expectation, permission/connection/acquisition behavior is
+  mismatches service/runtime expectation, permission/connection/acquisition behavior is
   inconsistent, virtual-device behavior is unclear, or the rebuilt/reinstalled
   result is unchanged.
 - For required fact-layer evidence, verify `fact-pack.md`, latest log discovery
-  from `<system-temp>/SDKLog\SDK_*.log` and
-  `<system-temp>/ServiceBridgeLog\ServiceBridge_*.log`, plus chrome-devtools
-  runtime DOM, console, computed style, and box metrics when UI runtime facts
-  are needed. Local logs are read directly from disk; do not use MCP for log
-  files.
+  from repository-map or selected gate packs, plus chrome-devtools runtime DOM,
+  console, computed style, and box metrics when UI runtime facts are needed.
+  Local logs are read directly from disk; do not use MCP for log files.
 
 ## Output
 

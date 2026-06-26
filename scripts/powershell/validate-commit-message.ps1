@@ -13,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 
 if ($Help) {
     Write-Output "Usage: validate-commit-message.ps1 [-Message <text> | -MessageFile <path> | -Stdin] [-Json]"
-    Write-Output "Validates the HostApplication / application Chinese commit-message template."
+    Write-Output "Validates the application Chinese commit-message template."
     exit 0
 }
 

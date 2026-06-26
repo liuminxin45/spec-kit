@@ -23,7 +23,7 @@ sufficiency, and tradeoff decisions.
 | Capability | Source | Use For | Boundary |
 | --- | --- | --- | --- |
 | PowerShell inspectors | `.specify/scripts/**` | Hard facts, changed files, validation candidates, source/runtime consistency | No semantic final decisions |
-| Local logs | `<system-temp>/SDKLog\SDK_*.log`, `<system-temp>/ServiceBridgeLog\ServiceBridge_*.log` | Runtime SDK/Biz evidence after the host process exits | Do not require MCP |
+| Local logs | `<system-temp>/runtime log\*.log`, `<system-temp>/forwarding bridgeLog\forwarding bridge_*.log` | Runtime SDK/service evidence after the host process exits | Do not require MCP |
 | Chrome DevTools MCP | `chrome-devtools` MCP server | DOM, CSS, console, network, screenshots, Electron target state | Read before guessing UI/runtime causes |
 | Repository map skill | `.agents/spec-kit/skills/speckit-repository-map` | Repository role and path facts | Do not infer roles by scanning source trees |
 | Code simplifier skill | `.agents/spec-kit/skills/code-simplifier` | Post-implementation clarity cleanup | Preserve behavior exactly |

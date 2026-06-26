@@ -1,6 +1,6 @@
 ---
 name: commit-message
-description: "Generate or validate team Git commit messages using the single HostApplication / application Chinese commit-message template."
+description: "Generate or validate team Git commit messages using the single application Chinese commit-message template."
 ---
 
 # Commit Message

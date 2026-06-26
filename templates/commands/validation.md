@@ -52,8 +52,8 @@ Create or update these evidence artifacts:
 - AI Self-Acceptance: rubric rows judged, Essential/Pitfall result, UI baseline
   status, selected CDP/log/runtime evidence, and `PASS | FAIL | BLOCKED`.
 - Gaps and who can close them.
-- Whether the result changes routing to `micro-fix`, `standard-bugfix`,
-  `full-sdd`, or `blocked-investigation`.
+- Whether the result changes routing to `micro-fix`, `standard-bugfix-lite`,
+  `standard-bugfix`, `full-sdd`, or `blocked-investigation`.
 
 ## Rules
 
@@ -61,7 +61,7 @@ Create or update these evidence artifacts:
 - No validation claim is complete without evidence in `evidence.md`,
   `fact-pack.md`, logs, screenshots, named command output, or inline evidence
   links in `validation.md`.
-- For host-embedded UI validation, prefer real HostApplication Electron CDP at
+- For host-embedded UI validation, prefer real host application Electron CDP at
   `http://127.0.0.1:9222` after source build and source-to-runtime sync. First
   run `ensure-host-cdp` to reuse an existing valid host, start
   the host when no process owns the port, or identify a port owner before
@@ -100,12 +100,12 @@ Create or update these evidence artifacts:
   State whether each relevant bottom edge is `<= window.innerHeight`. Treat
   bare `100vh` in an embedded plugin as a risk requiring measured host-offset
   evidence, not as proof that the layout fits.
-- For real-device, connection, acquisition, permission, status, SDK/Biz, or
+- For real-device, connection, acquisition, permission, status, service/runtime, or
   host-embedded runtime validation, the agent owns the primary smoke when local
-  host and automation tools are available. Start or reuse HostApplication,
+  host and automation tools are available. Start or reuse host application,
   select the real Electron target through CDP/browser automation, execute the
   user flow or equivalent host/API operation, and verify process liveness,
-  latest SDK/Biz logs, console errors, and refreshed runtime/UI state. Do not
+  latest service/runtime logs, console errors, and refreshed runtime/UI state. Do not
   mark validation complete by assigning these technical checks to human manual
   acceptance. If the smoke cannot run, record the concrete unavailable device,
   host, permission, or automation condition and route to investigation or a

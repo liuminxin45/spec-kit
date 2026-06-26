@@ -1,5 +1,5 @@
 ---
-description: Create or update a CoreRuntime capability specification from a natural language request.
+description: Create or update a capability specification from a natural language request.
 scripts:
   ps: scripts/powershell/create-spec-branch.ps1 -AllowDirty -Json
 ---
@@ -55,7 +55,7 @@ routing decisions.
 
 Use "Capability Scenario" instead of generic "User Story". A capability
 scenario must be independently understandable and independently verifiable,
-even when it covers SDK, NativePlugin/ServiceBridge bridge, HostApplication, frontend plugin,
+even when it covers SDK, native plugin/bridge/adaptor bridge, host application, frontend plugin,
 device integration, migration, or tooling work.
 
 ## Language Rules
@@ -198,14 +198,14 @@ device integration, migration, or tooling work.
 - Mention real-device, virtual-device, SDK, plugin, encoding, or UI state
   boundaries when relevant.
 - For UI state, UI interaction, operation availability, or device runtime UI:
-  - State that `ServiceBridge` is an API forwarding bridge only and must not
+  - State that `bridge/adaptor` is an API forwarding bridge only and must not
     implement business logic, device-state inference, permission/availability
     decisions, or UI behavior rule calculation.
   - State that non-UI-specific runtime facts, permission/capability data, and
-    reusable business rules belong in `CoreRuntime`.
+    reusable business rules belong in `owning runtime/domain repository`.
   - State that UI-display-specific composition, such as interaction surface structure,
     order, visible/enabled presentation, and action entry layout, belongs
-    in the frontend plugin and must be based on `CoreRuntime` facts obtained
+    in the frontend plugin and must be based on `owning runtime/domain repository` facts obtained
     through the bridge.
   - Do not allow frontend label/string inference, fake runtime facts, or durable
     caching of device/runtime/permission truth.
@@ -217,7 +217,7 @@ device integration, migration, or tooling work.
     `device::identity::generateUUID()`; `DeviceManager`, `SdkService`, and UI
     code only use the identity.
   - State that SDK native id, virtual id, and handle are bottom-layer
-    implementation details and must not cross Libs facade/Biz/UI boundaries.
+    implementation details and must not cross runtime facade/service/UI boundaries.
   - State that frontend business operations use `node.uuid` only, not
     `node.id`, `entityId`, or `metadata.uuid` fallbacks.
   - State that equivalent legacy APIs, debug/test APIs in production exports,

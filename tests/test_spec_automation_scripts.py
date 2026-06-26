@@ -67,6 +67,8 @@ AUTOMATION_TOOLS = [
     "get-spec-kit-version",
     "validate-spec-kit-version",
     "bump-spec-kit-version",
+    "resolve-next-stage",
+    "preflight-push",
 ]
 
 
@@ -171,8 +173,10 @@ def test_automation_assets_are_packaged_and_declared():
     assert (REPO_ROOT / "templates" / "ai" / "knowledge" / "index.yml").exists()
     assert (REPO_ROOT / "templates" / "ai" / "knowledge" / "build" / "validation-capabilities.yml").exists()
     assert (REPO_ROOT / "templates" / "workflow-state-template.json").exists()
+    assert (REPO_ROOT / "templates" / "workpack-template.md").exists()
     assert '"config" = "specify_cli/core_pack/config"' in pyproject
     assert '"templates/workflow-state-template.json" = "specify_cli/core_pack/templates/workflow-state-template.json"' in pyproject
+    assert '"templates/workpack-template.md" = "specify_cli/core_pack/templates/workpack-template.md"' in pyproject
 
     config = yaml.safe_load(read_text("config/automation-rules.yml"))
     assert config["policy"]["automation_scope"] == "hard-facts-only"
@@ -184,6 +188,10 @@ def test_automation_assets_are_packaged_and_declared():
     state = json.loads(read_text("templates/workflow-state-template.json"))
     for key in [
         "workflow_model",
+        "stage_statuses",
+        "human_gates",
+        "selected_gates",
+        "next_stage_decision",
         "attempts",
         "validations",
         "fact_layer",
@@ -205,6 +213,9 @@ def test_automation_assets_are_packaged_and_declared():
     assert manifest["policy"]["knowledge_routing"] == "deterministic-index, no-full-text-search"
     assert manifest["policy"]["gate_routing"] == "deterministic-gate-packs, no-command-manuals"
     assert "workflow-state.json" in manifest["artifact_sets"]["implement"]
+    assert "workpack.md" in manifest["artifact_sets"]["standard-bugfix-lite-plan"]
+    assert "workpack.md" in manifest["artifact_sets"]["standard-bugfix-lite-implement"]
+    assert "workpack.md" in manifest["artifact_sets"]["standard-bugfix-lite-commit"]
     assert "workflow-record.md" in manifest["artifact_sets"]["commit"]
     assert "improvement-candidates.md" in manifest["artifact_sets"]["commit"]
     assert "knowledge-candidates.md" in manifest["artifact_sets"]["commit"]
@@ -222,6 +233,7 @@ def test_automation_assets_are_packaged_and_declared():
     assert "AI Context Contract" in manifest["artifact_sections"]["plan.md"]
     assert "Validation Context Contract" in manifest["artifact_sections"]["validation.md"]
     assert "L3 Artifact Contract" in manifest["artifact_sections"]["tasks.md"]
+    assert "Root Cause" in manifest["artifact_sections"]["workpack.md"]
 
 
 def test_gate_packs_are_selectable_and_context_budgeted():
@@ -238,12 +250,174 @@ def test_gate_packs_are_selectable_and_context_budgeted():
     selected_ids = {item["id"] for item in selected["facts"]["selected"]}
     assert {"host-cdp", "frontend-runtime-sync", "native-bridge", "qt-parity", "real-device", "plugin-package"} <= selected_ids
     assert all(item["path"].startswith("ai/workflows/gates/") for item in selected["facts"]["selected"])
+    assert "omitted_due_to_limit" in selected["facts"]
 
     repo = REPO_ROOT.parent
     budget = run_ps("validate-context-budget", "-RepoRoot", str(repo))
     assert_standard_shape(budget, "validate-context-budget")
-    assert budget["status"] == "ok"
+    assert budget["status"] in {"ok", "warning"}
     assert budget["facts"]["over_budget"] == []
+    assert "near_budget_count" in budget["facts"]
+    assert "near_budget_threshold" in budget["facts"]
+    assert "optimization_candidates" in budget["facts"]
+
+
+def test_select_gates_accepts_explicit_routing_and_reports_omitted():
+    selected = run_ps(
+        "select-gates",
+        "-RepoRoot",
+        str(REPO_ROOT),
+        "-Stage",
+        "implement",
+        "-RiskFlags",
+        "host-devtools,plugin-runtime",
+    )
+
+    assert_standard_shape(selected, "select-gates")
+    ids = [item["id"] for item in selected["facts"]["selected"]]
+    assert ids[:3] == ["frontend-runtime-sync", "host-cdp", "plugin-package"]
+    assert selected["facts"]["omitted_due_to_limit"]
+    assert "host-cdp" in selected["facts"]["risk_flags"]
+    assert "frontend-runtime-sync" in selected["facts"]["risk_flags"]
+
+
+def test_resolve_next_stage_routes_profiles_and_commit_closure(tmp_path):
+    feature_dir = tmp_path / "specs" / "001-demo"
+    feature_dir.mkdir(parents=True)
+    (tmp_path / ".specify").mkdir()
+    (tmp_path / ".specify" / "feature.json").write_text(
+        json.dumps({"feature_directory": str(feature_dir), "delivery_profile": "standard-bugfix-lite"}),
+        encoding="utf-8",
+    )
+    (feature_dir / "workflow-state.json").write_text(
+        json.dumps({"workflow_model": {"delivery_profile": "standard-bugfix-lite"}}),
+        encoding="utf-8",
+    )
+
+    decision = run_ps("resolve-next-stage", "-RepoRoot", str(tmp_path), "-FeatureDir", str(feature_dir))
+    assert_standard_shape(decision, "resolve-next-stage")
+    assert decision["next_stage"] == "speckit.plan"
+    assert decision["missing_artifacts"] == ["workpack.md"]
+
+    (feature_dir / "workpack.md").write_text("Root Cause\nChange Slice\nValidation\nAcceptance Rubric Summary\n", encoding="utf-8")
+    decision = run_ps("resolve-next-stage", "-RepoRoot", str(tmp_path), "-FeatureDir", str(feature_dir))
+    assert decision["next_stage"] == "speckit.implement"
+
+    for name in ["validation.md", "convergence.md", "acceptance.md", "workflow-record.md", "improvement-candidates.md", "knowledge-candidates.md", "workflow-observation.md", "post-commit-self-check.md", "rubric-score.md"]:
+        (feature_dir / name).write_text(f"# {name}\n", encoding="utf-8")
+    (feature_dir / "workflow-state.json").write_text(
+        json.dumps(
+            {
+                "workflow_model": {"delivery_profile": "standard-bugfix-lite"},
+                "acceptance": {"status": "passed"},
+                "retrospective": {"status": "completed"},
+                "commit": {"status": "completed", "commit_hash": "abc123"},
+                "post_commit_self_check": {"status": "completed"},
+                "rubric_score": {"status": "completed"},
+                "human_gates": {"complete-branch": {"status": "pending"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    decision = run_ps("resolve-next-stage", "-RepoRoot", str(tmp_path), "-FeatureDir", str(feature_dir))
+    assert decision["next_stage"] == "speckit.complete-branch"
+    assert decision["can_continue"] is False
+    assert "cherry-pick" in decision["required_human_action"]
+
+
+def test_resolve_next_stage_keeps_micro_fix_converge_and_standard_current_stage(tmp_path):
+    micro_dir = tmp_path / "specs" / "001-micro"
+    micro_dir.mkdir(parents=True)
+    (tmp_path / ".specify").mkdir()
+    (tmp_path / ".specify" / "feature.json").write_text(
+        json.dumps({"feature_directory": str(micro_dir), "delivery_profile": "micro-fix", "risk_level": "low"}),
+        encoding="utf-8",
+    )
+    (micro_dir / "workflow-state.json").write_text("{}", encoding="utf-8")
+    (micro_dir / "progress.md").write_text("# Progress\n", encoding="utf-8")
+    (micro_dir / "validation.md").write_text("# Validation\n", encoding="utf-8")
+
+    decision = run_ps("resolve-next-stage", "-RepoRoot", str(tmp_path), "-FeatureDir", str(micro_dir))
+    assert decision["current_stage"] == "implement"
+    assert decision["next_stage"] == "speckit.converge"
+    assert decision["missing_artifacts"] == ["convergence.md"]
+
+    standard_dir = tmp_path / "specs" / "002-standard"
+    standard_dir.mkdir(parents=True)
+    (tmp_path / ".specify" / "feature.json").write_text(
+        json.dumps({"feature_directory": str(standard_dir), "delivery_profile": "standard-bugfix", "risk_level": "medium"}),
+        encoding="utf-8",
+    )
+    for name in ["workflow-state.json", "spec.md", "plan.md", "analysis.md"]:
+        (standard_dir / name).write_text("{}" if name.endswith(".json") else f"# {name}\n", encoding="utf-8")
+
+    decision = run_ps("resolve-next-stage", "-RepoRoot", str(tmp_path), "-FeatureDir", str(standard_dir))
+    assert decision["current_stage"] == "analyze"
+    assert decision["next_stage"] == "speckit.implement"
+    assert decision["missing_artifacts"] == ["validation.md"]
+
+
+def test_preflight_push_blocks_unrelated_history_and_knowledge_leak(tmp_path):
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", str(repo)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.com"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test User"], check=True)
+    (repo / "README.md").write_text("# Demo\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-m", "initial"], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(repo), "branch", "-M", "main"], check=True)
+    subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", str(remote)], check=True)
+    subprocess.run(["git", "-C", str(repo), "push", "-u", "origin", "main"], check=True, capture_output=True, text=True)
+
+    blocked_main = subprocess.run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(REPO_ROOT / "scripts" / "powershell" / "preflight-push.ps1"),
+            "-RepoRoot",
+            str(repo),
+            "-Json",
+        ],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+    )
+    main_payload = json.loads(blocked_main.stdout)
+    assert main_payload["status"] == "blocked"
+    assert "protected branch" in "\n".join(main_payload["blockers"])
+
+    subprocess.run(["git", "-C", str(repo), "switch", "-c", "feature/leak"], check=True, capture_output=True, text=True)
+    leak = repo / "templates" / "ai" / "knowledge" / "repositories" / "private.md"
+    leak.parent.mkdir(parents=True)
+    leak.write_text("# private\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-m", "leak knowledge"], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(repo), "branch", "--set-upstream-to", "origin/main", "feature/leak"], check=True, capture_output=True, text=True)
+
+    blocked_leak = subprocess.run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(REPO_ROOT / "scripts" / "powershell" / "preflight-push.ps1"),
+            "-RepoRoot",
+            str(repo),
+            "-Json",
+        ],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+    )
+    leak_payload = json.loads(blocked_leak.stdout)
+    assert leak_payload["status"] == "blocked"
+    assert "Repository-specific knowledge guides" in "\n".join(leak_payload["blockers"])
 
 
 def test_knowledge_index_assets_are_packaged_selectable_and_validated():
@@ -2774,6 +2948,10 @@ def test_validate_feature_artifacts_uses_layer_manifest_and_required_sections(tm
     (feature_dir / "workflow-state.json").write_text(
         json.dumps(
             {
+                "stage_statuses": {},
+                "human_gates": {},
+                "selected_gates": [],
+                "next_stage_decision": {},
                 "attempts": [],
                 "validations": [],
                 "fact_layer": {},
@@ -2828,6 +3006,10 @@ def test_validate_feature_artifacts_allows_standard_bugfix_plan_slices_without_t
     (feature_dir / "workflow-state.json").write_text(
         json.dumps(
             {
+                "stage_statuses": {},
+                "human_gates": {},
+                "selected_gates": [],
+                "next_stage_decision": {},
                 "attempts": [],
                 "validations": [],
                 "fact_layer": {},
@@ -2886,7 +3068,20 @@ def test_validate_feature_artifacts_enforces_full_sdd_implementation_gates(tmp_p
         encoding="utf-8",
     )
     (feature_dir / "workflow-state.json").write_text(
-        '{"attempts":[],"validations":[],"fact_layer":{},"acceptance":{},"retrospective":{},"promotion":{}}',
+        json.dumps(
+            {
+                "attempts": [],
+                "validations": [],
+                "fact_layer": {},
+                "acceptance": {},
+                "retrospective": {},
+                "promotion": {},
+                "stage_statuses": {},
+                "human_gates": {},
+                "selected_gates": [],
+                "next_stage_decision": {},
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -2989,19 +3184,20 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         "direct runtime replacement\nhost CDP validation\n"
         "ensure-host-cdp\n"
         "stale/current-feature hint\nread the current plan only\n"
+        "standard-bugfix-lite\nworkpack.md\npreflight-push\n"
         "select-knowledge\nselect-gates\nvalidate-knowledge-index\nvalidate-context-budget\n"
         "inspect-validation-capabilities\ninspect-workflow-closure\nknowledge-candidates.md\n",
         encoding="utf-8",
     )
     (repo / ".specify" / "memory" / "repository-map.md").write_text(
-        "Project Path Categories\n<workspace-root>/FrontendPlugin/<plugin-id>/\n"
-        "CDP target inventory\nDo not write machine-specific absolute paths here\n",
+        "Project Path Categories\n<workspace-root>/<app-path>/\n"
+        "Optional Host / CDP Defaults\nCDP target inventory\nDo not write machine-specific absolute paths here\n",
         encoding="utf-8",
     )
     (repo / ".specify" / "templates" / "layer-manifest.yml").write_text(
         "stage_gates:\nread_strategies:\nKnowledge\ngate_routing\nselect-gates\n"
         "validate-context-budget\nvalidate-knowledge-index\n"
-        "checklists/implementation-readiness.md\n",
+        "checklists/implementation-readiness.md\nworkpack.md\n",
         encoding="utf-8",
     )
     (repo / "spec-kit" / "templates" / "acceptance-rubric-template.md").write_text(
@@ -3021,7 +3217,8 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         encoding="utf-8",
     )
     (repo / "ai" / "workflows" / "task-routing.md").write_text(
-        "tasks -> analyze -> checklist\nvalidate-generated-context\nvalidate-knowledge-index\n"
+        "tasks -> analyze -> checklist\nstandard-bugfix-lite\nworkpack.md\nresolve-next-stage\n"
+        "validate-generated-context\nvalidate-knowledge-index\n"
         "validate-context-budget\nselect-knowledge\nselect-gates\nskill-routing.yml\nartifact_sections\n"
         "Stage Continuation\nFinal Response Guard\ninspect-workflow-closure\n"
         "workflow-observer\npromote-candidates\ninspect-host-cdp-target\n"
@@ -3038,17 +3235,17 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         encoding="utf-8",
     )
     (repo / "ai" / "rules" / "ai-coding-rules.md").write_text(
-        "Generated Context Drift\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
+        "Generated Context Drift\nstandard-bugfix-lite\nworkpack.md\nresolve-next-stage\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
         "Stage Continuation Contract\nHost Frontend Delivery Chain\n"
         "ensure-host-cdp\n"
         "Retrospective/留痕 is mandatory before commit\n"
-        "inspect-workflow-closure\nknowledge-candidates.md\n",
+        "inspect-workflow-closure\nknowledge-candidates.md\npreflight-push\n",
         encoding="utf-8",
     )
     (repo / "spec-kit" / "workflows" / "speckit" / "workflow.yml").write_text(
-        "id: retrospective\nid: workflow-observer\nid: commit\nRequire workflow-record.md\n"
+        "id: retrospective\nid: workflow-observer\nid: commit\nstandard-bugfix-lite\nrequires_confirmation: true\nRequire workflow-record.md\n"
         "knowledge-candidates.md\nworkflow-observation.md\n"
-        "automatic_stage_continuation\npost_human_acceptance_closure\n"
+        "automatic_stage_continuation\ndeterministic_next_stage\npost_human_acceptance_closure\n"
         "promote_knowledge_candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
         "capture-cdp-screenshot\n"
@@ -3120,6 +3317,8 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         "promote-knowledge-candidates.ps1",
         "cleanup-host-cdp.ps1",
         "validate-context-budget.ps1",
+        "resolve-next-stage.ps1",
+        "preflight-push.ps1",
         "sync-native-runtime-artifacts.ps1",
         "validate-rpc-proto-bundle.ps1",
         "capture-cdp-screenshot.ps1",
@@ -3177,19 +3376,20 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         "direct runtime replacement\nhost CDP validation\n"
         "ensure-host-cdp\n"
         "stale/current-feature hint\nread the current plan only\n"
+        "standard-bugfix-lite\nworkpack.md\npreflight-push\n"
         "select-knowledge\nselect-gates\nvalidate-knowledge-index\nvalidate-context-budget\n"
         "inspect-validation-capabilities\ninspect-workflow-closure\nknowledge-candidates.md\n",
         encoding="utf-8",
     )
     (repo / ".specify" / "memory" / "repository-map.md").write_text(
-        "Project Path Categories\n<workspace-root>/FrontendPlugin/<plugin-id>/\n"
-        "CDP target inventory\nDo not write machine-specific absolute paths here\n",
+        "Project Path Categories\n<workspace-root>/<app-path>/\n"
+        "Optional Host / CDP Defaults\nCDP target inventory\nDo not write machine-specific absolute paths here\n",
         encoding="utf-8",
     )
     (repo / ".specify" / "templates" / "layer-manifest.yml").write_text(
         "stage_gates:\nread_strategies:\nKnowledge\ngate_routing\nselect-gates\n"
         "validate-context-budget\nvalidate-knowledge-index\n"
-        "checklists/implementation-readiness.md\n",
+        "checklists/implementation-readiness.md\nworkpack.md\n",
         encoding="utf-8",
     )
     (repo / ".specify" / "templates" / "acceptance-rubric-template.md").write_text(
@@ -3201,7 +3401,8 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         encoding="utf-8",
     )
     (repo / "ai" / "workflows" / "task-routing.md").write_text(
-        "tasks -> analyze -> checklist\nvalidate-generated-context\nvalidate-knowledge-index\n"
+        "tasks -> analyze -> checklist\nstandard-bugfix-lite\nworkpack.md\nresolve-next-stage\n"
+        "validate-generated-context\nvalidate-knowledge-index\n"
         "validate-context-budget\nselect-knowledge\nselect-gates\nskill-routing.yml\nartifact_sections\n"
         "Stage Continuation\nFinal Response Guard\ninspect-workflow-closure\n"
         "workflow-observer\npromote-candidates\ninspect-host-cdp-target\n"
@@ -3218,17 +3419,17 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         encoding="utf-8",
     )
     (repo / "ai" / "rules" / "ai-coding-rules.md").write_text(
-        "Generated Context Drift\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
+        "Generated Context Drift\nstandard-bugfix-lite\nworkpack.md\nresolve-next-stage\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
         "Stage Continuation Contract\nHost Frontend Delivery Chain\n"
         "ensure-host-cdp\n"
         "Retrospective/留痕 is mandatory before commit\n"
-        "inspect-workflow-closure\nknowledge-candidates.md\n",
+        "inspect-workflow-closure\nknowledge-candidates.md\npreflight-push\n",
         encoding="utf-8",
     )
     (repo / "spec-kit" / "workflows" / "speckit" / "workflow.yml").write_text(
-        "id: retrospective\nid: workflow-observer\nid: commit\nRequire workflow-record.md\n"
+        "id: retrospective\nid: workflow-observer\nid: commit\nstandard-bugfix-lite\nrequires_confirmation: true\nRequire workflow-record.md\n"
         "knowledge-candidates.md\nworkflow-observation.md\n"
-        "automatic_stage_continuation\npost_human_acceptance_closure\n"
+        "automatic_stage_continuation\ndeterministic_next_stage\npost_human_acceptance_closure\n"
         "promote_knowledge_candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
         "capture-cdp-screenshot\n"
@@ -3296,6 +3497,8 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         "promote-knowledge-candidates.ps1",
         "cleanup-host-cdp.ps1",
         "validate-context-budget.ps1",
+        "resolve-next-stage.ps1",
+        "preflight-push.ps1",
         "sync-native-runtime-artifacts.ps1",
         "validate-rpc-proto-bundle.ps1",
         "capture-cdp-screenshot.ps1",
@@ -3335,7 +3538,23 @@ def test_validate_feature_artifacts_blocks_missing_layer_sections(tmp_path):
     (feature_dir / "spec.md").write_text("L1 Artifact Contract\n人类审核摘要\n能力概览\n能力场景\n功能需求\n验证预期\n", encoding="utf-8")
     (feature_dir / "plan.md").write_text("Root Cause Evidence\n", encoding="utf-8")
     (feature_dir / "tasks.md").write_text("L3 Artifact Contract\n人类审核摘要\nImplementation Slices\nPhase 1\nPhase 2\nPhase N\n", encoding="utf-8")
-    (feature_dir / "workflow-state.json").write_text('{"attempts":[],"validations":[],"fact_layer":{},"acceptance":{},"retrospective":{},"promotion":{}}', encoding="utf-8")
+    (feature_dir / "workflow-state.json").write_text(
+        json.dumps(
+            {
+                "attempts": [],
+                "validations": [],
+                "fact_layer": {},
+                "acceptance": {},
+                "retrospective": {},
+                "promotion": {},
+                "stage_statuses": {},
+                "human_gates": {},
+                "selected_gates": [],
+                "next_stage_decision": {},
+            }
+        ),
+        encoding="utf-8",
+    )
 
     output = run_ps(
         "validate-feature-artifacts",
@@ -3377,7 +3596,20 @@ def test_validate_feature_artifacts_blocks_commit_without_retrospective(tmp_path
     )
     (feature_dir / "acceptance.md").write_text("# Acceptance\n", encoding="utf-8")
     (feature_dir / "workflow-state.json").write_text(
-        '{"attempts":[],"validations":[],"fact_layer":{},"acceptance":{},"retrospective":{},"promotion":{}}',
+        json.dumps(
+            {
+                "attempts": [],
+                "validations": [],
+                "fact_layer": {},
+                "acceptance": {},
+                "retrospective": {},
+                "promotion": {},
+                "stage_statuses": {},
+                "human_gates": {},
+                "selected_gates": [],
+                "next_stage_decision": {},
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -3426,6 +3658,10 @@ def test_validate_feature_artifacts_blocks_commit_without_retrospective(tmp_path
                     "workflow_observation": "workflow-observation.md",
                 },
                 "promotion": {},
+                "stage_statuses": {},
+                "human_gates": {},
+                "selected_gates": [],
+                "next_stage_decision": {},
             }
         ),
         encoding="utf-8",

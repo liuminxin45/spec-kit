@@ -1,5 +1,5 @@
 ---
-description: Simplify accepted CoreRuntime code changes while preserving behavior and validation evidence.
+description: Simplify accepted code changes while preserving behavior and validation evidence.
 scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json -IncludeTasks
 ---

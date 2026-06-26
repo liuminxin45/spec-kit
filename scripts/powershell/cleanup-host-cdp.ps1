@@ -13,7 +13,7 @@ $ErrorActionPreference = "Stop"
 
 if ($Help) {
     Write-Output "Usage: cleanup-host-cdp.ps1 -StartedProcessIds <pid[]> [-HostAppRoot <path>] [-DryRun] [-Json]"
-    Write-Output "Stops only HostApplication host processes that the AI started and can still verify. Unknown or user-owned processes are reported as blockers and are never killed."
+    Write-Output "Stops only host processes that the AI started and can still verify. Unknown or user-owned processes are reported as blockers and are never killed."
     exit 0
 }
 
@@ -58,7 +58,7 @@ foreach ($pid in $StartedProcessIds) {
     $path = ""
     try { $path = [string]$process.Path } catch {}
     $name = [string]$process.ProcessName
-    $isKnownHostName = ($name -match "^(electron|node|HostApplication|Utility)$")
+    $isKnownHostName = ($name -match "^(electron|node|hostapplication|utility)$")
     $underHost = $false
     if ($resolvedHost -and $path) {
         $fullPath = [System.IO.Path]::GetFullPath($path)

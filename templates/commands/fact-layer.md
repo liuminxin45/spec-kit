@@ -27,26 +27,24 @@ Create or update `FEATURE_DIR/fact-pack.md` from concrete project facts before
 AI continues a repeated or evidence-poor fix. This command is mandatory before a
 second same-class fix when the first patch did not change the observed symptom,
 when UI runtime structure contradicts source assumptions, or when device state,
-permission, connection, acquisition, SDK, Biz, or plugin behavior cannot be
+permission, connection, acquisition, service/runtime, or plugin behavior cannot be
 localized from source alone.
 
 ## Fact Sources
 
 - Local logs are read from disk. Do not use MCP for log files.
-- SdkConsumer log default directory: `<system-temp>/SDKLog`
-- SdkConsumer log pattern: `SDK_*.log`
-- CoreRuntime/Bridge log default directory: `<system-temp>/ServiceBridgeLog`
-- CoreRuntime/Bridge log pattern: `ServiceBridge_*.log`
-- Logs are usually generated after the HostApplication process exits. Use the
-  latest file in each directory unless a user-supplied timestamp narrows the
-  search.
+- Project log directories and filename patterns must come from
+  `.specify/memory/repository-map.md`, a selected gate pack, or a selected
+  knowledge guide.
+- If no log location is configured, record that fact and use build/test/runtime
+  evidence instead of inventing a project-specific log path.
 - Chrome runtime facts use chrome-devtools when available. Use it for DOM,
   console, computed style, and box metrics, not for local log files.
 - If Chrome DevTools MCP is present but cannot select the desired Electron
   target, use the direct CDP fallback from `collect-fact-layer.ps1`: query
-  `/json/list`, select the HostApplication page target by URL/title pattern,
+  `/json/list`, select the host application page target by URL/title pattern,
   and run `Runtime.evaluate` through the target WebSocket.
-- HostApplication development CDP default is `http://127.0.0.1:9222`, usually
+- host application development CDP default is `http://127.0.0.1:9222`, usually
   enabled by running `<host-app-root>` `npm run debug`
   (`UTILITY_CHROME_REMOTE_DEBUGGING_PORT=9222`). For host app or frontend-plugin
   validation, prefer targets matching `app-home`,
@@ -68,7 +66,7 @@ localized from source alone.
      `scripts/powershell/collect-fact-layer.ps1 -TargetUrlPattern "Plugin Workbench|plugin-workbench.html" -Json`
 3. Record the collector output in `fact-pack.md` using
    `.specify/templates/fact-pack-template.md`.
-4. If chrome-devtools is available, inspect the real Electron/HostApplication
+4. If chrome-devtools is available, inspect the real Electron/host application
    target at `http://127.0.0.1:9222`; do not accept an unrelated blank Chrome
    page as evidence.
    - If MCP is in slim mode and cannot `list_pages` / `select_page`, rely on
@@ -83,9 +81,9 @@ localized from source alone.
    - Screenshots and interaction method. For CSS-only hover states, use
      `CSS.forcePseudoState(['hover'])` when `Input.dispatchMouseEvent` does not
      reliably apply Electron hover.
-6. For device state/permission/connection/acquisition work, summarize latest
-   `SDK_*.log` and `ServiceBridge_*.log` lines that correspond to the user's
-   operation timeline.
+6. For device state/permission/connection/acquisition work, summarize the
+   latest configured log lines that correspond to the user's operation
+   timeline.
 7. Verify source/runtime consistency:
    - Repository source files changed.
    - Built artifact generated from those source files.
@@ -102,9 +100,9 @@ Run `speckit.fact-layer` when any of these applies:
 - DOM/CSS/layout ownership is unclear.
 - Scrollbar appearance, clipping, blank area, parent compression, toolbar
   displacement, or sibling resize is involved.
-- Device list state differs from SDK/Biz expectation.
+- Device list state differs from service/runtime expectation.
 - Permission, connected/collecting/disconnected state, virtual device, or
-  acquisition behavior differs across UI, Biz, and SDK.
+  acquisition behavior differs across UI, service, and runtime.
 - User says the rebuilt/reinstalled result is unchanged.
 - The issue may be caused by editing installed runtime artifacts instead of
   repository source.
@@ -115,8 +113,7 @@ Run `speckit.fact-layer` when any of these applies:
 Report in Chinese:
 
 - `fact-pack.md` path.
-- Latest SdkConsumer log path or missing reason.
-- Latest CoreRuntime/Bridge log path or missing reason.
+- Latest configured project log paths or missing reasons.
 - Chrome DevTools target status.
 - Whether chrome-devtools MCP was available for DOM / computed style / box
   metrics.

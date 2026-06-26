@@ -95,6 +95,7 @@ def test_workflow_uses_lean_default_chain_with_conditional_stages():
     assert delivery_profile["enum"] == [
         "auto",
         "micro-fix",
+        "standard-bugfix-lite",
         "standard-bugfix",
         "full-sdd",
         "blocked-investigation",
@@ -128,7 +129,7 @@ def test_workflow_uses_lean_default_chain_with_conditional_stages():
     assert by_id["human-acceptance"]["type"] == "gate"
     assert by_id["human-acceptance"]["skip_profiles"] == ["validation-only", "blocked-investigation"]
     assert "requires_confirmation" not in by_id["commit"]
-    assert "requires_confirmation" not in by_id["complete-branch"]
+    assert by_id["complete-branch"]["requires_confirmation"] is True
     assert "exactly one" in by_id["post-commit-self-check"]["input"]["args"]
     assert "validate-rubric-score" in by_id["rubric-score"]["input"]["args"]
     assert "collect-workflow-observer-packet" in by_id["workflow-observer"]["input"]["args"]
@@ -163,6 +164,8 @@ def test_workflow_uses_lean_default_chain_with_conditional_stages():
     combined_args = "\n".join(step["input"]["args"] for step in steps if "input" in step)
     assert "delivery_profile" in combined_args
     assert "micro-fix" in combined_args
+    assert "standard-bugfix-lite" in combined_args
+    assert "workpack.md" in combined_args
     assert "blocked-investigation" in combined_args
     assert "validation" in workflow_doc["conditional_stages"]
 
@@ -176,6 +179,7 @@ def test_conditional_stage_descriptions_do_not_weaken_hard_gates():
     assert conditional["analyze"].startswith("Required before implementation for standard-bugfix and full-sdd")
     assert conditional["checklist"].startswith("Required before implementation for full-sdd")
     assert "optional only for micro-fix" in conditional["analyze"]
+    assert "standard-bugfix-lite" in conditional["analyze"]
     assert "runtime DOM/CSS/computed style/box metrics" in combined_args
     assert "installed runtime plugin directories" in combined_args
 
@@ -184,6 +188,7 @@ def test_conditional_stage_descriptions_do_not_weaken_hard_gates():
         "tasks -> analyze -> checklist"
     )
     assert stage_gate_policy["hard_implementation_preflight"]["command"] == "validate-feature-artifacts"
+    assert stage_gate_policy["deterministic_next_stage"]["command"] == "resolve-next-stage"
     assert stage_gate_policy["generated_context_drift"]["command"] == "validate-generated-context"
     assert stage_gate_policy["knowledge_index_drift"]["command"] == "validate-knowledge-index"
 
@@ -366,8 +371,8 @@ def test_new_command_templates_define_delivery_stages():
         "templates/commands/fact-layer.md": [
             "fact-pack.md",
             "fact-pack-template.md",
-            "<system-temp>/SDKLog",
-            "<system-temp>/ServiceBridgeLog",
+            "configured log",
+            "repository-map.md",
             "chrome-devtools",
             "computed style",
             "box metrics",
@@ -483,6 +488,7 @@ def test_retrospective_stage_is_mandatory_before_commit_and_completion():
     assert by_id["analyze"]["profiles"] == ["standard-bugfix", "full-sdd"]
     assert by_id["tasks"]["profiles"] == ["full-sdd"]
     assert by_id["checklist"]["profiles"] == ["full-sdd"]
+    assert by_id["complete-branch"]["requires_confirmation"] is True
     assert "run only when risk or evidence requires them" not in cli
 
 
@@ -714,6 +720,51 @@ def test_templates_do_not_embed_machine_specific_paths():
     assert offenders == []
 
 
+def test_open_source_default_context_is_generic_and_self_contained():
+    source_agents = read_text("AGENTS.md")
+    assert "../AGENTS.md" not in source_agents
+    assert "self-contained" in source_agents
+
+    default_files = [
+        "templates/workspace-template.yml",
+        "templates/repository-map-template.md",
+        "templates/agents-template.md",
+        "templates/commands/intake.md",
+        "templates/commands/specify.md",
+        "templates/commands/plan.md",
+        "templates/commands/tasks.md",
+        "templates/commands/analyze.md",
+        "templates/commands/checklist.md",
+        "templates/commands/implement.md",
+        "templates/commands/fact-layer.md",
+        "templates/commands/bounded-investigation.md",
+        "templates/commands/commit.md",
+        "templates/commands/constitution.md",
+        "templates/fact-pack-template.md",
+    ]
+    forbidden_terms = [
+        "CoreRuntime",
+        "SdkConsumer",
+        "ServiceBridge",
+        "HostApplication",
+        "NativePlugin",
+        "FrontendPlugin",
+        "PluginCommon",
+        "PlatformLibs",
+        "SDKLog",
+        "ServiceBridgeLog",
+    ]
+
+    offenders = []
+    for path in default_files:
+        text = read_text(path)
+        for term in forbidden_terms:
+            if term in text:
+                offenders.append(f"{path}: {term}")
+
+    assert offenders == []
+
+
 def test_host_frontend_delivery_chain_and_cdp_target_gate_are_enforced():
     workflow_doc = load_workflow()
     workflow_args = compact_text("\n".join(step["input"]["args"] for step in workflow_doc["steps"] if "input" in step))
@@ -748,7 +799,7 @@ def test_host_frontend_delivery_chain_and_cdp_target_gate_are_enforced():
     assert "Runtime replacement removed stale count" in evidence_template
     assert "runtime replacement directory" in checklist
 
-    for text in [implement, validation, routing, rules, build_notes, repo_map, checklist, common_rules]:
+    for text in [implement, validation, routing, rules, build_notes, checklist, common_rules]:
         assert "inspect-host-cdp-target" in text or "/json/list" in text
         assert "Plugin Workbench" in text
         assert "base-win.html" in text
@@ -876,10 +927,10 @@ def test_fact_layer_assets_and_rules_are_standardized():
     assert "fact-pack.md" in readme
 
     for text in [fact_command, fact_template, implement, checklist, investigation, readme]:
-        assert "<system-temp>/SDKLog" in text
-        assert "<system-temp>/ServiceBridgeLog" in text
-        assert "SDK_*.log" in text
-        assert "ServiceBridge_*.log" in text
+        compact = " ".join(text.split()).lower()
+        assert "configured log" in compact or "selected gate" in compact or "repository-map" in compact
+        assert "sdklog" not in compact
+        assert "servicebridgelog" not in compact
 
     for text in [fact_command, fact_template, plan, implement, checklist, investigation]:
         text_lower = text.lower()
@@ -1099,6 +1150,7 @@ def test_delivery_profiles_and_root_cause_evidence_are_standardized():
     for text in [intake, intake_template]:
         assert "delivery_profile" in text or "Delivery Profile" in text
         assert "micro-fix" in text
+        assert "standard-bugfix-lite" in text
         assert "standard-bugfix" in text
         assert "full-sdd" in text
         assert "blocked-investigation" in text
@@ -1333,7 +1385,9 @@ def test_completion_scripts_keep_spec_branch_by_default():
 
     assert "delete_local_spec_branch_after_merge: false" in workspace_template
     assert "keep_local_spec_branch_after_merge: true" in workspace_template
+    assert "require_user_confirmation_before_cherry_pick: true" in workspace_template
     assert "[switch]$DeleteBranch" in powershell_script
+    assert "[switch]$ConfirmCompletion" in powershell_script
     assert "$shouldKeepBranch = -not [bool]$DeleteBranch" in powershell_script
     assert "git cherry-pick" in powershell_script
     assert "completion_ready" in powershell_script
@@ -2158,21 +2212,20 @@ def test_repository_map_template_is_fixed_ai_context():
         "# Workspace Repository Map",
         "| Repository | Path | Role | Capability / Ownership | AI Usage Notes |",
         "Project Path Categories",
-        "<workspace-root>/FrontendPlugin/<plugin-id>/",
-        "<workspace-root>/FrontendPlugin/<plugin-id>/dist/",
-        "<workspace-root>/HostApplication/HostApplication/dist/plugins/<plugin-id>-<version>.plugin",
-        "<host-app-root>/app-data/plugins/<plugin-id>/<version>/",
-        "<host-app-root>/frontend/<location>/<plugin-id>/",
-        "<app-data-root>/<brand-name>/<project-name>/<front-plugins-config-file>",
+        "<workspace-root>/<app-path>/",
+        "<workspace-root>/<app-path>/<build-output>/",
+        "<runtime-root>/",
+        "Optional Host / CDP Defaults",
         "Do not write machine-specific absolute paths here",
-        "CoreRuntime",
-        "SdkConsumer",
-        "NativePlugin",
-        "HostApplication",
+        "`app`",
+        "`spec-kit`",
         "single source of truth",
         "Do not infer repository purpose by scanning source trees",
     ]:
         assert phrase in repository_map
+
+    for forbidden in ["CoreRuntime", "SdkConsumer", "NativePlugin", "HostApplication"]:
+        assert forbidden not in repository_map
 
 
 def test_plugin_path_knowledge_is_relative_and_discoverable():
@@ -2189,14 +2242,14 @@ def test_plugin_path_knowledge_is_relative_and_discoverable():
 
     for phrase in [
         "Plugin Path Knowledge",
-        "<workspace-root>/FrontendPlugin/<plugin-id>/src/",
-        "<workspace-root>/FrontendPlugin/<plugin-id>/plugin-out/<version>/staging/",
+        "<workspace-root>/<frontend-plugin-path>/src/",
+        "<workspace-root>/<frontend-plugin-path>/plugin-out/<version>/staging/",
         "<host-app-root>/frontend/<location>/<plugin-id>/",
         "<host-app-root>/mock_data/api/pluginManager/v1/getFrontDescriptorList.json",
         "<host-app-root>/app-data/plugins/<plugin-id>/<version>/",
         "<host-app-root>/app-data/plugins/<plugin-id>/<version>/native/",
-        "<workspace-root>/NativePlugin/<plugin-id>/build/<generator>/<arch>/<config>/",
-        "<workspace-root>/NativePlugin/<plugin-id>/export/",
+        "<workspace-root>/<native-plugin-path>/build/<generator>/<arch>/<config>/",
+        "<workspace-root>/<native-plugin-path>/export/",
         "<host-app-root>/plugins/<legacy-plugin-id>",
     ]:
         assert phrase in build_notes
@@ -2253,7 +2306,7 @@ def test_hot_pluggable_subskills_are_packaged_and_referenced():
     assert "Use the `code-simplifier` subskill" in simplify_command
 
     assert "name: commit-message" in commit_message_skill
-    assert "single HostApplication / application Chinese commit-message template" in commit_message_skill
+    assert "single application Chinese commit-message template" in commit_message_skill
     assert "68 display columns" in commit_message_skill
     assert "Spec Kit L4 Governance" in commit_message_skill
     assert "Commit-message generation does not require MCP" in commit_message_skill
@@ -2383,7 +2436,9 @@ def test_init_wrapper_documents_layered_assets_and_cherry_pick_completion():
         "human-acceptance gate -> retrospective -> workflow-observer",
         "post-commit-self-check -> rubric-score -> complete-branch",
         "cherry-pick the local Spec",
-        "Cherry-pick completion is automated after commit",
+        "Cherry-pick completion preflight is automated after commit",
+        "explicit human approval",
+        "`-ConfirmCompletion`",
     ]:
         assert phrase in wrapper_readme
 
@@ -2430,7 +2485,7 @@ def test_init_wrapper_configures_codex_mcp_without_agent_selector():
     assert "ai/tools/mcp-usage-policy.md" in mcp_script
 
 
-def test_hostapplication_cdp_defaults_are_in_generated_context_templates():
+def test_host_cdp_defaults_are_in_generated_context_templates():
     repository_map = read_text("templates/repository-map-template.md")
     build_notes = read_text("templates/ai/knowledge/build-and-package-notes.md")
     task_routing = read_text("templates/ai/workflows/task-routing.md")
@@ -2442,27 +2497,20 @@ def test_hostapplication_cdp_defaults_are_in_generated_context_templates():
     validation = read_text("templates/commands/validation.md")
     ps_fact_script = read_text("scripts/powershell/collect-fact-layer.ps1")
 
-    for text in [
-        repository_map,
-        build_notes,
-        task_routing,
-        mcp_servers,
-        mcp_policy,
-        implement,
-        acceptance,
-        fact_layer,
-        validation,
-        ps_fact_script,
-    ]:
+    assert "Optional Host / CDP Defaults" in repository_map
+    assert "CDP or browser endpoint" in repository_map
+    assert "N/A" in repository_map
+
+    for text in [build_notes, task_routing, mcp_servers, mcp_policy, implement, acceptance, fact_layer, validation, ps_fact_script]:
         assert "http://127.0.0.1:9222" in text
         assert "app-main-window" in text
 
-    assert "npm run debug" in repository_map
-    assert "<workspace-root>/HostApplication/HostApplication/" in build_notes
+    assert "npm run debug" in build_notes
+    assert "<workspace-root>/<host-app-path>/" in build_notes
     assert "UTILITY_ENABLE_PLUGIN_DEVTOOLS=1" in build_notes
     assert "Node inspector also starts on `5858`" in build_notes
     assert "Plugin Workbench|plugin-workbench.html" in build_notes
-    assert "Plugin Workbench\\|plugin-workbench.html" in repository_map
+    assert "Plugin Workbench|plugin-workbench.html" in build_notes
     assert "`plugin-host` DevTools /" in implement
     assert "Workbench itself" in implement
     assert "Workbench target override" in fact_layer
@@ -2472,7 +2520,7 @@ def test_hostapplication_cdp_defaults_are_in_generated_context_templates():
     assert "UTILITY_CHROME_REMOTE_DEBUGGING_PORT=9222" in mcp_servers
     assert "CSS.forcePseudoState(['hover'])" in mcp_servers
     assert "Codex TOML" in mcp_servers
-    assert "real HostApplication Electron host" in " ".join(task_routing.split())
+    assert "selected real host/Electron runtime" in " ".join(task_routing.split())
     assert "Isolated plugin preview is fallback evidence" in " ".join(implement.split())
 
 

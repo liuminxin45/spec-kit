@@ -93,12 +93,12 @@ short reason.
 |------------|---------------|----------------|-------------|-----------------|
 |  |  |  |  |  |
 
-## UI 展示、Biz 转发与 Libs 事实边界
+## UI 展示、Service 转发与 Runtime 事实边界
 
-Fill only when UI/Biz/Libs boundaries are relevant; otherwise `N/A`.
+Fill only when UI/service/runtime boundaries are relevant; otherwise `N/A`.
 
-- `CoreRuntime` runtime/business facts:
-- `ServiceBridge` forwarding APIs:
+- `runtime/domain owner` runtime/business facts:
+- `forwarding bridge` forwarding APIs:
 - Frontend display composition:
 - UI must not infer/cache:
 - Refresh/event timing:
@@ -124,10 +124,10 @@ here.
 
 ## Source Behavior Execution Map
 
-Required for Qt-to-frontend migration that crosses UI/Biz/SDK or real-device
+Required for Qt-to-frontend migration that crosses UI/service/SDK or real-device
 state semantics; otherwise `N/A`.
 
-| Source UI Behavior | Native/Biz/SDK Path | State/DTO/API Fact | Frontend Runtime Proof |
+| Source UI Behavior | Native/service/API Path | State/DTO/API Fact | Frontend Runtime Proof |
 |--------------------|---------------------|--------------------|------------------------|
 |  |  |  |  |
 
