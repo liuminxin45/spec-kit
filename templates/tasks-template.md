@@ -62,15 +62,15 @@
   和 UI baseline 已 ready 或 owner-approved `N/A`。
 - [ ] T003C 审核 `acceptance-rubric.md`，确认 Essential/Pitfall 条目可独立评判，
   且 `plan.md` 已写明 `speckit-ai-self-acceptance` 的 PASS/FAIL/BLOCKED 契约。
-- [ ] T004 如涉及 UI 状态、UI interaction、操作权限或 operation availability，确认 `ServiceBridge` 仅做 API 转发；
-  非 UI 专属的 runtime/permission/capability 事实来自 `CoreRuntime`；仅用于 UI 展示的
+- [ ] T004 如涉及 UI 状态、UI interaction、操作权限或 operation availability，确认 `forwarding bridge` 仅做 API 转发；
+  非 UI 专属的 runtime/permission/capability 事实来自 `runtime/domain owner`；仅用于 UI 展示的
   结构、顺序、visible/enabled 组织和交互入口编排位于 frontend plugin。
 - [ ] T005 如为 Qt UI interaction 或 operation availability 迁移，先审核 `intake.md` / `spec.md` /
   `plan.md` 中的 Qt 源行为覆盖清单，确认设备类型、设备状态、UI element/action 顺序、
   visible/enabled 规则、action handler 和目标契约来源已覆盖；缺失时暂停实现并回到
   上阶段补齐。
 - [ ] T006 如涉及设备身份、状态、API/RPC 或 operation availability，审核 Identity / State /
-  API Boundary：跨层设备身份只用 UUID decimal string，Biz 不缓存状态或实现业务逻辑，
+  API Boundary：跨层设备身份只用 UUID decimal string，service layer 不缓存状态或实现业务逻辑，
   SDK native id/handle 不出底层，事件只触发刷新，旧 API/调试 API/构建产物不污染生产合同。
 
 ## Phase 2: 共享准备
@@ -122,8 +122,8 @@
 
 - [ ] T010 [CS1] 更新 [module/path] 以提供 [behavior]。
 - [ ] T011 [CS1] 更新 [contract/path] 以保留或暴露 [interface]。
-- [ ] T012 [CS1] 如涉及 UI interaction 或 operation availability，在 `CoreRuntime` 侧提供 runtime/permission/capability
-  事实契约，在 `ServiceBridge` 侧只提供转发接口，在 frontend plugin 侧实现 UI 展示
+- [ ] T012 [CS1] 如涉及 UI interaction 或 operation availability，在 `runtime/domain owner` 侧提供 runtime/permission/capability
+  事实契约，在 `forwarding bridge` 侧只提供转发接口，在 frontend plugin 侧实现 UI 展示
   结构、顺序、visible/enabled 和 action 入口编排。
 - [ ] T013 [CS1] 如涉及设备操作，在 [path] 确认只使用 UUID decimal string 作为跨层身份；
   前端业务操作只读 `node.uuid`，不使用 `node.id`、`entityId`、`metadata.uuid` 兜底。
@@ -159,13 +159,13 @@
 - [ ] TXXX 如相关，审核虚拟设备和真实设备在 SDK 外部都只暴露 UUID decimal string；
   SDK native id、virtual id、handle 仅保留在底层内部。
 - [ ] TXXX 如相关，删除或迁移功能等价旧 API；若暂时保留，记录 owner-approved temporary gap。
-- [ ] TXXX 如相关，确认调试 API、测试 facade、临时 SDK 直通能力未进入生产 Biz exports。
-- [ ] TXXX 如相关，确认事件只触发刷新，刷新后重新从 `CoreRuntime` 获取 snapshot/runtime facts。
+- [ ] TXXX 如相关，确认调试 API、测试 facade、临时 SDK 直通能力未进入生产 service layer exports。
+- [ ] TXXX 如相关，确认事件只触发刷新，刷新后重新从 `runtime/domain owner` 获取 snapshot/runtime facts。
 - [ ] TXXX 如相关，确认 `build/`、`export/`、`plugin-out/` 等构建产物未参与 diff、接口判断或安装来源判断。
 - [ ] TXXX 如相关，审核 Qt 源行为覆盖清单中的每个设备类型/状态组合都有实现、测试或
   owner-approved gap。
-- [ ] TXXX 如相关，审核 `ServiceBridge` 未实现业务逻辑；frontend plugin 未伪造或推断
-  runtime/permission 事实；UI 展示组合只依赖 `CoreRuntime` 事实数据和临时
+- [ ] TXXX 如相关，审核 `forwarding bridge` 未实现业务逻辑；frontend plugin 未伪造或推断
+  runtime/permission 事实；UI 展示组合只依赖 `runtime/domain owner` 事实数据和临时
   display state。
 - [ ] TXXX 如相关，审核接口层/数据层是否按职责拆分，新增文件或复用位置是否符合
   existing patterns，未造成单文件职责膨胀。

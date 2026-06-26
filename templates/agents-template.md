@@ -18,10 +18,11 @@ active feature's `specs/<feature>/*` artifacts or apply its risk flags unless
 the user explicitly resumes that feature.
 
 Then read only active feature files for the selected path: lightweight fix
-uses `progress.md` or `micro-fix.md`; standard work uses `spec.md`, `plan.md`,
-and `progress.md`; heavy work adds `tasks.md`, `research.md`, `contracts/`, or
-`data-model.md` only when needed; runtime/debug work adds `fact-pack.md`,
-latest logs, or DevTools evidence only for unclear/repeated/runtime symptoms.
+uses `progress.md` or `micro-fix.md`; standard-lite work uses `workpack.md` and
+`progress.md`; standard work uses `spec.md`, `plan.md`, and `progress.md`;
+heavy work adds `tasks.md`, `research.md`, `contracts/`, or `data-model.md`
+only when needed; runtime/debug work adds `fact-pack.md`, latest logs, or
+DevTools evidence only for unclear/repeated/runtime symptoms.
 
 ## Do Not Load By Default
 
@@ -50,6 +51,9 @@ This avoids stale knowledge and keeps AI coding context bounded.
 - For workflow-specific evidence rules, use `select-gates` or
   `ai/workflows/gates/index.yml` first and read only selected packs. Command
   templates are stage contracts, not full manuals.
+- Optional desktop host/plugin/native delivery chains live behind selected gate
+  packs such as `host-cdp`, `frontend-runtime-sync`, `native-bridge`, and
+  `plugin-package`; they are not default context for generic repositories.
 - For host-embedded UI fixes, a source-to-runtime copy and refresh may validate
   built source output; runtime artifacts are still not source or commit targets.
 - Host-embedded frontend plugin source edits must follow the AI delivery chain:
@@ -92,14 +96,19 @@ This avoids stale knowledge and keeps AI coding context bounded.
   for best-effort self-validation such as screenshots, visual comparison, and
   simulated interactions. If unsupported, record the reason instead of treating
   it as a hard blocker.
-- SDK/Biz runtime investigations should use the latest logs from:
-  `<system-temp>/SDKLog\SDK_*.log` and
-  `<system-temp>/ServiceBridgeLog\ServiceBridge_*.log`.
+- Runtime investigations should use log locations documented in
+  `.specify/memory/repository-map.md`, selected gate packs, or selected
+  knowledge guides. Do not assume project-specific log directories in generic
+  workspaces.
 - Branch completion cherry-picks back to the entry branch recorded at spec
   branch creation, keeps the local spec branch by default, and does not push.
-- Commit and complete-branch are automated after hard gates pass. After commit,
-  run exactly one post-commit self-check, then output final Rubric scoring; do
-  not run complete-branch unless `validate-rubric-score` passes.
+- Commit is automated after hard gates and deterministic preflight pass. After
+  commit, run exactly one post-commit self-check, then output final Rubric
+  scoring. Complete-branch is a local branch-state mutation: preflight may run
+  automatically, but cherry-pick requires explicit human approval and
+  `-ConfirmCompletion`; never run it unless `validate-rubric-score` passes.
+- Push is outside the default workflow. Prefer PR-first; any exceptional push
+  requires explicit human approval and `preflight-push`.
 - Before any final response after human acceptance, commit, post-commit
   self-check, or rubric work, run `inspect-workflow-closure`. If it reports a
   `next_required_stage`, execute that stage instead of reporting completion.
@@ -116,6 +125,8 @@ This avoids stale knowledge and keeps AI coding context bounded.
 ## Workflow Weight
 
 - `micro-fix`: minimal note/progress, code change, validation, acceptance.
+- `standard-bugfix-lite`: compact low/medium-risk bugfix in `workpack.md`,
+  with root cause, one implementation slice, validation, and acceptance summary.
 - `standard-bugfix`: `spec.md` + `plan.md`; `plan.md` may contain executable
   slices and replace a separate `tasks.md`.
 - `full-sdd`: add `tasks.md` and extra design artifacts only for broad,

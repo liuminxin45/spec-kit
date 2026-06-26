@@ -1,8 +1,8 @@
 workspace:
   root: "."
-  primary_repo: "CoreRuntime"
+  primary_repo: "app"
   # Fallback only. create-spec-branch records the actual entry branch per repo.
-  default_base_branch: "master"
+  default_base_branch: "main"
 
 branch_policy:
   local_only: true
@@ -10,7 +10,7 @@ branch_policy:
   same_branch_across_repos: true
   require_clean_worktree: true
   complete_by_cherry_picking_to_base: true
-  require_user_confirmation_before_cherry_pick: false
+  require_user_confirmation_before_cherry_pick: true
   delete_local_spec_branch_after_cherry_pick: false
   keep_local_spec_branch_after_cherry_pick: true
   # Legacy compatibility keys retained for older commands/tests. Current
@@ -33,44 +33,9 @@ spec_persistence:
   repack_after_approved_promotion: false
 
 repositories:
-  - name: "CoreRuntime"
-    path: "CoreRuntime"
-    role: "sdk-biz-core"
-    required: true
-
-  - name: "SdkConsumer"
-    path: "SdkConsumer"
-    role: "sdk-consumer"
-    required: true
-
-  - name: "JsPlugin"
-    path: "JsPlugin"
-    role: "js-plugin"
-    required: true
-
-  - name: "NativePlugin"
-    path: "NativePlugin"
-    role: "native-plugin-and-bridge"
-    required: true
-
-  - name: "PluginCommon"
-    path: "PluginCommon"
-    role: "shared-plugin-common"
-    required: true
-
-  - name: "FrontendPlugin"
-    path: "FrontendPlugin"
-    role: "frontend-plugin-targets"
-    required: true
-
-  - name: "PlatformLibs"
-    path: "PlatformLibs"
-    role: "windows-dependencies"
-    required: true
-
-  - name: "HostApplication"
-    path: "HostApplication"
-    role: "host-and-frontend-plugins"
+  - name: "app"
+    path: "."
+    role: "primary-application"
     required: true
 
   - name: "spec-kit"

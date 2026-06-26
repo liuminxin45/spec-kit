@@ -14,10 +14,10 @@
 > AI Agent 必须继续读取完整分流依据、迁移/bugfix/new-feature 专项信息和待确认问题后再进入 specify。
 
 - **分流结论**: [migration / bugfix / new-feature / needs-routing]
-- **流程档位**: [micro-fix / standard-bugfix / full-sdd / blocked-investigation / validation-only]
+- **流程档位**: [micro-fix / standard-bugfix-lite / standard-bugfix / full-sdd / blocked-investigation / validation-only]
 - **重点审核**: [最需要人工确认的分流依据、范围或阻塞问题]
 - **影响范围**: [主要模块/路径/仓库摘要]
-- **不涉及 / N/A 汇总**: [压缩列出无关的 UI/Biz/Libs/device/design 等边界]
+- **不涉及 / N/A 汇总**: [压缩列出无关的 UI/service/runtime/device/design 等边界]
 - **进入下一步条件**: [进入 specify 前必须满足的澄清、证据或 owner 决策]
 - **必需人工决策**: [仅产品/业务取舍、owner-approved gap、外部输入、验收、commit/cherry-pick completion；无则写 N/A]
 
@@ -26,7 +26,7 @@
 **Task Type**: migration / bugfix / new-feature / needs-routing
 **Routing Confidence**: high / medium / low
 **Risk Level**: low / medium / high / blocked
-**Delivery Profile**: micro-fix / standard-bugfix / full-sdd / blocked-investigation / validation-only
+**Delivery Profile**: micro-fix / standard-bugfix-lite / standard-bugfix / full-sdd / blocked-investigation / validation-only
 **原因**: [为什么选择该类型]
 
 ## 流程档位判定
@@ -34,8 +34,8 @@
 | 维度 | 结论 | 证据 |
 |------|------|------|
 | Repository count | [single/multi/unknown] | [repo/path evidence] |
-| Estimated changed files | [1-2 / few / many / unknown] | [why] |
-| Boundary type | [internal/public-api/ui-biz-libs/device-identity/runtime-status/permission/cross-repo] | [why] |
+| Estimated changed files | [1-3 / few / many / unknown] | [why] |
+| Boundary type | [internal/public-api/ui-service-runtime/device-identity/runtime-status/permission/cross-repo] | [why] |
 | Semantic risk | [low/medium/high] | [state/permission/device/API risk] |
 | Validation strength | [automated/local/manual/external/missing] | [commands or gaps] |
 | Root-cause confidence | [known/suspected/unknown] | [evidence or missing evidence] |
@@ -43,17 +43,26 @@
 
 **Micro-fix eligibility**:
 
-- [ ] 单仓、通常 1-2 个文件。
+- [ ] 单仓、通常 1-3 个文件。
 - [ ] 内部实现改动，不涉及 public API、身份、权限/状态语义、真实设备、跨层或跨仓风险。
 - [ ] 根因已有证据，不是猜测。
 - [ ] 有本地可运行验证。
 
 若任一项不满足，不得使用 `micro-fix`。
 
+**Standard-bugfix-lite eligibility**:
+
+- [ ] 单仓、低/中风险、通常 1-3 个文件。
+- [ ] 根因明确或有足够证据支持。
+- [ ] 可用一个 `workpack.md` 覆盖 root cause、一个实现切片、验证和 acceptance summary。
+- [ ] 不涉及 public API、身份、权限/状态语义、真实设备、跨仓或可选 host/plugin/native delivery-chain gate。
+
+若任一项不满足，升级到 `standard-bugfix`、`full-sdd` 或 `blocked-investigation`。
+
 ## 通用上下文
 
 **能力 / 缺陷 / 迁移目标**: [名称或摘要]
-**Affected Area**: [SDK, NativePlugin/ServiceBridge bridge, HostApplication, frontend plugin,
+**Affected Area**: [SDK, native/bridge layer, host application, frontend plugin,
 tooling, device/runtime, or mixed]
 **目标模块**:
 
@@ -92,7 +101,7 @@ tooling, device/runtime, or mixed]
 1. [步骤]
 2. [步骤]
 
-**疑似层级**: [SDK, NativePlugin/ServiceBridge bridge, frontend plugin, runtime/device,
+**疑似层级**: [SDK, native/bridge layer, frontend plugin, runtime/device,
 tooling, unknown]
 **回归测试预期**: [unit/regression/fixture/smoke/manual or N/A]
 **根因状态**: [known / suspected / unknown；known 必须说明证据]
@@ -108,12 +117,12 @@ tooling, unknown]
 
 - [contract/interface/state/API]: [预期形态或 unknown]
 
-## UI 展示、Biz 转发与 Libs 事实线索
+## UI 展示、Service 转发与 Runtime 事实线索
 
 UI 状态、UI interaction、操作权限或设备运行态展示相关时必填；否则标记 `N/A`。
 
-- **ServiceBridge 边界**: [forwarding bridge only / unknown / N/A；不得写业务逻辑]
-- **CoreRuntime 事实来源**: [runtime/permission/capability/device facts 来源，或 unknown / N/A]
+- **forwarding bridge 边界**: [forwarding bridge only / unknown / N/A；不得写业务逻辑]
+- **runtime/domain owner 事实来源**: [runtime/permission/capability/device facts 来源，或 unknown / N/A]
 - **Frontend display composition**: [UI elements/order/enabled/visible/action id 的 UI 展示组合位置，或 unknown / N/A]
 - **UI 可持有状态**: [display-only state，如 open/hover/selection/loading，或 N/A]
 - **缺口**: [需要补充的接口/数据/设计输入，或 N/A]
@@ -132,7 +141,7 @@ UI 状态、UI interaction、操作权限或设备运行态展示相关时必填
 - visible/enabled 规则。
 - action handler / Qt slot。
 - 迁移要求：`keep` / `change` / `gap`。
-- 目标契约来源：`CoreRuntime` runtime/business facts、`ServiceBridge` forwarding bridge、
+- 目标契约来源：`runtime/domain owner` runtime/business facts、`forwarding bridge` forwarding bridge、
   frontend display composition / `N/A`。
 
 推荐使用表格；当状态组合复杂时，可以按设备类型分组、使用决策表、状态机说明、
@@ -151,7 +160,7 @@ fixture matrix 或按 Qt 函数分段的规则清单。
 |----------------|------|------------|-------|
 | Original Qt UI/source | [path or N/A] | migration | `.ui`, widgets, QSS, resources, screenshots, or behavior references |
 | Product design/mockup/export | [path or N/A] | migration/new-feature | Figma export, image set, HTML mock, design package, or spec docs |
-| Target frontend/plugin | [path or N/A] | migration/new-feature | FrontendPlugin、ProductModule plugin 或其他 UI implementation target |
+| Target frontend/plugin | [path or N/A] | migration/new-feature | frontend plugin、product plugin 或其他 UI implementation target |
 | Shared assets/icons/screenshots | [path or N/A] | migration/new-feature | Assets needed for parity or acceptance |
 | Missing design inputs | [path or N/A] | migration/new-feature | What must be supplied before planning |
 

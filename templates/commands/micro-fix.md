@@ -28,8 +28,8 @@ bugfixes.
 
 This is not a shortcut around engineering judgment. If the fix touches public
 API, device identity, runtime status, permission semantics, real-device
-behavior, UI/Biz/Libs boundaries, cross-repo behavior, or lacks local
-validation, upgrade the profile to `standard-bugfix`, `full-sdd`, or
+behavior, UI/service/runtime boundaries, cross-repo behavior, or lacks local
+validation, upgrade the profile to `standard-bugfix-lite`, `standard-bugfix`, `full-sdd`, or
 `blocked-investigation`.
 
 ## Required Micro-Fix Contract

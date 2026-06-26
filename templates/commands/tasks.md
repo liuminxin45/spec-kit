@@ -1,5 +1,5 @@
 ---
-description: Generate an actionable tasks.md for a CoreRuntime capability from spec and plan artifacts.
+description: Generate an actionable tasks.md for a capability from spec and plan artifacts.
 scripts:
   ps: scripts/powershell/setup-tasks.ps1 -Json
 ---
@@ -118,9 +118,9 @@ validation tasks and do not produce implementation slices.
    - For `bugfix`, include repro confirmation and regression-test tasks.
    - For `new-feature`, include contract/design acceptance tasks.
    - For UI state/UI interaction/operation availability work, include explicit
-     tasks for `ServiceBridge` forwarding-only API, `CoreRuntime`
+     tasks for `bridge/adaptor` forwarding-only API, `owning runtime/domain repository`
      runtime/permission/capability facts, and frontend plugin display
-     composition. Do not put business logic in `ServiceBridge`.
+     composition. Do not put business logic in `bridge/adaptor`.
    - For UI-interaction or operation-availability `migration`, include a blocking
      early task to review the Qt source behavior coverage. If it does not cover
      device type/status dimensions that affect visible/enabled UI behavior,
@@ -131,7 +131,7 @@ validation tasks and do not produce implementation slices.
      include blocking tasks for Identity / State / API Boundary: UUID decimal
      string only across boundaries, single `device::identity::generateUUID()`
      owner, SDK native ids/handles internal only, `node.uuid` for frontend
-     operations, Biz no runtime caches/state calculation, event refresh only,
+     operations, service no runtime caches/state calculation, event refresh only,
      legacy API cleanup, debug/test API isolation, semantic naming, and
      generated artifact ignore/cleanup.
 
@@ -184,7 +184,7 @@ validation tasks and do not produce implementation slices.
 - Public interface changes must have downstream impact tasks.
 - UI element/order/visibility/enabled/action/permission changes must identify
   which pieces are frontend display composition, which facts come from
-  `CoreRuntime`, and which `ServiceBridge` bridge API forwards them.
+  `owning runtime/domain repository`, and which `bridge/adaptor` bridge API forwards them.
 - UI/UX/copy tasks must not ask the implementer to invent text, icons,
   tooltip style, layout, or interaction behavior. If the source reference is
   absent or contradictory, the task must be investigation/clarification, not a
@@ -234,16 +234,16 @@ validation tasks and do not produce implementation slices.
 - New-feature tasks must include new acceptance and compatibility coverage.
 - Real device behavior must not be replaced by fake status unless explicitly
   scoped as virtual/simulated.
-- `ServiceBridge` tasks must be forwarding-only. UI tasks may implement
+- `bridge/adaptor` tasks must be forwarding-only. UI tasks may implement
   UI-display-specific composition, but must not infer runtime/permission
   truth from labels/strings or persist business state as the source of truth.
 - Device identity tasks must not introduce or preserve parallel cross-boundary
-  identity fields. Use UUID decimal string across Libs facade, Biz, N-API/JSON/RPC,
+  identity fields. Use UUID decimal string across runtime facade, service, N-API/JSON/RPC,
   JS, and UI.
 - Equivalent old API tasks must remove or migrate the old path; do not leave
   duplicate production entry points unless an owner-approved temporary gap is
   recorded.
-- Debug/test validation tasks must use tests or scripts, not production Biz
+- Debug/test validation tasks must use tests or scripts, not production service
   exports.
 - Encoding conversion tasks must name the boundary where conversion happens.
 - Generated tasks must avoid GitHub issue, remote push, and remote tracking

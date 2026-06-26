@@ -26,12 +26,12 @@ Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md
 
 ## Purpose
 
-Complete the accepted local Spec branch automatically only after commit,
-retrospective/留痕, one post-commit self-check, and final Rubric gates are
-complete. This is the final local delivery operation. The default is:
-preflight, switch back to the entry branch recorded when the spec branch was
-created, cherry-pick the local spec commits there, 保留 spec branch, 不删除 the
-local Spec branch, and 不 push.
+Complete the accepted local Spec branch only after commit, retrospective/留痕,
+one post-commit self-check, final Rubric gates, and explicit human approval are
+complete. This is the final local branch-state mutation. The default is:
+preflight, ask for approval, switch back to the entry branch recorded when the
+spec branch was created, cherry-pick the local spec commits there, 保留 spec
+branch, 不删除 the local Spec branch, and 不 push.
 
 ## Language Rules
 
@@ -88,9 +88,13 @@ local Spec branch, and 不 push.
      feature, may be overwritten by branch switching/cherry-pick, or cannot be
      semantically classified from repository-map, path category, git status,
      and local evidence.
-6. If any remaining preflight item fails, stop and report the blocker. Do not
+7. If any remaining preflight item fails, stop and report the blocker. Do not
    partially cherry-pick repositories.
-7. Complete the branch automatically:
+8. Ask for explicit human approval to perform the local cherry-pick branch
+   completion. Do not proceed from a previous broad approval; the approval must
+   refer to this preflight result.
+9. Complete the branch with confirmation:
+   - PowerShell: `.specify/scripts/powershell/complete-spec-branches.ps1 -Json -ConfirmCompletion`
    - Run the completion script or native git commands in a way that
      cherry-picks the local spec branch commits into the recorded entry branch
      across all affected repositories.
@@ -114,13 +118,13 @@ local Spec branch, and 不 push.
    - If the packaged script only supports deletion by default, do not use the
      deleting path; perform a safe cherry-pick sequence that preserves the
      branch and record that choice.
-8. Verify final repository state:
+10. Verify final repository state:
    - Current branch is the recorded entry branch in every affected repository,
      including repositories that did not produce a new cherry-pick commit.
    - Spec branch still exists.
    - No remote push occurred.
    - No remote tracking was created by this stage.
-9. Update `progress.md` with completion result when present.
+11. Update `progress.md` with completion result when present.
 
 ## Quality Rules
 
@@ -129,6 +133,7 @@ local Spec branch, and 不 push.
 - Never run before the one post-commit self-check completes.
 - Never run before final Rubric score is emitted and `validate-rubric-score`
   passes.
+- Never cherry-pick without explicit human approval for this preflight result.
 - Treat missing `workflow-record.md`, `improvement-candidates.md`,
   `knowledge-candidates.md`, or `workflow-observation.md` as a hard completion
   blocker, even if the user says "进入下一阶段".

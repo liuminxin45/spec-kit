@@ -69,7 +69,7 @@ start it through native process launchers.
 
 Chrome DevTools MCP modes:
 
-- `electron-slim` (default): connect to the HostApplication Electron remote
+- `electron-slim` (default): connect to the host application Electron remote
   debugging endpoint and enable the MCP server's slim toolset. This avoids
   initialization paths that can time out on Electron targets while still
   allowing page listing, script execution, and screenshots.
@@ -77,14 +77,14 @@ Chrome DevTools MCP modes:
   Chrome DevTools MCP toolset.
 - `auto`: do not pass a browser URL and let `chrome-devtools-mcp` launch or
   discover a browser. Use this when the agent should not attach to
-  HostApplication directly.
+  host application directly.
 - `-McpArgs`: explicit low-level override for advanced troubleshooting. When
   provided, Spec Kit writes those args exactly and does not derive args from
   `-McpChromeMode`.
 
 The default Chrome DevTools MCP arguments connect to an already running
-HostApplication debug session on `http://127.0.0.1:9222`. Start
-HostApplication with `npm run debug` before asking the agent to inspect DOM,
+host application debug session on `http://127.0.0.1:9222`. Start
+host application with `npm run debug` before asking the agent to inspect DOM,
 console, network, or runtime CSS.
 When MCP config is requested, init validates the global `node` version before
 writing MCP config. `chrome-devtools-mcp@latest` requires Node.js
@@ -101,6 +101,7 @@ Executable profile routing for `specify workflow run speckit` is:
 micro-fix/auto: intake -> specify -> plan -> implement -> acceptance
               -> human-acceptance gate -> retrospective -> workflow-observer
               -> commit -> post-commit-self-check -> rubric-score -> complete-branch
+standard-bugfix-lite: intake -> specify -> plan(workpack.md) -> implement -> ...
 standard-bugfix: intake -> specify -> plan -> analyze -> implement -> ...
 full-sdd: intake -> specify -> plan -> tasks -> analyze -> checklist
           -> implement -> ...
@@ -147,7 +148,10 @@ Team policy:
 - A Spec is complete after all affected repositories cherry-pick the local Spec
   branch commits back to the entry branch recorded at spec branch creation while
   keeping the local Spec branch.
-- Cherry-pick completion is automated after commit, one post-commit self-check,
-  and Rubric gates pass. The completion command keeps the local Spec branch and
-  does not push.
+- Cherry-pick completion preflight is automated after commit, one post-commit
+  self-check, and Rubric gates pass. The branch-state mutation itself requires
+  explicit human approval and `-ConfirmCompletion`; it keeps the local Spec
+  branch and does not push.
+- Push is outside the default workflow. Prefer PR-first; exceptional direct
+  pushes require explicit human approval and `preflight-push`.
 - GitHub issue generation is not installed.

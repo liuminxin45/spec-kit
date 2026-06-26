@@ -19,9 +19,9 @@ npm exec --yes --package=chrome-devtools-mcp@latest -c "chrome-devtools-mcp --br
 
 Connection modes:
 
-- `electron-slim` (default): connect to the HostApplication/Electron remote
+- `electron-slim` (default): connect to the host application/Electron remote
   debugging endpoint with `--slim`.
-- `electron`: connect to the HostApplication/Electron remote debugging
+- `electron`: connect to the host application/Electron remote debugging
   endpoint with the full Chrome DevTools MCP toolset.
 - `auto`: omit `--browserUrl` and let Chrome DevTools MCP launch or discover a
   browser.
@@ -33,16 +33,16 @@ Global Node.js requirement for MCP setup:
 ^20.19.0 || ^22.12.0 || >=23
 ```
 
-Expected target for HostApplication runtime investigation:
+Expected target for host application runtime investigation:
 
 ```text
 http://127.0.0.1:9222
 ```
 
-HostApplication development launch:
+host application development launch:
 
 ```text
-cd <workspace-root>/HostApplication/HostApplication
+cd <workspace-root>/host application/host application
 npm run debug
 ```
 
@@ -50,13 +50,13 @@ npm run debug
 `UTILITY_CHROME_REMOTE_DEBUGGING_PORT=9222`. Confirm the endpoint with
 `/json/version`, then choose a real page from `/json/list`.
 
-Preferred HostApplication target patterns:
+Preferred host application target patterns:
 
 ```text
 app-home|app-main-window|frontend/static/index.html
 ```
 
-When investigating Electron UI, attach to the HostApplication/Electron target.
+When investigating Electron UI, attach to the host application/Electron target.
 Do not treat DevTools, Plugin Workbench, a newly launched blank Chrome page, or
 any unrelated target as evidence for the Electron application. For
 host-embedded UI fixes, prefer the real Electron host + CDP after source build

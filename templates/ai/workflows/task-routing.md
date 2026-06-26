@@ -13,9 +13,12 @@ first, then load only the selected `.agents/spec-kit/skills/<skill>/SKILL.md`.
 Do not pre-load the internal skill directory.
 ## Stage Continuation
 
-Auto-continue is a stage contract, not report wording. When the current stage is
-complete and the next stage is structurally known, execute the next required
-stage in the same agent turn without asking the user to type the next command:
+Auto-continue is a stage contract, not report wording. Prefer
+`resolve-next-stage` when available; consume its `current_stage`, `next_stage`,
+`can_continue`, `blockers`, `required_human_action`, `commands_to_run`, and
+`missing_artifacts` JSON before deciding whether to continue. When the current
+stage is complete and the next stage is structurally known, execute the next
+required stage in the same agent turn without asking the user to type the next command:
 invoke the next command/skill when available, or load the selected internal
 skill from `skill-routing.yml` and perform its steps inline. Stop only for
 human acceptance, human clarification, owner decision, high-risk operation
@@ -62,12 +65,13 @@ stage rows with `阶段`, `状态`, and `阶段目标`. Use these objectives:
 | `speckit-commit` | Automatically stage and commit validated source scope with validated message format. |
 | `speckit-post-commit-self-check` | Run exactly one automated post-commit workflow and evidence self-check. |
 | `speckit-rubric-score` | Output final Rubric scoring only after post-commit self-check and enforce score gates. |
-| `speckit-complete-branch` | Automatically cherry-pick local spec commits back to the recorded entry branch after self-check and Rubric gates pass. |
+| `speckit-complete-branch` | Preflight branch completion, then cherry-pick local spec commits back to the recorded entry branch only after explicit human approval. |
 ## Profiles
 
 - `micro-fix`: small, evidenced, low-blast-radius source change.
+- `standard-bugfix-lite`: compact low/medium-risk bugfix in `workpack.md` with root cause, one slice, validation, and acceptance-rubric summary.
 - `standard-bugfix`: compact fix with `spec.md` + `plan.md`; slices may skip `tasks.md`.
-- `full-sdd`: public API, architecture, broad migration, cross-repo, real device semantics, or large UI/Biz/Libs boundary work.
+- `full-sdd`: public API, architecture, broad migration, cross-repo, real device semantics, or large UI/service/runtime boundary work.
 - `blocked-investigation`: source behavior, runtime evidence, root cause, or validation condition is missing.
 - `validation-only`: no product-code change; write validation evidence only.
 
@@ -75,12 +79,13 @@ Auxiliary labels such as `ui-parity`, `public-api`, and `cross-repo` are risk
 flags, not separate default workflows.
 ## Hard Upgrade Gates
 
-- Public API, SDK/Biz/UI boundary, cross-repo, identity, permission, connection,
+- Public API, service/runtime/UI boundary, cross-repo, identity, permission, connection,
   acquisition, or real-device behavior: do not use `micro-fix`.
 - `full-sdd` must pass `tasks -> analyze -> checklist` before implementation; preflight blocks when `tasks.md`, `analysis.md`, or `checklists/implementation-readiness.md` is missing.
-- `standard-bugfix` may skip `tasks.md` only when `plan.md` has complete `Implementation Slices`; it still runs `analyze` before implementation. Run `checklist` too for high-risk, UI/runtime, cross-repo, SDK/Biz boundary, or non-trivial validation-readiness work.
+- `standard-bugfix-lite` may skip independent `spec.md`, `plan.md`, `tasks.md`, `analysis.md`, and `checklist` only when `workpack.md` contains root cause, one bounded implementation slice, validation, and acceptance-rubric summary. Upgrade it when high-risk gates, public API, identity/permission/status semantics, cross-repo work, real-device behavior, or missing evidence appears.
+- `standard-bugfix` may skip `tasks.md` only when `plan.md` has complete `Implementation Slices`; it still runs `analyze` before implementation. Run `checklist` too for high-risk, UI/runtime, cross-repo, service/runtime boundary, or non-trivial validation-readiness work.
 - Repeated same-class failure, unchanged symptom, unclear runtime state, or
-  missing DOM/console/computed style/box metrics/SDK log/Biz log evidence:
+  missing DOM/console/computed style/box metrics/service/runtime log evidence:
   load `speckit-fact-layer` through `skill-routing.yml` before another patch.
 - Initializing, replacing, or mounting `ai/knowledge`: load
   `speckit-knowledge-bootstrap` through `skill-routing.yml`; generated guides
@@ -106,7 +111,9 @@ flags, not separate default workflows.
   or the `AI Context Contract` point to host CDP, frontend runtime sync, native
   bridge, Qt parity, or real-device evidence. Read only returned
   `ai/workflows/gates/*` packs.
-- Host-embedded UI validation uses the `host-cdp` gate. Before declaring CDP
+- Optional desktop host/plugin validation uses selected gate packs such as
+  `host-cdp`, `frontend-runtime-sync`, `native-bridge`, and `plugin-package`;
+  these are not default context for generic repositories. Host-embedded UI validation uses the `host-cdp` gate. Before declaring CDP
   blocked, run `ensure-host-cdp`, then
   `inspect-host-cdp-target` or `/json/list`; record selected
   `id/title/url/webSocketDebuggerUrl`. Product UI evidence rejects Plugin Workbench,
@@ -115,7 +122,7 @@ flags, not separate default workflows.
   `app-main-window`. Save key-path CDP screenshots under
   `FEATURE_DIR/cdp-screenshots/` with `capture-cdp-screenshot`, and tell the
   human that screenshot directory when CDP validation ends.
-- Frontend plugin UI changes use `frontend-runtime-sync`: source edit -> frontend build -> direct runtime replacement -> real host CDP verification through the real HostApplication Electron host, then final `.plugin` package/build evidence before commit/complete-branch.
+- Frontend plugin UI changes use `frontend-runtime-sync`: source edit -> frontend build -> direct runtime replacement -> real host CDP verification through the selected real host/Electron runtime, then final `.plugin` package/build evidence before commit/complete-branch.
 - Native bridge/proto changes use `native-bridge`: `sync-native-runtime-artifacts`, host restart, duplicate proto checks, and `validate-rpc-proto-bundle` before human acceptance, then final `.plugin` package/build evidence before commit/complete-branch.
 - All plugin types, including frontend, native, JS, and integrated plugin
   changes, use the shared `.plugin` build/package system as the final delivery
@@ -123,7 +130,7 @@ flags, not separate default workflows.
   prerequisite or fallback validation evidence, not final plugin delivery.
 - Qt-to-frontend UI parity uses `qt-parity`: read `qt-source-behavior-map.md`
   before broad source search and require a Source Behavior Execution Map when
-  UI/Biz/SDK or real-device state semantics cross boundaries. Placeholder map
+  UI/service/SDK or real-device state semantics cross boundaries. Placeholder map
   files are not evidence; record new facts in the active feature first, and
   promote stable team knowledge only through retrospective/promote-lessons with
   explicit human approval.

@@ -107,9 +107,9 @@ investigation scope is bounded and whether implementation is still blocked.
      high-risk decision.
    - Compatibility risks without tasks.
    - Device/runtime/encoding/UI display boundaries missing from plan or tasks.
-   - `ServiceBridge` implementing business logic instead of forwarding, UI
+   - `bridge/adaptor` implementing business logic instead of forwarding, UI
      label/string-based runtime/permission inference, fake device facts, or
-     missing `CoreRuntime` runtime/permission/capability facts.
+     missing `owning runtime/domain repository` runtime/permission/capability facts.
    - Cross-boundary device identity that is not UUID decimal string, or new
      parallel identity fields such as `deviceIndex`, `deviceId`, `handleId`, or
      `virtualDeviceId`.
@@ -118,11 +118,11 @@ investigation scope is bounded and whether implementation is still blocked.
      internals.
    - Frontend business operations using `node.id`, `entityId`, `metadata.uuid`,
      or other fallbacks instead of `node.uuid`.
-   - `ServiceBridge` caching device lists, connection/acquisition status, or
+   - `bridge/adaptor` caching device lists, connection/acquisition status, or
      runtime state.
    - Events replacing the truth source instead of triggering refresh from
-     `CoreRuntime` snapshot/runtime facts.
-   - Functionally equivalent old APIs, debug/test APIs in production Biz
+     `owning runtime/domain repository` snapshot/runtime facts.
+   - Functionally equivalent old APIs, debug/test APIs in production service
      exports, ambiguous identity names, or build artifacts influencing interface
      or package-source judgment.
    - Interface/data-layer work concentrated into an oversized file instead of
@@ -138,8 +138,8 @@ investigation scope is bounded and whether implementation is still blocked.
    - Missing test-case update or re-run tasks for validated behavior.
    - Missing migration parity tasks for source Qt behavior.
    - UI-interaction or operation-availability migration that lacks Qt source
-     behavior coverage, or has coverage items without matching `CoreRuntime`
-     facts tasks, `ServiceBridge` forwarding tasks, frontend display tasks,
+     behavior coverage, or has coverage items without matching `owning runtime/domain repository`
+     facts tasks, `bridge/adaptor` forwarding tasks, frontend display tasks,
      validation, or owner-approved gaps.
    - Missing bugfix repro or regression tasks.
    - Missing new-feature acceptance or compatibility tasks.

@@ -41,7 +41,7 @@ or historical process documents unless the current task needs them.
   fact-layer gate: collect runtime DOM/CSS/computed style/box metrics through
   Chrome DevTools/CDP from the real target, or ask for copied DOM/CSS evidence,
   before making a second patch.
-- For SDK/Biz issues, prefer latest configured logs after the relevant process
+- For service/runtime issues, prefer latest configured logs after the relevant process
   exits.
 
 ## UI / UX / Copy Evidence Gate
@@ -68,9 +68,13 @@ or historical process documents unless the current task needs them.
 
 ## Workflow Weight
 
-- Use four primary implementation paths: `micro-fix`, `standard-bugfix`,
-  `full-sdd`, and `blocked-investigation`.
+- Use five primary implementation paths: `micro-fix`, `standard-bugfix-lite`,
+  `standard-bugfix`, `full-sdd`, and `blocked-investigation`.
 - `validation-only` is a non-implementation mode.
+- `standard-bugfix-lite` uses `workpack.md` for compact low/medium-risk fixes:
+  root cause, one bounded slice, validation, and acceptance-rubric summary.
+  Upgrade it when high-risk gates, public API, identity/permission/status
+  semantics, cross-repo work, real-device behavior, or missing evidence appears.
 - `standard-bugfix` may combine L2/L3 by keeping implementation slices in
   `plan.md`; only `full-sdd` requires a separate `tasks.md` by default.
 - `full-sdd` must complete `tasks`, `analyze`, and `checklist` before
@@ -78,7 +82,7 @@ or historical process documents unless the current task needs them.
   `analysis.md`, or `checklists/implementation-readiness.md` is missing.
 - `standard-bugfix` still runs `analyze` before implementation. Run
   `checklist` too when risk is high, UI/runtime evidence is involved,
-  validation readiness is non-trivial, or the change crosses SDK/Biz/UI
+  validation readiness is non-trivial, or the change crosses service/runtime/UI
   boundaries.
 - A user's "next stage" instruction does not override structured gates in
   `.specify/feature.json`, `workflow-state.json`, or
@@ -88,6 +92,8 @@ or historical process documents unless the current task needs them.
 
 - Use `ai/workflows/task-routing.md` as the single source of truth for
   auto-continue gates and stop reporting.
+- Use `resolve-next-stage` when available so Agent continuation consumes
+  structured `next_stage` and blocker facts instead of prose inference.
 - Command templates should cite the central contract instead of restating or
   weakening it.
 
@@ -107,8 +113,8 @@ or historical process documents unless the current task needs them.
 
 - Before declaring host/CDP validation unavailable, run
   `ensure-host-cdp` or equivalent probes. Reuse an existing
-  valid HostApplication target when one is running. If CDP is unreachable and
-  no process owns the port, start the host with `npm run debug` and rerun the
+  valid host target when one is running. If CDP is unreachable and
+  no process owns the port, start the configured host command and rerun the
   probe. If another process owns the port, identify it and stop with a real
   blocker unless the user explicitly approves a destructive recovery action.
   A running process or occupied port is not enough reason to skip to manual
@@ -149,8 +155,11 @@ or historical process documents unless the current task needs them.
 - Spec branches are local-only.
 - Do not push, create remote tracking branches, or create GitHub issues as part
   of the default workflow.
-- Commit and branch completion are automated after hard gates pass; do not push
-  or create remote tracking branches.
+- Commit is automated after hard gates and deterministic preflight pass.
+- Branch completion is a state mutation gate: preflight is automated, but the
+  cherry-pick path requires explicit human approval and `-ConfirmCompletion`.
+- Push is outside the default workflow. Use PR-first; any exceptional push must
+  pass `preflight-push` and explicit human approval.
 - Branch completion cherry-picks spec commits back to the recorded entry branch
   and keeps local spec branches by default.
 - After commit, run exactly one post-commit self-check, then final Rubric

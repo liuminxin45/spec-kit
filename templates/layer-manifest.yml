@@ -19,6 +19,12 @@ artifact_sets:
     - "spec.md"
     - "plan.md"
     - "workflow-state.json"
+  standard-bugfix-lite-plan:
+    - "workpack.md"
+    - "workflow-state.json"
+  standard-bugfix-lite-implement:
+    - "workpack.md"
+    - "workflow-state.json"
   tasks:
     - "spec.md"
     - "plan.md"
@@ -57,6 +63,15 @@ artifact_sets:
   commit:
     - "spec.md"
     - "plan.md"
+    - "validation.md"
+    - "acceptance.md"
+    - "workflow-state.json"
+    - "workflow-record.md"
+    - "improvement-candidates.md"
+    - "knowledge-candidates.md"
+    - "workflow-observation.md"
+  standard-bugfix-lite-commit:
+    - "workpack.md"
     - "validation.md"
     - "acceptance.md"
     - "workflow-state.json"
@@ -123,6 +138,16 @@ artifact_sections:
     - "validations"
     - "fact_layer"
     - "acceptance"
+    - "stage_statuses"
+    - "human_gates"
+    - "selected_gates"
+    - "next_stage_decision"
+  workpack.md:
+    - "人类审核摘要"
+    - "Root Cause"
+    - "Change Slice"
+    - "Validation"
+    - "Acceptance Rubric Summary"
   validation.md:
     - "Validation Matrix"
     - "Result Interpretation"
@@ -254,6 +279,7 @@ layers:
     source_assets:
       - "templates/spec-template.md"
       - "templates/plan-template.md"
+      - "templates/workpack-template.md"
       - "templates/quality-vision-template.md"
       - "templates/acceptance-rubric-template.md"
       - "templates/tasks-template.md"
@@ -269,6 +295,7 @@ layers:
     generated_assets:
       - "specs/<feature>/spec.md"
       - "specs/<feature>/plan.md"
+      - "specs/<feature>/workpack.md"
       - "specs/<feature>/quality-vision.md"
       - "specs/<feature>/acceptance-rubric.md"
       - "specs/<feature>/tasks.md"

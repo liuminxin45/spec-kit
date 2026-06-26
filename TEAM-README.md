@@ -1,6 +1,6 @@
 # Workspace 团队 Spec Kit
 
-本目录以 GitHub Spec Kit v0.8.11 为基础，作为 workspace 级维护的团队版
+本目录以 Spec Kit v0.9.0 为基础，作为 workspace 级维护的团队版
 源码包。团队版面向真实 AI Coding 场景做了约束：默认上下文保持小、
 修复必须优先改源码、需要时采集运行态证据，并通过本地 cherry-pick
 完成分支交付，禁止产生 merge commit。
@@ -56,9 +56,9 @@
   `.specify/memory/qt-source-behavior-map.md` 或
   `ai/knowledge/qt-source-behavior-map.md`，再做有界源码调查，避免每次
   全仓库重新搜索 Qt 源行为。
-- SdkConsumer 与 ServiceBridge 日志从以下目录读取最新文件：
-  `<system-temp>/SDKLog\SDK_*.log` 和
-  `<system-temp>/ServiceBridgeLog\ServiceBridge_*.log`。读日志不需要 MCP。
+- 项目日志路径从 `.specify/memory/repository-map.md`、selected gate pack、
+  或 selected knowledge guide 读取。读本地日志不需要 MCP；未配置日志路径时
+  应记录缺口，并使用构建、测试或运行态证据替代。
 - `complete-branch` 将本地 spec 分支提交 cherry-pick 到创建 spec 分支时记录的
   入口分支，默认保留本地 spec 分支，所有受影响仓库最终切回入口分支，不 push。
   It keeps the local spec branch and does not push.
@@ -98,7 +98,7 @@ npm exec --yes --package=chrome-devtools-mcp@latest -c "chrome-devtools-mcp --br
 不传 `-ConfigureMcpAgent` 时，只安装/初始化 Spec Kit。
 
 需要 Agent 检查 DOM、console、运行态 CSS 或 box metrics 前，先在
-HostApplication 中执行 `npm run debug`。
+配置的真实宿主或浏览器运行时中执行项目声明的 debug 启动命令。
 
 ## 当前架构
 
@@ -210,7 +210,7 @@ intake -> specify -> plan with Implementation Slices -> implement
 ### 重型路径
 
 适用于架构升级、跨仓改动、public API 变化、迁移、平台/工作流能力、
-或大范围 UI/Biz/SDK 边界改造。
+或大范围 UI/service/SDK 边界改造。
 
 ```text
 intake -> specify -> plan -> tasks -> analyze/checklist when useful

@@ -1,5 +1,5 @@
 ---
-description: Prepare and create confirmed multi-repository commits with the CoreRuntime commit-message rules.
+description: Prepare and create confirmed multi-repository commits with the commit-message rules.
 scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json -IncludeTasks
   preflight_ps: scripts/powershell/validate-feature-artifacts.ps1 -Json -Stage commit -FeatureDir <feature-dir>
@@ -34,7 +34,7 @@ confirmation.
 
 - Human-facing summaries use Chinese-first style.
 - Commit messages follow the `commit-message` skill.
-- HostApplication / application commits must use the unified team template with
+- application commits must use the unified team template with
   68 display columns for every non-empty line. Do not offer a simplified
   fallback format.
 - Preserve technical identifiers in their original form.
@@ -110,7 +110,7 @@ confirmation.
    - Show files intentionally left unstaged.
    - Show validation evidence that supports the commit.
 7. Use the `commit-message` skill to generate the commit message.
-   - For HostApplication / application, use the unified template, 68 display columns,
+   - For application, use the unified template, 68 display columns,
      and no simplified fallback.
 8. Validate the exact commit message text before committing:
    - PowerShell: `.specify/scripts/powershell/validate-commit-message.ps1 -Json -MessageFile <message-file>`
@@ -154,7 +154,7 @@ confirmation.
 - If a repository contains unrelated dirty work, leave it unstaged and call it
   out in the scope summary.
 - If the commit-message skill is unavailable, stop and report the blocker
-  rather than inventing a simplified commit format for HostApplication / application.
+  rather than inventing a simplified commit format for application.
 - If `validate-commit-message` is unavailable or failing, stop and report the
   blocker. Never treat commit-message validation as advisory.
 - A commit hash is not a successful commit-stage result until the post-commit

@@ -1,6 +1,6 @@
 """Version checking and self-update commands for specify_cli.
 
-The CoreRuntime team build keeps self-check local and non-networked. The
+The default build keeps self-check local and non-networked. The
 ``self_app`` Typer sub-command group is co-located here so all version-related
 logic lives in one place.
 
@@ -63,7 +63,7 @@ def _is_newer(latest: str, current: str) -> bool:
 
 def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     """Return (tag, failure_category) without outbound network access."""
-    return None, "remote version check disabled in the CoreRuntime team build"
+    return None, "remote version check disabled in this local build"
 
 
 # ===== Self Commands =====

@@ -8,8 +8,8 @@ cross-layer ownership. It is intentionally stable and human-reviewed.
 Treat these as first-class compatibility boundaries:
 
 - Public SDK headers.
-- `NativePlugin` / `ServiceBridge` bridge contracts.
-- HostApplication plugin APIs.
+- `native plugin` / `forwarding bridge` bridge contracts.
+- host application plugin APIs.
 - Frontend plugin state/events.
 - Serialized fields, device status values, and operation permission semantics.
 
@@ -24,12 +24,12 @@ migration notes, and validation evidence.
   documented virtual or simulation boundary.
 - Events are refresh triggers, not durable truth stores.
 
-## Biz / Libs / Frontend Ownership
+## service layer / runtime libraries / Frontend Ownership
 
-- `ServiceBridge` is forwarding-only. It must not implement business rules,
+- `forwarding bridge` is forwarding-only. It must not implement business rules,
   device-state inference, permission decisions, UI behavior calculation, or
   durable runtime truth.
-- `CoreRuntime` owns reusable non-UI runtime facts, permission/capability
+- `runtime/domain owner` owns reusable non-UI runtime facts, permission/capability
   facts, identity rules, and reusable business logic.
 - Frontend plugins own UI-specific structure, order, visible/enabled
   presentation, and action-entry composition based on facts received through

@@ -7,6 +7,53 @@
     "spec_branch": "",
     "delivery_profile": ""
   },
+  "stage_statuses": {
+    "intake": "pending",
+    "specify": "pending",
+    "plan": "pending",
+    "validation": "pending",
+    "fact-layer": "pending",
+    "tasks": "pending",
+    "analyze": "pending",
+    "checklist": "pending",
+    "implement": "pending",
+    "converge": "pending",
+    "acceptance": "pending",
+    "human-acceptance": "pending",
+    "retrospective": "pending",
+    "workflow-observer": "pending",
+    "commit": "pending",
+    "post-commit-self-check": "pending",
+    "rubric-score": "pending",
+    "complete-branch": "pending"
+  },
+  "human_gates": {
+    "acceptance": {
+      "status": "pending",
+      "required": true,
+      "evidence": ""
+    },
+    "complete-branch": {
+      "status": "pending",
+      "required": true,
+      "evidence": ""
+    },
+    "push": {
+      "status": "blocked",
+      "required": true,
+      "evidence": "default workflow does not push"
+    }
+  },
+  "selected_gates": [],
+  "next_stage_decision": {
+    "current_stage": "",
+    "next_stage": "",
+    "can_continue": false,
+    "blockers": [],
+    "required_human_action": "",
+    "commands_to_run": [],
+    "missing_artifacts": []
+  },
   "attempts": [
     {
       "id": "",

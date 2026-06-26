@@ -313,7 +313,7 @@ specify knowledge apply-pack <pack-dir> --json
 也可以从外部目录指定目标项目：
 
 ```powershell
-$env:SPECIFY_INIT_DIR = "E:\Neo\auto-podcast"
+$env:SPECIFY_INIT_DIR = "C:\path\to\your-project"
 specify integration status --json
 ```
 
