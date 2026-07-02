@@ -444,16 +444,33 @@ git push origin v<x.y.z>
 
 ## 项目资产升级
 
-CLI 本体升级和目标项目资产升级是两条链路：
+CLI 本体升级、目标项目资产升级、Codex integration 技能升级是三条链路。
+只升级 CLI 会导致命令版本是新的，但项目内 `.specify`、`ai/**` 或
+`.agents/**` 仍停留在旧版本。先用 self check 看完整状态：
+
+```powershell
+specify self check --project-dir . --json
+```
+
+输出中的 `project.assets` 和 `project.integrations` 必须都显示
+`status: current`，才表示项目真正完成升级。
 
 - `specify self check`：查看当前安装的 CLI 版本。
 - `specify self upgrade`：保留的自升级入口，当前版本不自动联网升级。
 - `specify upgrade`：在目标项目根目录刷新 Spec Kit 管理的脚本、模板、AI 工作流资产、checklist rules 和 bundled workflow。
+- `specify integration upgrade codex --force`：刷新 Codex 入口技能和内部阶段技能。
 
 先预览升级计划：
 
 ```powershell
 specify upgrade --project-dir <project-dir> --dry-run
+```
+
+如果 `self check` 或 `upgrade --dry-run --json` 报告 integration 版本旧，
+继续执行：
+
+```powershell
+specify integration upgrade codex --force
 ```
 
 应用当前已安装版本的项目资产：

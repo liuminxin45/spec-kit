@@ -9,19 +9,42 @@ at module level, keeping this layer thin and circular-import-safe).
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import typer
 from packaging.version import InvalidVersion, Version
 
 from ._console import console
+from ._project_status import build_project_status, resolve_project_root
+
+
+def _get_source_version_fallback() -> str:
+    """Return pyproject.toml version when running directly from a source tree."""
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        return "unknown"
+
+    for parent in Path(__file__).resolve().parents:
+        pyproject = parent / "pyproject.toml"
+        if not pyproject.is_file():
+            continue
+        try:
+            data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        except Exception:
+            return "unknown"
+        version = str(data.get("project", {}).get("version", "")).strip()
+        return version or "unknown"
+    return "unknown"
 
 def _get_installed_version() -> str:
     """Return the installed specify-cli distribution version or 'unknown'.
 
     Uses importlib.metadata so the value reflects what was actually installed
-    by pip/uv/pipx — not a value read from pyproject.toml. This is
-    intentional for `specify self check`, which should reason about the
-    installed distribution rather than a source-tree fallback. Callers must
-    treat the sentinel string 'unknown' as an indeterminate value (see FR-020).
+    by pip/uv/pipx. When running directly from a source tree without installed
+    distribution metadata, falls back to pyproject.toml. Callers must treat the
+    sentinel string 'unknown' as an indeterminate value (see FR-020).
     """
     import importlib.metadata
 
@@ -33,7 +56,7 @@ def _get_installed_version() -> str:
     try:
         return importlib.metadata.version("specify-cli")
     except tuple(metadata_errors):
-        return "unknown"
+        return _get_source_version_fallback()
 
 
 def _normalize_tag(tag: str) -> str:
@@ -76,7 +99,16 @@ self_app = typer.Typer(
 
 
 @self_app.command("check")
-def self_check() -> None:
+def self_check(
+    project_dir: str | None = typer.Option(
+        None,
+        "--project-dir",
+        "--dir",
+        "-C",
+        help="Also check a Spec Kit project root for stale managed assets.",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
     """Report the installed specify-cli version. Read-only.
 
     This command does not modify your installation or contact remote services.
@@ -87,6 +119,23 @@ def self_check() -> None:
     """
     installed = _get_installed_version()
     tag, failure_reason = _fetch_latest_release_tag()
+    project_root = resolve_project_root(project_dir)
+    project_status = build_project_status(project_root, target_version=installed)
+
+    if json_output:
+        payload = {
+            "status": project_status["status"]
+            if project_status["detected"]
+            else "ok",
+            "installed_version": installed,
+            "remote": {
+                "latest_tag": tag,
+                "failure_reason": failure_reason,
+            },
+            "project": project_status,
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
 
     if tag is None:
         assert failure_reason is not None
@@ -94,6 +143,7 @@ def self_check() -> None:
         console.print(f"[yellow]Remote update check skipped:[/yellow] {failure_reason}")
         console.print("To reinstall from the team source, run from the workspace root:")
         console.print(r"  .\spec-kit\scripts\powershell\install.ps1")
+        _print_project_status(project_status)
         return
 
     latest_normalized = _normalize_tag(tag)
@@ -105,12 +155,14 @@ def self_check() -> None:
         console.print(f"Latest release: {latest_normalized}")
         console.print("\nTo reinstall:")
         console.print(r"  .\spec-kit\scripts\powershell\install.ps1")
+        _print_project_status(project_status)
         return
 
     if _is_newer(latest_normalized, installed):
         console.print(f"[green]Update available:[/green] {installed} → {latest_normalized}")
         console.print("\nTo upgrade:")
         console.print(r"  .\spec-kit\scripts\powershell\install.ps1")
+        _print_project_status(project_status)
         return
 
     # Installed is parseable AND is >= latest → "up to date" (FR-006).
@@ -118,6 +170,33 @@ def self_check() -> None:
     # returns False, and the up-to-date branch is the safer default per
     # FR-004 / test T016.
     console.print(f"[green]Up to date:[/green] {installed}")
+    _print_project_status(project_status)
+
+
+def _print_project_status(project_status: dict) -> None:
+    """Print a compact project asset status section."""
+    if not project_status.get("detected"):
+        return
+
+    console.print("")
+    console.print(f"Project: {project_status['project_root']}")
+    assets = project_status.get("assets", {})
+    console.print(
+        "Project assets: "
+        f"{assets.get('version', 'unknown')} "
+        f"({assets.get('status', 'unknown')})"
+    )
+    integrations = project_status.get("integrations", [])
+    if integrations:
+        for item in integrations:
+            console.print(
+                f"Integration {item['key']}: {item['version']} ({item['status']})"
+            )
+
+    if project_status.get("status") == "outdated":
+        console.print("[yellow]Project assets are not fully upgraded.[/yellow]")
+        for action in project_status.get("next_actions", []):
+            console.print(f"  {action}")
 
 
 @self_app.command("upgrade")

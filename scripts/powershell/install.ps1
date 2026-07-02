@@ -53,3 +53,13 @@ if ($LASTEXITCODE -ne 0) {
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
+
+$CandidateProjectRoot = Split-Path -Parent $SpecKitPath
+if ($CandidateProjectRoot -and (Test-Path -LiteralPath (Join-Path $CandidateProjectRoot ".specify"))) {
+    Write-Host ""
+    Write-Host "Checking project assets in $CandidateProjectRoot"
+    & specify self check --project-dir $CandidateProjectRoot
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+}

@@ -14,6 +14,7 @@ import yaml
 
 from .integrations.base import IntegrationBase
 from .integrations.manifest import IntegrationManifest, _sha256
+from ._project_status import build_project_status, current_project_version
 from .shared_infra import (
     RUNTIME_TEMPLATE_FILES,
     load_speckit_manifest,
@@ -72,6 +73,11 @@ def read_spec_kit_lock(project_root: Path) -> dict[str, Any]:
     except (OSError, yaml.YAMLError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def get_current_project_version(project_root: Path) -> str:
+    """Return the current Spec Kit managed asset version for a project."""
+    return current_project_version(project_root)
 
 
 def write_spec_kit_lock(
@@ -300,6 +306,10 @@ def build_upgrade_plan(
             status = "skipped-untracked"
         plan["workflow"] = {"status": status, "path": MANAGED_WORKFLOW_REL}
 
+    plan["project_status"] = build_project_status(
+        project_root,
+        target_version=source_info["version"],
+    )
     return plan
 
 

@@ -986,29 +986,9 @@ def check():
 
 def _current_project_speckit_version(project_root: Path) -> str:
     """Return the version recorded in project state, falling back conservatively."""
-    from ._upgrade import read_spec_kit_lock
+    from ._upgrade import get_current_project_version
 
-    lock = read_spec_kit_lock(project_root)
-    spec_kit = lock.get("spec_kit") if isinstance(lock.get("spec_kit"), dict) else {}
-    version = str(spec_kit.get("version", "")).strip()
-    if version:
-        return version
-
-    init_options = load_init_options(project_root)
-    version = str(init_options.get("speckit_version", "")).strip()
-    if version:
-        return version
-
-    try:
-        from .shared_infra import load_speckit_manifest
-
-        manifest = load_speckit_manifest(project_root, version=get_speckit_version())
-        if manifest.version:
-            return manifest.version
-    except Exception:
-        pass
-
-    return "unknown"
+    return get_current_project_version(project_root)
 
 
 def _upgrade_invoke_separator(project_root: Path) -> str:
@@ -1082,6 +1062,7 @@ def upgrade(
         resolve_upgrade_source,
         run_post_upgrade_validations,
     )
+    from ._project_status import build_project_status
 
     project_root = _require_specify_project(project_dir)
     current_version = _current_project_speckit_version(project_root)
@@ -1131,7 +1112,7 @@ def upgrade(
 
     if dry_run:
         if json_output:
-            console.print(json.dumps(result, ensure_ascii=False, indent=2))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
             _print_upgrade_plan(plan)
         return
@@ -1165,8 +1146,30 @@ def upgrade(
                 "Post-upgrade validation blocked: " + ", ".join(blocked)
             )
 
+    unresolved_upgrade_items = [
+        {"kind": key, "paths": plan.get(key, [])}
+        for key in ["preserved_customized", "skipped_untracked", "preserved_stale"]
+        if plan.get(key)
+    ]
+    workflow_status = (plan.get("workflow") or {}).get("status", "")
+    if workflow_status in {"preserved-customized", "skipped-untracked", "missing-source"}:
+        unresolved_upgrade_items.append(
+            {"kind": "workflow", "paths": [plan["workflow"].get("path", "")]}
+        )
+    result["unresolved_upgrade_items"] = unresolved_upgrade_items
+
+    project_status = build_project_status(
+        project_root,
+        target_version=source_info["version"],
+    )
+    result["project_status"] = project_status
+    if result["status"] == "ok" and (
+        project_status["status"] == "outdated" or unresolved_upgrade_items
+    ):
+        result["status"] = "warning"
+
     if json_output:
-        console.print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         console.print(
             f"[green]OK[/green] Spec Kit project assets upgraded "
@@ -1174,6 +1177,13 @@ def upgrade(
         )
         console.print(f"Lockfile: [cyan]{applied['lock_file']}[/cyan]")
         console.print(f"Manifest: [cyan]{applied['manifest']}[/cyan]")
+        if unresolved_upgrade_items:
+            console.print("[yellow]Warning:[/yellow] Some managed assets were preserved or skipped.")
+            console.print("Review the dry-run plan, then rerun with [cyan]--force[/cyan] only when the overwrite is intended.")
+        if project_status["status"] == "outdated":
+            console.print("[yellow]Warning:[/yellow] Some project assets are still not on the target version.")
+            for action in project_status.get("next_actions", []):
+                console.print(f"  {action}")
         if result["blockers"]:
             for blocker in result["blockers"]:
                 console.print(f"[red]Blocked:[/red] {blocker}")
@@ -2414,7 +2424,7 @@ def integration_upgrade(
             console.print(f"  Removed {len(stale_removed)} stale file(s) from previous install")
 
     name = (integration.config or {}).get("name", key)
-    console.print(f"\n[green]✓[/green] Integration '{name}' upgraded successfully")
+    console.print(f"\n[green]OK[/green] Integration '{name}' upgraded successfully")
 
 
 # ===== Integration catalog discovery commands =====
