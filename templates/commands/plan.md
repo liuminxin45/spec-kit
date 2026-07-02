@@ -7,7 +7,6 @@ scripts:
 ---
 
 ## User Input
-
 ```text
 $ARGUMENTS
 ```
@@ -27,11 +26,7 @@ Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md
 
 Create `plan.md` from the active `spec.md`. The plan is a decision map, not a comprehensive design manual. It must identify the facts, slices, gate packs, and validation evidence required for implementation while leaving detailed truth in code, scripts, selected facts, and source artifacts.
 
-For `micro-fix`, keep the lightweight evidence path unless the bug is no longer micro.
-For `standard-bugfix-lite`, fill `workpack.md` from
-`.specify/templates/workpack-template.md` and avoid full `spec.md`/`plan.md`
-unless risk upgrades. For `blocked-investigation`, plan facts to collect
-instead of implementation.
+For `micro-fix`, keep the lightweight evidence path unless the bug is no longer micro. For `standard-bugfix-lite`, fill `workpack.md` from `.specify/templates/workpack-template.md` and avoid full `spec.md`/`plan.md` unless risk upgrades. For `blocked-investigation`, plan facts to collect instead of implementation.
 
 ## Layered Artifact Contract
 
@@ -63,16 +58,11 @@ instead of implementation.
 3. Run `select-gates` for stage `plan`.
    - Record selected gate pack paths in `AI Context Contract`.
    - Use selected packs to decide required facts and validation evidence.
-4. Run `select-knowledge` only when repository-map, feature artifacts, and selected gate packs are not enough.
-   - Read only returned `ai/knowledge/*` guides.
-   - Do not load all guides and do not use full-text/BM25 search.
-5. Load `speckit-test-plan` through `ai/workflows/skill-routing.yml` when
-   changed behavior needs API, E2E/interface, regression, fixture, smoke, UI,
-   or device test planning.
+4. Run `select-knowledge` only when repository-map, feature artifacts, and selected gate packs are not enough; read only returned `ai/knowledge/*` guides and do not load all guides or use full-text/BM25 search.
+5. Load `speckit-test-plan` through `ai/workflows/skill-routing.yml` when changed behavior needs API, E2E/interface, regression, fixture, smoke, UI, or device test planning.
    - If the test-case plan is obvious, record `approved-by-ai-obvious` and
      keep it for final human review.
-   - If test choices affect public contracts, device coverage, fixtures, test
-     cost, or accepted gaps, stop for human review before implementation.
+   - If test choices affect public contracts, device coverage, fixtures, test cost, or accepted gaps, stop for human review before implementation.
 6. Load `speckit-quality-vision` for UI/UX/copy/parity work and create or link `quality-vision.md` with baseline screenshot/design/Qt source or owner-approved `N/A`.
 7. Load `speckit-acceptance-rubric`; create or link `acceptance-rubric.md` as the judge contract for `speckit-ai-self-acceptance`.
 8. Fill `plan.md` as a focused decision map:
@@ -83,14 +73,11 @@ instead of implementation.
    - Root Cause Evidence for bugfix work, including Counterexample, Blast Radius, and Validation Mapping.
    - Affected modules, ownership boundaries, public contract impact, and file ownership decisions.
    - `Quality Vision Link`: quality tier, UI baseline status, and human baseline decision if any.
-   - `测试用例计划`: API/E2E/interface/regression/fixture/smoke rows, review
-     status, and N/A reasons.
+    - `测试用例计划`: API/E2E/interface/regression/fixture/smoke rows, review status, and N/A reasons.
    - `Acceptance Rubric Link`: rubric path, Essential/Pitfall counts, and review state.
    - Implementation Slices with allowed scope, forbidden scope, validation, progress update, and stop conditions.
    - Validation plan and `AI Self-Acceptance Contract`.
-   For `standard-bugfix-lite`, place the same essentials in `workpack.md`:
-   root cause, one bounded change slice, validation, and acceptance-rubric
-   summary.
+    For `standard-bugfix-lite`, place the same essentials in `workpack.md`: root cause, one bounded change slice, validation, and acceptance-rubric summary.
 9. Produce or update supporting artifacts only when the capability needs them:
    - `research.md`: unknowns, tradeoffs, prior art, source behavior discovery, and alternatives rejected.
    - `data-model.md`: durable state, DTOs, serialized fields, SDK structs, UI state, or database-like records.
@@ -128,13 +115,10 @@ Do not paste full gate details into `plan.md`; cite selected gate ids and record
 - Do not dump unrelated responsibilities into one interface/data-layer file.
 - Do not use `Known Gaps` to pass the exact risk introduced by the fix. That is blocking or high risk, not PASS.
 - A `Known Gap` on changed core behavior remains blocking unless explicitly owner-approved.
-- Do not let AI freely invent test coverage. API/E2E/interface test-case rows
-  must trace to scenarios, requirements, contracts, or risk; ambiguous plans
-  require human review before implementation.
+- Do not let AI freely invent test coverage. API/E2E/interface test-case rows must trace to scenarios, requirements, contracts, or risk; ambiguous plans require human review before implementation.
 - Do not let AI self-acceptance judge UI without a baseline in `quality-vision.md` or an explicit owner-approved `N/A`.
 - `acceptance-rubric.md` must include self-contained Essential and Pitfall criteria before code changes for non-trivial implementation work.
-- Plan acceptance, simplify, optional test-hardening, retrospective,
-  workflow-observer, optional promote-lessons/promote-knowledge, commit, one post-commit self-check, final Rubric score, and complete-branch as separate stages.
+- Plan acceptance, simplify, optional test-hardening, retrospective, workflow-observer, optional promote-lessons/promote-knowledge, commit, one post-commit self-check, final Rubric score, and complete-branch as separate stages.
 
 ## Human Review Rules
 

@@ -1444,6 +1444,7 @@ def test_specify_upgrade_uses_lock_manifest_and_dry_run(tmp_path):
     assert dry_payload["plan"]["current_version"] == expected_version
     assert dry_payload["plan"]["target_version"] == expected_version
     assert dry_payload["plan"]["lock_file"] == ".specify/spec-kit.lock.yml"
+    assert dry_payload["plan"]["project_status"]["status"] == "current"
 
     managed_script = project / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
     managed_script.write_text(
@@ -1462,8 +1463,56 @@ def test_specify_upgrade_uses_lock_manifest_and_dry_run(tmp_path):
     assert upgraded_payload["status"] == "ok"
     assert upgraded_payload["applied"]["version"] == expected_version
     assert upgraded_payload["applied"]["manifest"] == ".specify/integrations/speckit.manifest.json"
+    assert upgraded_payload["project_status"]["status"] == "current"
+    assert upgraded_payload["unresolved_upgrade_items"] == []
     upgraded_lock = yaml.safe_load(lock_path.read_text(encoding="utf-8"))
     assert "source_path" not in upgraded_lock["spec_kit"]
+
+
+def test_self_check_reports_project_asset_and_integration_drift(tmp_path):
+    pyproject = tomllib.loads(read_text("pyproject.toml"))
+    expected_version = pyproject["project"]["version"]
+    project = tmp_path / "project"
+    project.mkdir()
+
+    initialized = run_specify_cli(
+        project,
+        "init",
+        "--here",
+        "--force",
+        "--ignore-agent-tools",
+        "--no-git",
+    )
+    assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+
+    lock_path = project / ".specify" / "spec-kit.lock.yml"
+    lock = yaml.safe_load(lock_path.read_text(encoding="utf-8"))
+    lock["spec_kit"]["version"] = "0.8.11"
+    lock_path.write_text(yaml.safe_dump(lock, sort_keys=False), encoding="utf-8")
+
+    speckit_manifest = project / ".specify" / "integrations" / "speckit.manifest.json"
+    speckit = json.loads(speckit_manifest.read_text(encoding="utf-8"))
+    speckit["version"] = "0.8.11"
+    speckit_manifest.write_text(json.dumps(speckit), encoding="utf-8")
+
+    codex_manifest = project / ".specify" / "integrations" / "codex.manifest.json"
+    codex = json.loads(codex_manifest.read_text(encoding="utf-8"))
+    codex["version"] = "0.8.11"
+    codex_manifest.write_text(json.dumps(codex), encoding="utf-8")
+
+    checked = run_specify_cli(project, "self", "check", "--project-dir", str(project), "--json")
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+    payload = json.loads(checked.stdout)
+
+    assert payload["installed_version"] == expected_version
+    assert payload["status"] == "outdated"
+    assert payload["project"]["assets"]["version"] == "0.8.11"
+    assert payload["project"]["assets"]["status"] == "outdated"
+    codex_status = next(item for item in payload["project"]["integrations"] if item["key"] == "codex")
+    assert codex_status["version"] == "0.8.11"
+    assert codex_status["status"] == "outdated"
+    assert any("specify upgrade" in action for action in payload["project"]["next_actions"])
+    assert "specify integration upgrade codex --force" in payload["project"]["next_actions"]
 
 
 def test_specify_knowledge_commands_wrap_project_scripts(tmp_path):

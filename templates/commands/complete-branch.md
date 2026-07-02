@@ -8,7 +8,6 @@ scripts:
 ---
 
 ## User Input
-
 ```text
 $ARGUMENTS
 ```
@@ -56,25 +55,12 @@ branch, 不删除 the local Spec branch, and 不 push.
    repository root:
    - PowerShell: `.specify/scripts/powershell/complete-spec-branches.ps1 -Json -PreflightOnly`
 5. Parse and show the preflight result for every affected repository:
-   - Repository path.
-   - Current branch.
-   - Completion target branch: the recorded entry branch from
-     `.specify/feature.json` `completion_targets`, or an explicit `-BaseBranch`
-     override when supplied.
-   - Local spec branch.
-   - Dirty state.
-   - Dirty classification: tracked source changes, generated/temp/excluded
-     untracked entries, and unclassified untracked files.
-   - Whether the spec branch exists.
-   - Whether cherry-pick is safe.
-   - Whether any upstream/remote tracking exists.
+    - Repository path, current branch, local spec branch, dirty state, spec branch existence, cherry-pick safety, and upstream/remote tracking.
+    - Completion target branch: the recorded entry branch from `.specify/feature.json` `completion_targets`, or an explicit `-BaseBranch` override when supplied.
+    - Dirty classification: tracked source changes, generated/temp/excluded untracked entries, and unclassified untracked files.
    - Remote divergence for the completion target branch when an upstream exists: ahead,
      behind, or no upstream.
-   - Retrospective gate status. `workflow-record.md` and
-     `improvement-candidates.md`, `knowledge-candidates.md`, and
-     `workflow-observation.md` must exist for the active feature; if any are
-     missing, stop and run the closure gate's next required stage before
-     completing the branch.
+    - Retrospective gate status. `workflow-record.md`, `improvement-candidates.md`, `knowledge-candidates.md`, and `workflow-observation.md` must exist; if any are missing, stop and run the closure gate's next required stage before completing the branch.
 6. If preflight reports dirty files, classify before completion:
    - Tracked modifications, staged changes, deleted files, or untracked files
      in repositories that still have spec commits to cherry-pick are blockers

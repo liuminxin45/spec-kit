@@ -2,17 +2,10 @@
 This compact routing guide is not a full process manual. Load it with
 `AGENTS.md`, `.specify/workspace.yml`, and `.specify/memory/repository-map.md`.
 ## Default Rule
-
-Start light. Upgrade only when evidence, risk, or scope requires it. Do not
-route by matching user text keywords alone.
+Start light. Upgrade only when evidence, risk, or scope requires it. Do not route by matching user text keywords alone.
 ## Internal Skill Loading
-
-Codex natively discovers only `.agents/skills/speckit-specify/SKILL.md`.
-For later stages or reusable capabilities, read `ai/workflows/skill-routing.yml`
-first, then load only the selected `.agents/spec-kit/skills/<skill>/SKILL.md`.
-Do not pre-load the internal skill directory.
+Codex natively discovers only `.agents/skills/speckit-specify/SKILL.md`. For later stages or reusable capabilities, read `ai/workflows/skill-routing.yml` first, then load only the selected `.agents/spec-kit/skills/<skill>/SKILL.md`. Do not pre-load the internal skill directory.
 ## Stage Continuation
-
 Auto-continue is a stage contract, not report wording. Prefer
 `resolve-next-stage` when available; consume its `current_stage`, `next_stage`,
 `can_continue`, `blockers`, `required_human_action`, `commands_to_run`, and
@@ -28,7 +21,6 @@ user pause. If stopping, do not claim automatic entry; record `blockers` and
 `next_required_human_action`. A plain completion summary or "自动进入"/
 "continue to" promise without execution is non-compliant.
 ## Final Response Guard
-
 Before any final response after human acceptance, commit, post-commit
 self-check, or rubric work, run `inspect-workflow-closure` for the active
 `FEATURE_DIR`. If it returns `blocked`, execute `facts.next_required_stage`
@@ -37,7 +29,6 @@ instead of reporting completion. `local_only`, `push_remote: false`, and
 push behavior; they do not skip retrospective, workflow-observer,
 post-commit-self-check, or rubric-score.
 ## Stage Progress Displays
-
 When the user asks for Spec Kit progress, current stage, or next stage, show
 stage rows with `阶段`, `状态`, and `阶段目标`. Use these objectives:
 
@@ -67,7 +58,6 @@ stage rows with `阶段`, `状态`, and `阶段目标`. Use these objectives:
 | `speckit-rubric-score` | Output final Rubric scoring only after post-commit self-check and enforce score gates. |
 | `speckit-complete-branch` | Preflight branch completion, then cherry-pick local spec commits back to the recorded entry branch only after explicit human approval. |
 ## Profiles
-
 - `micro-fix`: small, evidenced, low-blast-radius source change.
 - `standard-bugfix-lite`: compact low/medium-risk bugfix in `workpack.md` with root cause, one slice, validation, and acceptance-rubric summary.
 - `standard-bugfix`: compact fix with `spec.md` + `plan.md`; slices may skip `tasks.md`.
@@ -78,7 +68,6 @@ stage rows with `阶段`, `状态`, and `阶段目标`. Use these objectives:
 Auxiliary labels such as `ui-parity`, `public-api`, and `cross-repo` are risk
 flags, not separate default workflows.
 ## Hard Upgrade Gates
-
 - Public API, service/runtime/UI boundary, cross-repo, identity, permission, connection,
   acquisition, or real-device behavior: do not use `micro-fix`.
 - `full-sdd` must pass `tasks -> analyze -> checklist` before implementation; preflight blocks when `tasks.md`, `analysis.md`, or `checklists/implementation-readiness.md` is missing.
@@ -179,9 +168,4 @@ flags, not separate default workflows.
 - Prefer scripts for hard facts: log discovery, DevTools target detection, source/runtime consistency, changed-file classification, and validation command suggestions.
 - After changing `spec-kit` templates or shared infra, run `validate-generated-context`, `validate-knowledge-index`, and `validate-context-budget` before trusting generated context, knowledge routing, skill routing, or command/gate compactness.
 ## Output Contract
-When reporting routing, include:
-
-- selected profile, affected repositories from repository-map, and next command
-- internal skill path when loaded
-- stage progress table with `阶段`, `状态`, and one-sentence `阶段目标` when reporting workflow progress or next-stage status
-- facts, blockers, unknowns, and ignored hints, if any
+When reporting routing, include selected profile, affected repositories from repository-map, next command, internal skill path when loaded, stage progress table with `阶段`/`状态`/`阶段目标` when asked for progress, and facts/blockers/unknowns/ignored hints.
