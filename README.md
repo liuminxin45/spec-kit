@@ -265,11 +265,27 @@ ai/tools/<pack-id>/
 
 Hook 默认关闭：没有 `.specify/workflow-hooks.yml` 或没有匹配事件时，workflow 行为和输出不变。Compose 激活带 `type: workflow-shell` 的 hooks 后，会生成 `.specify/workflow-hooks.yml`；workflow engine 在阶段前/后调用 `invoke-workflow-hooks.ps1` 同步等待统一结果，只有 `auto_continue=true` 才自动进入下一阶段。本地可用 `.specify/workflow-hooks.local.yml` 临时禁用全部 hooks、指定事件、指定 hook id 或指定 pack id；禁用后不会写入 hook 状态。卸载 pack 会移除对应 hook 发布目录并重新生成 registry，同时只清理不再被任何 active pack 引用的 hook 工具版本。
 
+已有 `.specify` 项目新增 workflow hook 时，优先用确定性 scaffold 生成可审计 pack，而不是让 AI 临场手写 registry。示例：
+
+```powershell
+specify hook scaffold open-code-review `
+  --event workflow.speckit.commit.after `
+  --version 1.3.13 `
+  --install-method npm `
+  --package "@alibaba-group/open-code-review" `
+  --apply `
+  --force `
+  --json
+```
+
+生成的 pack 只记录工具 id、固定版本、安装方式、校验命令、hook 事件和 wrapper 脚本；不会打包用户的 LLM API key、机器路径或全局工具安装产物。
+
 ## 生命周期命令
 
 | 目标 | 命令 |
 | --- | --- |
 | 生成草稿知识库 | `specify knowledge bootstrap --project-dir . --json` |
+| 生成 hook pack | `specify hook scaffold open-code-review --event workflow.speckit.commit.after --version 1.3.13 --install-method npm --package "@alibaba-group/open-code-review" --json` |
 | 挂载 pack | `specify knowledge apply-pack <pack-dir> --project-dir . --force --json` |
 | 更新 pack | `specify knowledge update-pack <pack-dir> --project-dir . --json` |
 | 卸载 pack | `specify knowledge uninstall-pack <id> --project-dir . --json` |
