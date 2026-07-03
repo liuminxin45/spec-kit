@@ -222,12 +222,20 @@ def test_workflow_cli_json_status_and_env_project_targeting(tmp_path):
     assert payload["workflow_id"] == "demo"
     assert payload["status"] == "completed"
     assert payload["current_step_id"] == "echo"
+    assert "hook_results" not in payload
+    assert "pending_hook" not in payload
+    state_file = project / ".specify" / "workflows" / "runs" / payload["run_id"] / "state.json"
+    state_payload = json.loads(state_file.read_text(encoding="utf-8"))
+    assert "hook_results" not in state_payload
+    assert "pending_hook" not in state_payload
 
     status = run_specify_cli(nested, "workflow", "status", payload["run_id"], "--json")
     assert status.returncode == 0, status.stdout + status.stderr
     status_payload = json.loads(status.stdout)
     assert status_payload["run_id"] == payload["run_id"]
     assert status_payload["status"] == "completed"
+    assert "hook_results" not in status_payload
+    assert "pending_hook" not in status_payload
 
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -241,6 +249,306 @@ def test_workflow_cli_json_status_and_env_project_targeting(tmp_path):
     assert env_status.returncode == 0, env_status.stdout + env_status.stderr
     list_payload = json.loads(env_status.stdout)
     assert list_payload["runs"][0]["run_id"] == payload["run_id"]
+
+
+def test_workflow_hook_passes_and_auto_continues(tmp_path):
+    project = tmp_path / "project"
+    workflows = project / ".specify" / "workflows" / "demo"
+    hook_dir = project / ".specify" / "capabilities" / "hooks" / "local"
+    workflows.mkdir(parents=True)
+    hook_dir.mkdir(parents=True)
+    (workflows / "workflow.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "workflow:",
+                '  id: "demo"',
+                '  name: "Demo"',
+                '  version: "1.0.0"',
+                "steps:",
+                '  - id: "echo"',
+                '    type: "shell"',
+                f"    run: '{Path(sys.executable).as_posix()} -c \"print(''ok'')\"'",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (hook_dir / "pass.ps1").write_text(
+        "\n".join(
+            [
+                "if ([string]::IsNullOrWhiteSpace($env:SPEC_KIT_CONTEXT_PATH) -or -not (Test-Path -LiteralPath $env:SPEC_KIT_CONTEXT_PATH -PathType Leaf)) { exit 2 }",
+                "$context = Get-Content -LiteralPath $env:SPEC_KIT_CONTEXT_PATH -Raw | ConvertFrom-Json",
+                "if ($context.run_id -ne $env:SPEC_KIT_RUN_ID) { exit 3 }",
+                "$payload = [ordered]@{",
+                '  schema_version = "1.0"',
+                '  status = "passed"',
+                '  action = "continue"',
+                "  auto_continue = $true",
+                '  summary = "hook passed"',
+                "  artifact_paths = @()",
+                "}",
+                "$payload | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $env:SPEC_KIT_RESULT_PATH -Encoding utf8",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (project / ".specify" / "workflow-hooks.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "hooks:",
+                '  - id: "local.pass"',
+                '    type: "workflow-shell"',
+                "    events:",
+                '      - "workflow.demo.echo.after"',
+                '    runner: \'pwsh -NoProfile -File ".specify/capabilities/hooks/local/pass.ps1"\'',
+                "    timeout_seconds: 30",
+                '    failure_policy: "block"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    run = run_specify_cli(project, "workflow", "run", "demo", "--json")
+    assert run.returncode == 0, run.stdout + run.stderr
+    payload = json.loads(run.stdout)
+    assert payload["status"] == "completed"
+    event = payload["hook_results"]["workflow.demo.echo.after"]
+    assert event["status"] == "passed"
+    assert event["auto_continue"] is True
+    assert "pending_hook" not in payload
+
+
+def test_workflow_hook_local_override_disables_matching_hook(tmp_path):
+    project = tmp_path / "project"
+    workflows = project / ".specify" / "workflows" / "demo"
+    hook_dir = project / ".specify" / "capabilities" / "hooks" / "local"
+    workflows.mkdir(parents=True)
+    hook_dir.mkdir(parents=True)
+    (workflows / "workflow.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "workflow:",
+                '  id: "demo"',
+                '  name: "Demo"',
+                '  version: "1.0.0"',
+                "steps:",
+                '  - id: "echo"',
+                '    type: "shell"',
+                f"    run: '{Path(sys.executable).as_posix()} -c \"print(''ok'')\"'",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (hook_dir / "fail-if-run.ps1").write_text(
+        "\n".join(
+            [
+                "Set-Content -LiteralPath '.specify/hook-ran' -Value 'ran' -Encoding utf8",
+                "exit 1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (project / ".specify" / "workflow-hooks.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "hooks:",
+                '  - id: "local.fail-if-run"',
+                '    type: "workflow-shell"',
+                "    events:",
+                '      - "workflow.demo.echo.after"',
+                '    runner: \'pwsh -NoProfile -File ".specify/capabilities/hooks/local/fail-if-run.ps1"\'',
+                "    timeout_seconds: 30",
+                '    failure_policy: "block"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (project / ".specify" / "workflow-hooks.local.yml").write_text(
+        "\n".join(
+            [
+                "disabled_hooks:",
+                '  - "local.fail-if-run"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    run = run_specify_cli(project, "workflow", "run", "demo", "--json")
+    assert run.returncode == 0, run.stdout + run.stderr
+    payload = json.loads(run.stdout)
+    assert payload["status"] == "completed"
+    assert "hook_results" not in payload
+    assert "pending_hook" not in payload
+    assert not (project / ".specify" / "hook-ran").exists()
+
+
+def test_workflow_hook_blocks_and_resume_waits_for_result(tmp_path):
+    project = tmp_path / "project"
+    workflows = project / ".specify" / "workflows" / "demo"
+    hook_dir = project / ".specify" / "capabilities" / "hooks" / "local"
+    workflows.mkdir(parents=True)
+    hook_dir.mkdir(parents=True)
+    first_cmd = (
+        f"{Path(sys.executable).as_posix()} -c "
+        "\"from pathlib import Path; p=Path('first.count'); "
+        "n=int(p.read_text()) if p.exists() else 0; p.write_text(str(n+1))\""
+    )
+    second_cmd = f"{Path(sys.executable).as_posix()} -c \"from pathlib import Path; Path('second.txt').write_text('done')\""
+    (workflows / "workflow.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "workflow:",
+                '  id: "demo"',
+                '  name: "Demo"',
+                '  version: "1.0.0"',
+                "steps:",
+                '  - id: "first"',
+                '    type: "shell"',
+                "    run: >",
+                f"      {first_cmd}",
+                '  - id: "second"',
+                '    type: "shell"',
+                "    run: >",
+                f"      {second_cmd}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (hook_dir / "gate.ps1").write_text(
+        "\n".join(
+            [
+                "$allow = Test-Path -LiteralPath '.specify/allow-hook'",
+                "$payload = [ordered]@{",
+                '  schema_version = "1.0"',
+                "  status = if ($allow) { 'passed' } else { 'blocked' }",
+                "  action = if ($allow) { 'continue' } else { 'pause' }",
+                "  auto_continue = $allow",
+                "  summary = if ($allow) { 'hook passed' } else { 'waiting for hook release' }",
+                "  artifact_paths = @()",
+                "}",
+                "$payload | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $env:SPEC_KIT_RESULT_PATH -Encoding utf8",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (project / ".specify" / "workflow-hooks.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "hooks:",
+                '  - id: "local.gate"',
+                '    type: "workflow-shell"',
+                "    events:",
+                '      - "workflow.demo.first.after"',
+                '    runner: \'pwsh -NoProfile -File ".specify/capabilities/hooks/local/gate.ps1"\'',
+                "    timeout_seconds: 30",
+                '    failure_policy: "block"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    run = run_specify_cli(project, "workflow", "run", "demo", "--json")
+    assert run.returncode == 0, run.stdout + run.stderr
+    payload = json.loads(run.stdout)
+    assert payload["status"] == "paused"
+    assert payload["current_step_index"] == 1
+    assert payload["pending_hook"]["event"] == "workflow.demo.first.after"
+    assert payload["pending_hook"]["status"] == "blocked"
+    assert (project / "first.count").read_text(encoding="utf-8") == "1"
+    assert not (project / "second.txt").exists()
+
+    (project / ".specify" / "allow-hook").write_text("ok", encoding="utf-8")
+    resumed = run_specify_cli(project, "workflow", "resume", payload["run_id"], "--json")
+    assert resumed.returncode == 0, resumed.stdout + resumed.stderr
+    resumed_payload = json.loads(resumed.stdout)
+    assert resumed_payload["status"] == "completed"
+    assert "pending_hook" not in resumed_payload
+    assert (project / "first.count").read_text(encoding="utf-8") == "1"
+    assert (project / "second.txt").read_text(encoding="utf-8") == "done"
+
+
+def test_workflow_before_hook_blocks_before_step_and_resume_runs_step_once(tmp_path):
+    project = tmp_path / "project"
+    workflows = project / ".specify" / "workflows" / "demo"
+    hook_dir = project / ".specify" / "capabilities" / "hooks" / "local"
+    workflows.mkdir(parents=True)
+    hook_dir.mkdir(parents=True)
+    first_cmd = (
+        f"{Path(sys.executable).as_posix()} -c "
+        "\"from pathlib import Path; p=Path('first.count'); "
+        "n=int(p.read_text()) if p.exists() else 0; p.write_text(str(n+1))\""
+    )
+    (workflows / "workflow.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "workflow:",
+                '  id: "demo"',
+                '  name: "Demo"',
+                '  version: "1.0.0"',
+                "steps:",
+                '  - id: "first"',
+                '    type: "shell"',
+                "    run: >",
+                f"      {first_cmd}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (hook_dir / "before-gate.ps1").write_text(
+        "\n".join(
+            [
+                "$allow = Test-Path -LiteralPath '.specify/allow-before-hook'",
+                "$payload = [ordered]@{",
+                '  schema_version = "1.0"',
+                "  status = if ($allow) { 'passed' } else { 'blocked' }",
+                "  action = if ($allow) { 'continue' } else { 'pause' }",
+                "  auto_continue = $allow",
+                "  summary = if ($allow) { 'before hook passed' } else { 'waiting before first step' }",
+                "  artifact_paths = @()",
+                "}",
+                "$payload | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $env:SPEC_KIT_RESULT_PATH -Encoding utf8",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (project / ".specify" / "workflow-hooks.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "hooks:",
+                '  - id: "local.before-gate"',
+                '    type: "workflow-shell"',
+                "    events:",
+                '      - "workflow.demo.first.before"',
+                '    runner: \'pwsh -NoProfile -File ".specify/capabilities/hooks/local/before-gate.ps1"\'',
+                "    timeout_seconds: 30",
+                '    failure_policy: "block"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    run = run_specify_cli(project, "workflow", "run", "demo", "--json")
+    assert run.returncode == 0, run.stdout + run.stderr
+    payload = json.loads(run.stdout)
+    assert payload["status"] == "paused"
+    assert payload["current_step_index"] == 0
+    assert payload["pending_hook"]["event"] == "workflow.demo.first.before"
+    assert not (project / "first.count").exists()
+
+    (project / ".specify" / "allow-before-hook").write_text("ok", encoding="utf-8")
+    resumed = run_specify_cli(project, "workflow", "resume", payload["run_id"], "--json")
+    assert resumed.returncode == 0, resumed.stdout + resumed.stderr
+    resumed_payload = json.loads(resumed.stdout)
+    assert resumed_payload["status"] == "completed"
+    assert "pending_hook" not in resumed_payload
+    assert (project / "first.count").read_text(encoding="utf-8") == "1"
 
 
 def test_integration_status_reports_codex_only_project_diagnostics(tmp_path):

@@ -9,6 +9,39 @@ $ErrorActionPreference = "Stop"
 
 $result = New-KnowledgePackResult "compose-knowledge-packs"
 
+function Format-WorkflowHookYamlValue {
+    param([string]$Value)
+    return '"' + (($Value -replace '\\', '/') -replace '"', '\"') + '"'
+}
+
+function Resolve-WorkflowHookRunnerCommand {
+    param(
+        $Hook,
+        [string]$PublishedHookRoot
+    )
+    $runner = ""
+    if ($Hook.PSObject.Properties.Name -contains "runner") { $runner = [string]$Hook.runner }
+    if ([string]::IsNullOrWhiteSpace($runner) -and $Hook.PSObject.Properties.Name -contains "command") {
+        $runner = [string]$Hook.command
+    }
+    if ([string]::IsNullOrWhiteSpace($runner)) { return "" }
+
+    $normalized = $runner.Replace('\', '/')
+    if ((Test-KnowledgePackSafeRelativePath -RelativePath $normalized) -and $normalized -match "\.(ps1|sh|cmd|bat)$") {
+        $relativePath = ($PublishedHookRoot.TrimEnd('/', '\') + "/" + $normalized).Replace('\', '/')
+        $quoted = '"' + $relativePath.Replace('"', '\"') + '"'
+        $extension = [System.IO.Path]::GetExtension($normalized).ToLowerInvariant()
+        switch ($extension) {
+            ".ps1" { return "pwsh -NoProfile -File $quoted" }
+            ".sh" { return "bash $quoted" }
+            ".cmd" { return "cmd /c $quoted" }
+            ".bat" { return "cmd /c $quoted" }
+            default { return $runner }
+        }
+    }
+    return $runner
+}
+
 try {
     $root = Resolve-KnowledgePackPath -Path $RepoRoot
     if ([string]::IsNullOrWhiteSpace($root)) { $root = (Get-Location).Path }
@@ -62,6 +95,19 @@ try {
                 continue
             }
             $info = Get-KnowledgePackInfo -PackRoot $packRoot
+            $installRecord = Get-KnowledgePackInstallRecord -RepoRoot $root -PackId $slug
+            if ($null -ne $installRecord -and
+                $installRecord.PSObject.Properties.Name -contains "hook_tools" -and
+                $installRecord.hook_tools -and
+                $installRecord.hook_tools.PSObject.Properties.Name -contains "status" -and
+                [string]$installRecord.hook_tools.status -eq "blocked") {
+                $hookToolBlockers = @()
+                if ($installRecord.hook_tools.PSObject.Properties.Name -contains "blockers") {
+                    $hookToolBlockers = @($installRecord.hook_tools.blockers)
+                }
+                Set-KnowledgePackBlocked $result ("Installed pack has blocked hook tool dependencies: $slug " + (($hookToolBlockers) -join "; "))
+                continue
+            }
             $packKnowledge = Join-Path $packRoot "ai\knowledge"
             if (-not (Test-Path -LiteralPath $packKnowledge -PathType Container)) {
                 Set-KnowledgePackBlocked $result "Installed pack has no ai/knowledge directory: $slug"
@@ -85,7 +131,7 @@ try {
             }
             Copy-KnowledgePackDirectory -Source $packKnowledge -Destination $materialized
             $layers = Get-KnowledgePackCapabilityLayers -PackRoot $packRoot
-            foreach ($layerName in @("skills", "tools", "scripts", "commands", "prompts", "resources", "templates")) {
+            foreach ($layerName in Get-KnowledgePackCapabilityLayerNames) {
                 $layer = $layers[$layerName]
                 if (-not $layer.present) { continue }
                 $layerDestination = Join-Path $capabilityMaterialized "$layerName\$slug"
@@ -98,7 +144,6 @@ try {
             }
             $packAliases = Read-KnowledgeToolAliases -PackRoot $packRoot
             foreach ($key in $packAliases.Keys) { $aliases[$key] = $packAliases[$key] }
-            $installRecord = Get-KnowledgePackInstallRecord -RepoRoot $root -PackId $slug
             $recordRelative = ".specify/knowledge/records/$slug.json"
             $treeSha256 = ""
             if ($null -ne $installRecord -and $installRecord.hashes -and $installRecord.hashes.tree_sha256) {
@@ -164,6 +209,7 @@ try {
                     prompts = ".specify\capabilities\prompts\$packIdForPublish"
                     resources = ".specify\capabilities\resources\$packIdForPublish"
                     templates = ".specify\capabilities\templates\$packIdForPublish"
+                    hooks = ".specify\capabilities\hooks\$packIdForPublish"
                 }
                 foreach ($layerName in $layerTargets.Keys) {
                     $stage = Join-Path $capabilityMaterialized "$layerName\$packIdForPublish"
@@ -182,6 +228,46 @@ try {
                         path = $targetRelative.Replace('\', '/')
                     }
                 }
+            }
+
+            $workflowHookRegistryPath = Join-Path $root ".specify\workflow-hooks.yml"
+            $workflowHookLines = @(
+                'schema_version: "1.0"',
+                'generated_by: "compose-knowledge-packs"',
+                "hooks:"
+            )
+            $workflowHookCount = 0
+            foreach ($pack in $applied) {
+                $packIdForHooks = $pack.slug
+                $packRootForHooks = Join-Path $root ".specify\knowledge\packs\$packIdForHooks"
+                $publishedHookRoot = ".specify/capabilities/hooks/$packIdForHooks"
+                foreach ($hook in @(Read-KnowledgePackHookIndex -PackRoot $packRootForHooks)) {
+                    $hookType = if ($hook.PSObject.Properties.Name -contains "type") { [string]$hook.type } else { "" }
+                    if ($hookType -ne "workflow-shell") { continue }
+                    $events = @($hook.events | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                    if ($events.Count -eq 0) { continue }
+                    $runnerCommand = Resolve-WorkflowHookRunnerCommand -Hook $hook -PublishedHookRoot $publishedHookRoot
+                    if ([string]::IsNullOrWhiteSpace($runnerCommand)) { continue }
+                    $workflowHookCount += 1
+                    $hookId = "$packIdForHooks.$($hook.id)"
+                    $timeout = if ($hook.PSObject.Properties.Name -contains "timeout_seconds" -and $hook.timeout_seconds) { [string]$hook.timeout_seconds } else { "600" }
+                    $failurePolicy = if ($hook.PSObject.Properties.Name -contains "failure_policy" -and $hook.failure_policy) { [string]$hook.failure_policy } else { "block" }
+                    $workflowHookLines += "  - id: $(Format-WorkflowHookYamlValue $hookId)"
+                    $workflowHookLines += "    pack_id: $(Format-WorkflowHookYamlValue $packIdForHooks)"
+                    $workflowHookLines += '    type: "workflow-shell"'
+                    $workflowHookLines += "    events:"
+                    foreach ($event in $events) {
+                        $workflowHookLines += "      - $(Format-WorkflowHookYamlValue $event)"
+                    }
+                    $workflowHookLines += "    runner: $(Format-WorkflowHookYamlValue $runnerCommand)"
+                    $workflowHookLines += "    timeout_seconds: $timeout"
+                    $workflowHookLines += "    failure_policy: $(Format-WorkflowHookYamlValue $failurePolicy)"
+                }
+            }
+            if ($workflowHookCount -gt 0) {
+                $workflowHookLines | Set-Content -LiteralPath $workflowHookRegistryPath -Encoding utf8
+            } elseif (Test-Path -LiteralPath $workflowHookRegistryPath -PathType Leaf) {
+                Remove-Item -LiteralPath $workflowHookRegistryPath -Force
             }
 
             $lockPath = Join-Path $root ".specify\knowledge\lock.yml"
@@ -246,6 +332,8 @@ try {
             $result.facts.backup_dir = $backupRoot
             $result.facts.lock = $lockPath
             $result.facts.capability_lock = $capabilityLockPath
+            $result.facts.workflow_hooks_registry = $workflowHookRegistryPath
+            $result.facts.workflow_hook_count = $workflowHookCount
             $result.facts.applied_packs = $applied
             $result.facts.capability_layers_applied = $capabilityApplied
             $result.facts.removed_published_capabilities = $removedPublishedCapabilities

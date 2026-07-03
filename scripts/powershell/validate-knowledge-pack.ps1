@@ -99,7 +99,13 @@ try {
         $capabilityMachinePathOffenders = @()
         $skillManifestOffenders = @()
         $scriptExtensionOffenders = @()
+        $hookExtensionOffenders = @()
+        $hookSchemaOffenders = @()
+        $hookToolDependencyOffenders = @()
         $scriptHashes = @()
+        $hookHashes = @()
+        $workflowHookCount = 0
+        $legacyHookCount = 0
         $extraCapabilityLayerPresent = $false
         foreach ($layerName in $capabilityLayers.Keys) {
             $layer = $capabilityLayers[$layerName]
@@ -125,6 +131,15 @@ try {
                         sha256 = Get-KnowledgePackFileHash -Path $file.FullName
                     }
                 }
+                if ($layerName -eq "hooks") {
+                    if (@(".ps1", ".psm1", ".psd1", ".sh", ".cmd", ".bat", ".md", ".yml", ".yaml", ".json", ".txt") -notcontains $file.Extension.ToLowerInvariant()) {
+                        $hookExtensionOffenders += $relative
+                    }
+                    $hookHashes += [ordered]@{
+                        path = $relative
+                        sha256 = Get-KnowledgePackFileHash -Path $file.FullName
+                    }
+                }
                 if (@(".md", ".yml", ".yaml", ".json", ".ps1", ".psm1", ".psd1", ".txt") -contains $file.Extension.ToLowerInvariant()) {
                     $text = Get-Content -LiteralPath $file.FullName -Raw
                     foreach ($pattern in @("[A-Za-z]:\\", "(^|[\\/])Users[\\/][^\\/]+")) {
@@ -144,6 +159,96 @@ try {
                 }
             }
         }
+        if ($capabilityLayers["hooks"].present) {
+            $hookIndexPath = Join-Path $capabilityLayers["hooks"].path "index.yml"
+            if (-not (Test-Path -LiteralPath $hookIndexPath -PathType Leaf)) {
+                $hookSchemaOffenders += "hooks/index.yml not found"
+            }
+            $validInstallMethods = @("pack-local-script", "npm", "github-release", "manual")
+            $validFailurePolicies = @("block", "warn", "warning", "advisory")
+            $validHookTypes = @("workflow-shell")
+            foreach ($hook in @(Read-KnowledgePackHookIndex -PackRoot $packRootResolved)) {
+                $hookId = [string](Get-KnowledgePackObjectValue -Object $hook -Key "id")
+                $hookType = [string](Get-KnowledgePackObjectValue -Object $hook -Key "type")
+                $events = @((Get-KnowledgePackObjectValue -Object $hook -Key "events") | ForEach-Object { [string]$_ } | Where-Object { $_ })
+                $runner = [string](Get-KnowledgePackObjectValue -Object $hook -Key "runner")
+                $command = [string](Get-KnowledgePackObjectValue -Object $hook -Key "command")
+                $timeout = [string](Get-KnowledgePackObjectValue -Object $hook -Key "timeout_seconds")
+                $failurePolicy = [string](Get-KnowledgePackObjectValue -Object $hook -Key "failure_policy")
+                if ([string]::IsNullOrWhiteSpace($hookId)) {
+                    $hookSchemaOffenders += "hook missing id"
+                } elseif ($hookId -notmatch "^[A-Za-z0-9][A-Za-z0-9_.-]*$") {
+                    $hookSchemaOffenders += "hook id has unsupported characters: $hookId"
+                }
+                if ($validHookTypes -notcontains $hookType) {
+                    $legacyHookCount += 1
+                    continue
+                }
+                $workflowHookCount += 1
+                if ($events.Count -eq 0) {
+                    $hookSchemaOffenders += "hook $hookId has no events"
+                }
+                foreach ($event in $events) {
+                    if ($event -notmatch "^workflow\.[a-z0-9][a-z0-9-]*\.[A-Za-z0-9_.-]+\.(before|after)$") {
+                        $hookSchemaOffenders += "hook $hookId has invalid event: $event"
+                    }
+                }
+                if ([string]::IsNullOrWhiteSpace($runner) -and [string]::IsNullOrWhiteSpace($command)) {
+                    $hookSchemaOffenders += "hook $hookId must declare runner or command"
+                }
+                foreach ($candidateRunner in @($runner, $command) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) {
+                    $normalizedRunner = $candidateRunner.Replace('\', '/')
+                    if ([System.IO.Path]::IsPathRooted($normalizedRunner) -or $normalizedRunner -match '(^|/)\.\.($|/)' -or $normalizedRunner -match '^[A-Za-z]:') {
+                        $hookSchemaOffenders += "hook $hookId uses unsafe runner path: $candidateRunner"
+                    }
+                    if ((Test-KnowledgePackSafeRelativePath -RelativePath $normalizedRunner) -and $normalizedRunner -match "\.(ps1|sh|cmd|bat)$") {
+                        $runnerPath = Join-Path $capabilityLayers["hooks"].path ($normalizedRunner -replace "/", "\")
+                        if (-not (Test-Path -LiteralPath $runnerPath -PathType Leaf)) {
+                            $hookSchemaOffenders += "hook $hookId runner file not found: $normalizedRunner"
+                        }
+                    }
+                }
+                if (-not [string]::IsNullOrWhiteSpace($timeout)) {
+                    try {
+                        if ([int]$timeout -lt 1) { $hookSchemaOffenders += "hook $hookId timeout_seconds must be positive" }
+                    } catch {
+                        $hookSchemaOffenders += "hook $hookId timeout_seconds must be an integer"
+                    }
+                }
+                if (-not [string]::IsNullOrWhiteSpace($failurePolicy) -and $validFailurePolicies -notcontains $failurePolicy.ToLowerInvariant()) {
+                    $hookSchemaOffenders += "hook $hookId has unsupported failure_policy: $failurePolicy"
+                }
+                foreach ($dependency in @((Get-KnowledgePackObjectValue -Object $hook -Key "tool_dependencies"))) {
+                    if ($dependency -is [string]) {
+                        $hookToolDependencyOffenders += "hook $hookId tool dependency '$dependency' must declare id, version, and install_method"
+                        continue
+                    }
+                    $depId = [string](Get-KnowledgePackObjectValue -Object $dependency -Key "id")
+                    $depVersion = [string](Get-KnowledgePackObjectValue -Object $dependency -Key "version")
+                    $depInstallMethod = [string](Get-KnowledgePackObjectValue -Object $dependency -Key "install_method")
+                    $depPath = [string](Get-KnowledgePackObjectValue -Object $dependency -Key "path")
+                    if ([string]::IsNullOrWhiteSpace($depId)) {
+                        $hookToolDependencyOffenders += "hook $hookId tool dependency missing id"
+                    }
+                    if ([string]::IsNullOrWhiteSpace($depVersion)) {
+                        $hookToolDependencyOffenders += "hook $hookId tool dependency $depId missing version"
+                    }
+                    if ([string]::IsNullOrWhiteSpace($depInstallMethod) -or $validInstallMethods -notcontains $depInstallMethod) {
+                        $hookToolDependencyOffenders += "hook $hookId tool dependency $depId has unsupported install_method: $depInstallMethod"
+                    }
+                    if ($depInstallMethod -eq "pack-local-script") {
+                        if (-not (Test-KnowledgePackSafeRelativePath -RelativePath $depPath)) {
+                            $hookToolDependencyOffenders += "hook $hookId tool dependency $depId has unsafe path: $depPath"
+                        } else {
+                            $depFullPath = Join-Path $capabilityLayers["hooks"].path ($depPath -replace "/", "\")
+                            if (-not (Test-Path -LiteralPath $depFullPath -PathType Leaf)) {
+                                $hookToolDependencyOffenders += "hook $hookId tool dependency $depId path not found: $depPath"
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         $capabilityIndexPath = Join-Path $packRootResolved "capabilities\index.yml"
         if ($extraCapabilityLayerPresent -and -not (Test-Path -LiteralPath $capabilityIndexPath -PathType Leaf)) {
@@ -160,6 +265,15 @@ try {
         }
         if ($scriptExtensionOffenders.Count -gt 0) {
             Set-KnowledgePackBlocked $result ("unsupported script files in capability pack: " + (($scriptExtensionOffenders | Select-Object -Unique) -join ", "))
+        }
+        if ($hookExtensionOffenders.Count -gt 0) {
+            Set-KnowledgePackBlocked $result ("unsupported hook files in capability pack: " + (($hookExtensionOffenders | Select-Object -Unique) -join ", "))
+        }
+        if ($hookSchemaOffenders.Count -gt 0) {
+            Set-KnowledgePackBlocked $result ("invalid workflow hooks: " + (($hookSchemaOffenders | Select-Object -Unique) -join "; "))
+        }
+        if ($hookToolDependencyOffenders.Count -gt 0) {
+            Set-KnowledgePackBlocked $result ("invalid hook tool dependencies: " + (($hookToolDependencyOffenders | Select-Object -Unique) -join "; "))
         }
 
         $aliases = Read-KnowledgeToolAliases -PackRoot $packRootResolved
@@ -183,6 +297,11 @@ try {
         $result.facts.capability_index = $capabilityIndexPath
         $result.facts.capability_layers = $capabilityLayerFacts
         $result.facts.script_hashes = $scriptHashes
+        $result.facts.hook_hashes = $hookHashes
+        $result.facts.workflow_hook_count = $workflowHookCount
+        $result.facts.legacy_hook_count = $legacyHookCount
+        $result.facts.hook_schema_offenders = @($hookSchemaOffenders | Select-Object -Unique)
+        $result.facts.hook_tool_dependency_offenders = @($hookToolDependencyOffenders | Select-Object -Unique)
         $result.facts.hash_algorithm = "sha256"
         $result.facts.tree_sha256 = $treeSha256
         $result.facts.file_count = $fileManifest.Count

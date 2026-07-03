@@ -46,7 +46,7 @@ promotion, report `next_required_human_action`.
 
 Move project or team capability out of Spec Kit core templates and into
 portable packs. A capability pack may provide knowledge, skills, tool policies,
-scripts, prompts, resources, templates, evaluation scenarios, and workspace
+scripts, prompts, resources, templates, workflow hooks, evaluation scenarios, and workspace
 profiles. Knowledge materializes into `ai/knowledge`; executable or behavioral
 capabilities are installed under namespaced workspace-local paths.
 
@@ -75,6 +75,13 @@ capabilities are installed under namespaced workspace-local paths.
      layers for that id, and preserves the current active pack set
    - uninstall removes the installed source and namespaced published layers,
      then re-composes remaining active packs or restores base knowledge
+   - hooks in `hooks/index.yml` are materialized to
+     `.specify/capabilities/hooks/<pack-id>/`, generate
+     `.specify/workflow-hooks.yml`, and install declared hook tools under
+     `.specify/tools/<tool-id>/<version>/`
+   - uninstall removes the pack hook layer, regenerates
+     `.specify/workflow-hooks.yml`, and prunes only hook tool versions no
+     longer referenced by any remaining active pack
 6. Repack the active workspace-local capability layer for distribution:
    - `scripts/powershell/repack-knowledge-pack.ps1 -RepoRoot . -PackId <id> -Mode full-snapshot -IncludeProfiles -Json`
    - local capability overlays live under `.specify/capabilities/overlays/local/<layer>/`
@@ -105,7 +112,18 @@ capabilities are installed under namespaced workspace-local paths.
 - `.specify/knowledge/lock.yml` records installed pack ids, versions, and tool
   aliases applied during materialization.
 - `.specify/capabilities/lock.yml` records namespaced skills, tools, scripts,
-  commands, prompts, resources, and templates published from capability packs.
+  commands, prompts, resources, templates, and hooks published from capability
+  packs.
+- `.specify/workflow-hooks.yml` is generated only when an active pack provides
+  `type: workflow-shell` hooks. No registry or no matching event must preserve
+  existing workflow output and state.
+- `.specify/workflow-hooks.local.yml` is a user-local override for temporarily
+  disabling workflow hooks with `enabled: false`, `disabled_events`,
+  `disabled_hooks`, or `disabled_packs`. Disabled hooks do not write workflow
+  hook state.
+- Hook tool dependencies must pin `id`, `version`, and `install_method`
+  (`pack-local-script`, `npm`, `github-release`, or `manual`). Required
+  dependency failure blocks activation; advisory failure is a warning.
 - Pack `capabilities/index.yml` is the progressive-disclosure registry. It is
   read first; layer files are loaded only when the selected skill, command, or
   task route needs them.
@@ -113,7 +131,7 @@ capabilities are installed under namespaced workspace-local paths.
   tool names without mutating the pack source.
 - Use `scripts/powershell/select-capability.ps1 -RepoRoot . -Layer <layer> -Json`
   to discover published skills, tools, scripts, prompts, commands, resources,
-  or templates without loading their file contents by default.
+  templates, or hooks without loading their file contents by default.
 - Pack `profiles/` can carry workspace and repository-map profiles. Apply them
   only when the target workspace is intended to take that pack's repository
   layout.

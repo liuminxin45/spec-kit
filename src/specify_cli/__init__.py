@@ -4672,7 +4672,7 @@ def _parse_workflow_inputs(input_values: list[str] | None) -> dict[str, Any]:
 
 def _workflow_state_payload(state: Any, project_root: Path) -> dict[str, Any]:
     run_dir = project_root / ".specify" / "workflows" / "runs" / state.run_id
-    return {
+    payload = {
         "run_id": state.run_id,
         "workflow_id": state.workflow_id,
         "status": state.status.value,
@@ -4684,6 +4684,13 @@ def _workflow_state_payload(state: Any, project_root: Path) -> dict[str, Any]:
         "step_results": state.step_results,
         "run_dir": str(run_dir),
     }
+    hook_results = getattr(state, "hook_results", {})
+    if hook_results:
+        payload["hook_results"] = hook_results
+    pending_hook = getattr(state, "pending_hook", None)
+    if pending_hook:
+        payload["pending_hook"] = pending_hook
+    return payload
 
 
 @workflow_app.command("run")
@@ -4750,6 +4757,11 @@ def workflow_run(
     console.print(f"\n[{color}]Status: {state.status.value}[/{color}]")
     console.print(f"[dim]Run ID: {state.run_id}[/dim]")
 
+    if getattr(state, "pending_hook", None):
+        pending = state.pending_hook or {}
+        pending_stage = pending.get("stage_id") or pending.get("step_id")
+        console.print(f"[yellow]Pending hook:[/yellow] {pending.get('phase')} {pending_stage}")
+
     if state.status.value == "paused":
         console.print(f"\nResume with: [cyan]specify workflow resume {state.run_id}[/cyan]")
     elif state.status.value in {"failed", "aborted"}:
@@ -4802,6 +4814,10 @@ def workflow_resume(
             raise typer.Exit(1)
         return
     console.print(f"\n[{color}]Status: {state.status.value}[/{color}]")
+    if getattr(state, "pending_hook", None):
+        pending = state.pending_hook or {}
+        pending_stage = pending.get("stage_id") or pending.get("step_id")
+        console.print(f"[yellow]Pending hook:[/yellow] {pending.get('phase')} {pending_stage}")
     if state.status.value in {"failed", "aborted"}:
         raise typer.Exit(1)
 
@@ -4847,6 +4863,11 @@ def workflow_status(
 
         if state.current_step_id:
             console.print(f"  Current:  {state.current_step_id}")
+
+        if getattr(state, "pending_hook", None):
+            pending = state.pending_hook or {}
+            pending_stage = pending.get("stage_id") or pending.get("step_id")
+            console.print(f"  Hook:     [yellow]pending[/yellow] {pending.get('phase')} {pending_stage}")
 
         if state.step_results:
             console.print(f"\n  [bold]Steps ({len(state.step_results)}):[/bold]")

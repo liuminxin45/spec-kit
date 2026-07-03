@@ -46,23 +46,75 @@ try {
             if ((Test-Path -LiteralPath $destination) -and -not $Force) {
                 Set-KnowledgePackBlocked $result "Pack is already installed; pass -Force to replace: $packSlug"
             } else {
+                $destinationBackup = ""
+                $failedHookToolRefs = @()
                 if (Test-Path -LiteralPath $destination) {
+                    $destinationBackup = Join-Path $knowledgeRoot (".backups\install-" + (Get-Date -Format "yyyyMMdd-HHmmss") + "\packs\$packSlug")
+                    Copy-KnowledgePackDirectory -Source $destination -Destination $destinationBackup
                     Remove-KnowledgePackDirectorySafe -Root $packsRoot -Path $destination
                 }
                 Copy-KnowledgePackDirectory -Source $packRoot -Destination $destination
-                $installRecord = Write-KnowledgePackInstallRecord -RepoRoot $root -PackRoot $destination -InstalledPath $destination -Info $info -Validation $validation -SourcePath $packRoot
+                $failedHookToolRefs = @(Get-KnowledgePackHookToolReferences -PackRoot $destination)
+                $hookTools = [ordered]@{
+                    tool = "install-hook-tools"
+                    status = "ok"
+                    facts = [ordered]@{
+                        repo_root = $root
+                        pack_id = $packSlug
+                        pack_root = $destination
+                        tool_count = 0
+                        tools = @()
+                    }
+                    blockers = @()
+                    unknowns = @()
+                    hints = @()
+                }
+                if (Test-Path -LiteralPath (Join-Path $destination "hooks\index.yml") -PathType Leaf) {
+                    $hookToolsRaw = & "$PSScriptRoot\install-hook-tools.ps1" -RepoRoot $root -PackRoot $destination -PackId $packSlug -Force:$Force -Json
+                    $hookTools = $hookToolsRaw | ConvertFrom-Json
+                    if ($hookTools.status -eq "blocked") {
+                        Set-KnowledgePackBlocked $result ("hook tool installation failed: " + (($hookTools.blockers) -join "; "))
+                    }
+                }
+                if ($result.status -eq "blocked") {
+                    if (Test-Path -LiteralPath $destination) {
+                        Remove-KnowledgePackDirectorySafe -Root $packsRoot -Path $destination
+                    }
+                    if (-not [string]::IsNullOrWhiteSpace($destinationBackup) -and (Test-Path -LiteralPath $destinationBackup -PathType Container)) {
+                        Copy-KnowledgePackDirectory -Source $destinationBackup -Destination $destination
+                    }
+                    $activeHookToolRefs = @()
+                    if (Test-Path -LiteralPath $packsRoot -PathType Container) {
+                        foreach ($installedPack in Get-ChildItem -LiteralPath $packsRoot -Directory -Force) {
+                            $activeHookToolRefs += @(Get-KnowledgePackHookToolReferences -PackRoot $installedPack.FullName)
+                        }
+                    }
+                    $hookToolPrune = Remove-UnusedKnowledgeHookTools -RepoRoot $root -CandidateRefs $failedHookToolRefs -ActiveRefs $activeHookToolRefs
+                    $installRecord = $null
+                } else {
+                    $installRecord = Write-KnowledgePackInstallRecord -RepoRoot $root -PackRoot $destination -InstalledPath $destination -Info $info -Validation $validation -SourcePath $packRoot -HookTools $hookTools
+                    $hookToolPrune = $null
+                }
+                if (-not [string]::IsNullOrWhiteSpace($destinationBackup) -and (Test-Path -LiteralPath $destinationBackup -PathType Container)) {
+                    Remove-KnowledgePackDirectorySafe -Root $knowledgeRoot -Path $destinationBackup
+                }
                 $result.facts.repo_root = $root
                 $result.facts.pack_id = $info.id
                 $result.facts.pack_slug = $packSlug
                 $result.facts.version = $info.version
                 $result.facts.installed_path = $destination
-                $result.facts.install_record = $installRecord.path
-                $result.facts.install_record_index = $installRecord.index
-                $result.facts.tree_sha256 = $installRecord.tree_sha256
-                $result.facts.file_count = $installRecord.file_count
+                $result.facts.install_record = if ($null -ne $installRecord) { $installRecord.path } else { "" }
+                $result.facts.install_record_index = if ($null -ne $installRecord) { $installRecord.index } else { "" }
+                $result.facts.tree_sha256 = if ($null -ne $installRecord) { $installRecord.tree_sha256 } else { "" }
+                $result.facts.file_count = if ($null -ne $installRecord) { $installRecord.file_count } else { 0 }
                 $result.facts.base_knowledge = $baseRoot
                 $result.facts.validation = $validation
-                $result.hints += "Run apply-knowledge-pack.ps1 to materialize installed pack knowledge into ai/knowledge."
+                $result.facts.hook_tools = $hookTools
+                $result.facts.rollback_backup = $destinationBackup
+                $result.facts.hook_tool_prune = $hookToolPrune
+                if ($result.status -ne "blocked") {
+                    $result.hints += "Run apply-knowledge-pack.ps1 to materialize installed pack knowledge into ai/knowledge."
+                }
             }
         }
     }

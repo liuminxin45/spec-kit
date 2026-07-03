@@ -38,9 +38,15 @@ function Write-EmptyKnowledgePackLocks {
         "  []"
     ) | Set-Content -LiteralPath $capabilityLockPath -Encoding utf8
 
+    $workflowHooksPath = Join-Path $Root ".specify\workflow-hooks.yml"
+    if (Test-Path -LiteralPath $workflowHooksPath -PathType Leaf) {
+        Remove-Item -LiteralPath $workflowHooksPath -Force
+    }
+
     return [ordered]@{
         knowledge_lock = $knowledgeLockPath
         capability_lock = $capabilityLockPath
+        workflow_hooks = $workflowHooksPath
     }
 }
 
@@ -63,10 +69,13 @@ try {
     $installedPackRoot = Join-Path $packsRoot $slug
     $lockPath = Join-Path $knowledgeRoot "lock.yml"
     $activeBefore = @()
+    $removedHookToolRefs = @()
     if ($result.status -ne "blocked") {
         $activeBefore = @(Get-KnowledgePackLockPackIds -LockPath $lockPath)
         if (-not (Test-Path -LiteralPath $installedPackRoot -PathType Container) -and -not $Force) {
             Set-KnowledgePackBlocked $result "Installed pack not found: $slug"
+        } elseif (Test-Path -LiteralPath $installedPackRoot -PathType Container) {
+            $removedHookToolRefs = @(Get-KnowledgePackHookToolReferences -PackRoot $installedPackRoot)
         }
     }
 
@@ -95,6 +104,8 @@ try {
         $restoredBase = $false
         $backupRoot = ""
         $emptyLocks = $null
+        $remainingHookToolRefs = @()
+        $hookToolPrune = $null
 
         if ($remainingActive.Count -gt 0) {
             $composeRaw = & "$PSScriptRoot\compose-knowledge-packs.ps1" -RepoRoot $root -PackId $remainingActive -Json
@@ -107,6 +118,10 @@ try {
                 if ($validation.status -eq "blocked") {
                     Set-KnowledgePackBlocked $result ("materialized knowledge failed validation after uninstall: " + (($validation.blockers) -join "; "))
                 }
+            }
+            foreach ($remainingPackId in $remainingActive) {
+                $remainingPackRoot = Join-Path $packsRoot $remainingPackId
+                $remainingHookToolRefs += @(Get-KnowledgePackHookToolReferences -PackRoot $remainingPackRoot)
             }
         } else {
             $activeKnowledge = Join-Path $root "ai\knowledge"
@@ -134,6 +149,10 @@ try {
             $emptyLocks = Write-EmptyKnowledgePackLocks -Root $root
         }
 
+        if ($result.status -ne "blocked") {
+            $hookToolPrune = Remove-UnusedKnowledgeHookTools -RepoRoot $root -CandidateRefs $removedHookToolRefs -ActiveRefs $remainingHookToolRefs
+        }
+
         $result.facts.repo_root = $root
         $result.facts.pack_id = $slug
         $result.facts.removed_installed_path = $installedPackRoot
@@ -147,6 +166,7 @@ try {
         $result.facts.restored_base_knowledge = $restoredBase
         $result.facts.backup_dir = $backupRoot
         $result.facts.empty_locks = $emptyLocks
+        $result.facts.hook_tool_prune = $hookToolPrune
     }
 } catch {
     Set-KnowledgePackBlocked $result $_.Exception.Message

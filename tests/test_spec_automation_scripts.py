@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -57,6 +58,7 @@ AUTOMATION_TOOLS = [
     "evaluate-knowledge-pack-synthesis",
     "export-knowledge-pack",
     "install-knowledge-pack",
+    "install-hook-tools",
     "compose-knowledge-packs",
     "apply-knowledge-pack",
     "update-knowledge-pack",
@@ -69,6 +71,7 @@ AUTOMATION_TOOLS = [
     "bump-spec-kit-version",
     "resolve-next-stage",
     "preflight-push",
+    "invoke-workflow-hooks",
 ]
 
 
@@ -899,6 +902,490 @@ def test_knowledge_pack_exports_installs_and_materializes_with_aliases(tmp_path)
     assert 'install_record: ".specify/knowledge/records/demo-pack.json"' in lock_text
     assert applied["facts"]["validation"]["status"] == "ok"
     assert applied["facts"]["profiles_applied"] == []
+
+
+def test_hook_capability_pack_materializes_registry_and_tools(tmp_path):
+    source = tmp_path / "source-knowledge"
+    (source / "workspace").mkdir(parents=True)
+    (source / "index.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "policy:",
+                "  default_context: false",
+                "  no_full_text_search_required: true",
+                '  repository_map_authority: ".specify/memory/repository-map.md"',
+                "  max_selected_guides: 3",
+                "workspace:",
+                "  overview:",
+                '    guide: "workspace/overview.md"',
+                '    authority: "reviewed"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (source / "workspace" / "overview.md").write_text("Hook pack overview.\n", encoding="utf-8")
+
+    hook_source = tmp_path / "hook-source"
+    hook = hook_source / "demo-hook"
+    hook.mkdir(parents=True)
+    (hook / "run.ps1").write_text(
+        "\n".join(
+            [
+                "$payload = [ordered]@{",
+                '  schema_version = "1.0"',
+                '  status = "passed"',
+                '  action = "continue"',
+                "  auto_continue = $true",
+                '  summary = "hook pack passed"',
+                "  artifact_paths = @()",
+                "}",
+                "$payload | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $env:SPEC_KIT_RESULT_PATH -Encoding utf8",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (hook_source / "index.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "hooks:",
+                '  - id: "demo-hook"',
+                '    type: "workflow-shell"',
+                "    events:",
+                '      - "workflow.demo.echo.after"',
+                '    runner: "demo-hook/run.ps1"',
+                "    timeout_seconds: 30",
+                '    failure_policy: "block"',
+                "    tool_dependencies:",
+                '      - id: "demo-local-tool"',
+                '        version: "1.0.0"',
+                '        install_method: "pack-local-script"',
+                '        path: "demo-hook/run.ps1"',
+                "        required: true",
+                '  - id: "legacy-hint"',
+                '    description: "legacy prompt-only hook"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    pack = tmp_path / "packs" / "hook-demo"
+    exported = run_ps(
+        "export-knowledge-pack",
+        "-SourceKnowledgeDir",
+        str(source),
+        "-PackId",
+        "hook-demo",
+        "-OutputDir",
+        str(pack),
+        "-HooksDir",
+        str(hook_source),
+        "-Force",
+    )
+
+    assert_standard_shape(exported, "export-knowledge-pack")
+    assert exported["status"] == "ok"
+    validation = exported["facts"]["validation"]["facts"]
+    assert validation["capability_layers"]["hooks"]["present"] is True
+    assert validation["workflow_hook_count"] == 1
+    assert validation["legacy_hook_count"] == 1
+    assert validation["hook_tool_dependency_offenders"] == []
+
+    workspace = tmp_path / "workspace"
+    (workspace / ".specify").mkdir(parents=True)
+    applied = run_ps(
+        "apply-knowledge-pack",
+        "-RepoRoot",
+        str(workspace),
+        "-PackPath",
+        str(pack),
+        "-Force",
+    )
+    assert_standard_shape(applied, "apply-knowledge-pack")
+    assert applied["status"] == "ok"
+    assert (workspace / ".specify" / "capabilities" / "hooks" / "hook-demo" / "demo-hook" / "run.ps1").exists()
+    workflow_hooks = (workspace / ".specify" / "workflow-hooks.yml").read_text(encoding="utf-8")
+    assert "workflow.demo.echo.after" in workflow_hooks
+    assert 'type: "workflow-shell"' in workflow_hooks
+    assert "legacy-hint" not in workflow_hooks
+    hook_tools = applied["facts"]["install"]["facts"]["hook_tools"]["facts"]
+    assert hook_tools["tool_count"] == 1
+    assert hook_tools["tools"][0]["id"] == "demo-local-tool"
+    assert hook_tools["tools"][0]["version"] == "1.0.0"
+    assert hook_tools["tools"][0]["install_method"] == "pack-local-script"
+    assert (workspace / ".specify" / "tools" / "lock.yml").exists()
+
+    invoked = run_ps(
+        "invoke-workflow-hooks",
+        "-RepoRoot",
+        str(workspace),
+        "-WorkflowId",
+        "demo",
+        "-StageId",
+        "echo",
+        "-Phase",
+        "after",
+        "-RunId",
+        "r1",
+    )
+    assert_standard_shape(invoked, "invoke-workflow-hooks")
+    assert invoked["status"] == "ok"
+    assert invoked["facts"]["hook_count"] == 1
+    assert invoked["facts"]["aggregate_status"] == "passed"
+    assert invoked["facts"]["auto_continue"] is True
+
+    selected_hooks = run_ps(
+        "select-capability",
+        "-RepoRoot",
+        str(workspace),
+        "-Layer",
+        "hooks",
+    )
+    assert selected_hooks["facts"]["selected"][0]["path"] == ".specify/capabilities/hooks/hook-demo"
+
+    uninstalled = run_ps(
+        "uninstall-knowledge-pack",
+        "-RepoRoot",
+        str(workspace),
+        "-PackId",
+        "hook-demo",
+    )
+    assert_standard_shape(uninstalled, "uninstall-knowledge-pack")
+    assert uninstalled["status"] == "ok"
+    assert not (workspace / ".specify" / "workflow-hooks.yml").exists()
+    assert not (workspace / ".specify" / "capabilities" / "hooks" / "hook-demo").exists()
+    assert not (workspace / ".specify" / "tools" / "demo-local-tool" / "1.0.0").exists()
+    assert not (workspace / ".specify" / "tools" / "records" / "demo-local-tool-1.0.0.json").exists()
+
+
+def test_hook_tool_required_failure_rolls_back_and_blocks_compose(tmp_path):
+    source = tmp_path / "source-knowledge"
+    (source / "workspace").mkdir(parents=True)
+    (source / "index.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "policy:",
+                "  default_context: false",
+                "  no_full_text_search_required: true",
+                '  repository_map_authority: ".specify/memory/repository-map.md"',
+                "  max_selected_guides: 3",
+                "workspace:",
+                "  overview:",
+                '    guide: "workspace/overview.md"',
+                '    authority: "reviewed"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (source / "workspace" / "overview.md").write_text("Hook pack overview.\n", encoding="utf-8")
+
+    hook_source = tmp_path / "hook-source"
+    hook = hook_source / "bad-hook"
+    hook.mkdir(parents=True)
+    (hook / "run.ps1").write_text("exit 0\n", encoding="utf-8")
+    (hook_source / "index.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "hooks:",
+                '  - id: "bad-hook"',
+                '    type: "workflow-shell"',
+                "    events:",
+                '      - "workflow.demo.echo.after"',
+                '    runner: "bad-hook/run.ps1"',
+                "    tool_dependencies:",
+                '      - id: "missing-tool"',
+                '        version: "1.0.0"',
+                '        install_method: "manual"',
+                '        verify_command: "Start-Sleep -Seconds 5"',
+                "        verify_timeout_seconds: 1",
+                "        required: true",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    pack = tmp_path / "packs" / "bad-hook-pack"
+    exported = run_ps(
+        "export-knowledge-pack",
+        "-SourceKnowledgeDir",
+        str(source),
+        "-PackId",
+        "bad-hook-pack",
+        "-OutputDir",
+        str(pack),
+        "-HooksDir",
+        str(hook_source),
+        "-Force",
+    )
+    assert_standard_shape(exported, "export-knowledge-pack")
+    assert exported["status"] == "ok"
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    applied = run_ps(
+        "apply-knowledge-pack",
+        "-RepoRoot",
+        str(workspace),
+        "-PackPath",
+        str(pack),
+        "-Force",
+    )
+    assert_standard_shape(applied, "apply-knowledge-pack")
+    assert applied["status"] == "blocked"
+    assert "verify_command timed out" in "; ".join(applied["blockers"])
+    assert not (workspace / ".specify" / "knowledge" / "packs" / "bad-hook-pack").exists()
+    assert not (workspace / ".specify" / "knowledge" / "records" / "bad-hook-pack.json").exists()
+    assert not (workspace / ".specify" / "workflow-hooks.yml").exists()
+    assert not (workspace / ".specify" / "tools" / "records" / "missing-tool-1.0.0.json").exists()
+
+    installed_pack = workspace / ".specify" / "knowledge" / "packs" / "bad-hook-pack"
+    installed_pack.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(pack, installed_pack)
+    records_dir = workspace / ".specify" / "knowledge" / "records"
+    records_dir.mkdir(parents=True)
+    (records_dir / "bad-hook-pack.json").write_text(
+        json.dumps(
+            {
+                "pack_id": "bad-hook-pack",
+                "slug": "bad-hook-pack",
+                "version": "0.1.0",
+                "hashes": {"tree_sha256": "blocked"},
+                "hook_tools": {
+                    "status": "blocked",
+                    "blockers": ["required hook tool missing"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    composed = run_ps(
+        "compose-knowledge-packs",
+        "-RepoRoot",
+        str(workspace),
+        "-PackId",
+        "bad-hook-pack",
+    )
+    assert_standard_shape(composed, "compose-knowledge-packs")
+    assert composed["status"] == "blocked"
+    assert "blocked hook tool dependencies" in "; ".join(composed["blockers"])
+    assert not (workspace / ".specify" / "workflow-hooks.yml").exists()
+
+
+def test_hook_tool_same_version_conflicting_install_metadata_blocks(tmp_path):
+    workspace = tmp_path / "workspace"
+    records = workspace / ".specify" / "tools" / "records"
+    records.mkdir(parents=True)
+    (records / "shared-tool-1.0.0.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "id": "shared-tool",
+                "slug": "shared-tool",
+                "version": "1.0.0",
+                "install_method": "manual",
+                "status": "installed",
+                "spec_hash": "existing-spec",
+                "resolved_command": "shared-tool --run",
+                "verify_command": "exit 0",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    pack = tmp_path / "pack"
+    (pack / "ai" / "knowledge" / "workspace").mkdir(parents=True)
+    (pack / "hooks" / "demo").mkdir(parents=True)
+    (pack / "ai" / "knowledge" / "index.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "policy:",
+                "  default_context: false",
+                "  no_full_text_search_required: true",
+                '  repository_map_authority: ".specify/memory/repository-map.md"',
+                "  max_selected_guides: 3",
+                "workspace:",
+                "  overview:",
+                '    guide: "workspace/overview.md"',
+                '    authority: "reviewed"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (pack / "ai" / "knowledge" / "workspace" / "overview.md").write_text("overview\n", encoding="utf-8")
+    (pack / "knowledge-pack.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                'id: "conflict-pack"',
+                'title: "conflict-pack"',
+                'version: "0.1.0"',
+                'kind: "capability-pack"',
+                "compose:",
+                '  strategy: "overlay-active-knowledge"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    shutil.copyfile(pack / "knowledge-pack.yml", pack / "pack.yml")
+    (pack / "hooks" / "demo" / "run.ps1").write_text("exit 0\n", encoding="utf-8")
+    (pack / "hooks" / "index.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "hooks:",
+                '  - id: "demo"',
+                '    type: "workflow-shell"',
+                "    events:",
+                '      - "workflow.demo.echo.after"',
+                '    runner: "demo/run.ps1"',
+                "    tool_dependencies:",
+                '      - id: "shared-tool"',
+                '        version: "1.0.0"',
+                '        install_method: "manual"',
+                '        verify_command: "exit 0"',
+                '        command: "different-shared-tool --run"',
+                "        required: true",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    installed = run_ps(
+        "install-hook-tools",
+        "-RepoRoot",
+        str(workspace),
+        "-PackRoot",
+        str(pack),
+        "-PackId",
+        "conflict-pack",
+    )
+    assert_standard_shape(installed, "install-hook-tools")
+    assert installed["status"] == "blocked"
+    assert "conflicts with an existing install record" in "; ".join(installed["blockers"])
+    record = json.loads((records / "shared-tool-1.0.0.json").read_text(encoding="utf-8"))
+    assert record["spec_hash"] == "existing-spec"
+
+
+def test_invoke_workflow_hooks_normalizes_rework_timeout_and_non_json(tmp_path):
+    workspace = tmp_path / "workspace"
+    hook_dir = workspace / ".specify" / "capabilities" / "hooks" / "local"
+    hook_dir.mkdir(parents=True)
+    (hook_dir / "rework.ps1").write_text(
+        "\n".join(
+            [
+                "$payload = [ordered]@{",
+                '  status = "requires_rework"',
+                '  action = "rework"',
+                "  auto_continue = $false",
+                '  summary = "needs implementation rework"',
+                "  artifact_paths = @()",
+                "}",
+                "$payload | ConvertTo-Json -Depth 5",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (hook_dir / "timeout.ps1").write_text("Start-Sleep -Seconds 5\n", encoding="utf-8")
+    (hook_dir / "non-json-fail.ps1").write_text("Write-Output 'plain failure'; exit 7\n", encoding="utf-8")
+    (workspace / ".specify" / "workflow-hooks.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "hooks:",
+                '  - id: "local.rework"',
+                '    type: "workflow-shell"',
+                "    events:",
+                '      - "workflow.demo.rework.after"',
+                '    runner: \'pwsh -NoProfile -File ".specify/capabilities/hooks/local/rework.ps1"\'',
+                "    timeout_seconds: 30",
+                '    failure_policy: "block"',
+                '  - id: "local.timeout"',
+                '    type: "workflow-shell"',
+                "    events:",
+                '      - "workflow.demo.timeout.after"',
+                '    runner: \'pwsh -NoProfile -File ".specify/capabilities/hooks/local/timeout.ps1"\'',
+                "    timeout_seconds: 1",
+                '    failure_policy: "block"',
+                '  - id: "local.non-json-fail"',
+                '    type: "workflow-shell"',
+                "    events:",
+                '      - "workflow.demo.non-json.after"',
+                '    runner: \'pwsh -NoProfile -File ".specify/capabilities/hooks/local/non-json-fail.ps1"\'',
+                "    timeout_seconds: 30",
+                '    failure_policy: "block"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    rework = run_ps(
+        "invoke-workflow-hooks",
+        "-RepoRoot",
+        str(workspace),
+        "-WorkflowId",
+        "demo",
+        "-StageId",
+        "rework",
+        "-Phase",
+        "after",
+        "-RunId",
+        "r1",
+    )
+    assert_standard_shape(rework, "invoke-workflow-hooks")
+    assert rework["status"] == "blocked"
+    assert rework["facts"]["aggregate_status"] == "requires_rework"
+    assert rework["facts"]["action"] == "rework"
+    assert rework["facts"]["auto_continue"] is False
+
+    timed_out = run_ps(
+        "invoke-workflow-hooks",
+        "-RepoRoot",
+        str(workspace),
+        "-WorkflowId",
+        "demo",
+        "-StageId",
+        "timeout",
+        "-Phase",
+        "after",
+        "-RunId",
+        "r1",
+    )
+    assert_standard_shape(timed_out, "invoke-workflow-hooks")
+    assert timed_out["status"] == "blocked"
+    assert timed_out["facts"]["aggregate_status"] == "failed"
+    assert timed_out["facts"]["results"][0]["timed_out"] is True
+    assert "timed out" in timed_out["facts"]["summary"]
+
+    non_json = run_ps(
+        "invoke-workflow-hooks",
+        "-RepoRoot",
+        str(workspace),
+        "-WorkflowId",
+        "demo",
+        "-StageId",
+        "non-json",
+        "-Phase",
+        "after",
+        "-RunId",
+        "r1",
+    )
+    assert_standard_shape(non_json, "invoke-workflow-hooks")
+    assert non_json["status"] == "blocked"
+    assert non_json["facts"]["aggregate_status"] == "failed"
+    assert non_json["facts"]["results"][0]["exit_code"] == 7
+    assert "exit code 7" in non_json["facts"]["summary"]
 
 
 def test_capability_pack_exports_materializes_and_repacks_layers(tmp_path):
@@ -3269,7 +3756,8 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         "tasks -> analyze -> checklist\nstandard-bugfix-lite\nworkpack.md\nresolve-next-stage\n"
         "validate-generated-context\nvalidate-knowledge-index\n"
         "validate-context-budget\nselect-knowledge\nselect-gates\nskill-routing.yml\nartifact_sections\n"
-        "Stage Continuation\nFinal Response Guard\ninspect-workflow-closure\n"
+        "Stage Continuation\nWorkflow Hooks\ninvoke-workflow-hooks\nauto_continue=true\n"
+        "Final Response Guard\ninspect-workflow-closure\n"
         "workflow-observer\npromote-candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
         "capture-cdp-screenshot\n"
@@ -3285,7 +3773,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
     )
     (repo / "ai" / "rules" / "ai-coding-rules.md").write_text(
         "Generated Context Drift\nstandard-bugfix-lite\nworkpack.md\nresolve-next-stage\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
-        "Stage Continuation Contract\nHost Frontend Delivery Chain\n"
+        "Stage Continuation Contract\nWorkflow hooks are script-owned\ninvoke-workflow-hooks\nHost Frontend Delivery Chain\n"
         "ensure-host-cdp\n"
         "Retrospective/留痕 is mandatory before commit\n"
         "inspect-workflow-closure\nknowledge-candidates.md\npreflight-push\n",
@@ -3294,7 +3782,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
     (repo / "spec-kit" / "workflows" / "speckit" / "workflow.yml").write_text(
         "id: retrospective\nid: workflow-observer\nid: commit\nstandard-bugfix-lite\nrequires_confirmation: true\nRequire workflow-record.md\n"
         "knowledge-candidates.md\nworkflow-observation.md\n"
-        "automatic_stage_continuation\ndeterministic_next_stage\npost_human_acceptance_closure\n"
+        "automatic_stage_continuation\ndeterministic_next_stage\nworkflow_hooks\ninvoke-workflow-hooks\n.specify/workflow-hooks.yml\npost_human_acceptance_closure\n"
         "promote_knowledge_candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
         "capture-cdp-screenshot\n"
@@ -3453,7 +3941,8 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         "tasks -> analyze -> checklist\nstandard-bugfix-lite\nworkpack.md\nresolve-next-stage\n"
         "validate-generated-context\nvalidate-knowledge-index\n"
         "validate-context-budget\nselect-knowledge\nselect-gates\nskill-routing.yml\nartifact_sections\n"
-        "Stage Continuation\nFinal Response Guard\ninspect-workflow-closure\n"
+        "Stage Continuation\nWorkflow Hooks\ninvoke-workflow-hooks\nauto_continue=true\n"
+        "Final Response Guard\ninspect-workflow-closure\n"
         "workflow-observer\npromote-candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
         "capture-cdp-screenshot\n"
@@ -3469,7 +3958,7 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
     )
     (repo / "ai" / "rules" / "ai-coding-rules.md").write_text(
         "Generated Context Drift\nstandard-bugfix-lite\nworkpack.md\nresolve-next-stage\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
-        "Stage Continuation Contract\nHost Frontend Delivery Chain\n"
+        "Stage Continuation Contract\nWorkflow hooks are script-owned\ninvoke-workflow-hooks\nHost Frontend Delivery Chain\n"
         "ensure-host-cdp\n"
         "Retrospective/留痕 is mandatory before commit\n"
         "inspect-workflow-closure\nknowledge-candidates.md\npreflight-push\n",
@@ -3478,7 +3967,7 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
     (repo / "spec-kit" / "workflows" / "speckit" / "workflow.yml").write_text(
         "id: retrospective\nid: workflow-observer\nid: commit\nstandard-bugfix-lite\nrequires_confirmation: true\nRequire workflow-record.md\n"
         "knowledge-candidates.md\nworkflow-observation.md\n"
-        "automatic_stage_continuation\ndeterministic_next_stage\npost_human_acceptance_closure\n"
+        "automatic_stage_continuation\ndeterministic_next_stage\nworkflow_hooks\ninvoke-workflow-hooks\n.specify/workflow-hooks.yml\npost_human_acceptance_closure\n"
         "promote_knowledge_candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
         "capture-cdp-screenshot\n"

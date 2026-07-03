@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -248,6 +249,8 @@ class RunState:
         self.current_step_index = 0
         self.current_step_id: str | None = None
         self.step_results: dict[str, dict[str, Any]] = {}
+        self.hook_results: dict[str, Any] = {}
+        self.pending_hook: dict[str, Any] | None = None
         self.inputs: dict[str, Any] = {}
         self.created_at = datetime.now(timezone.utc).isoformat()
         self.updated_at = self.created_at
@@ -273,6 +276,10 @@ class RunState:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
+        if self.hook_results:
+            state_data["hook_results"] = self.hook_results
+        if self.pending_hook is not None:
+            state_data["pending_hook"] = self.pending_hook
         with open(runs_dir / "state.json", "w", encoding="utf-8") as f:
             json.dump(state_data, f, indent=2)
 
@@ -301,6 +308,8 @@ class RunState:
         state.current_step_index = state_data.get("current_step_index", 0)
         state.current_step_id = state_data.get("current_step_id")
         state.step_results = state_data.get("step_results", {})
+        state.hook_results = state_data.get("hook_results", {})
+        state.pending_hook = state_data.get("pending_hook")
         state.created_at = state_data.get("created_at", "")
         state.updated_at = state_data.get("updated_at", "")
 
@@ -430,6 +439,7 @@ class WorkflowEngine:
             default_options=definition.default_options,
             project_root=str(self.project_root),
             run_id=state.run_id,
+            workflow_id=definition.id,
         )
 
         # Execute steps
@@ -479,12 +489,22 @@ class WorkflowEngine:
             default_options=definition.default_options,
             project_root=str(self.project_root),
             run_id=state.run_id,
+            workflow_id=definition.id,
         )
 
         from . import STEP_REGISTRY
 
         state.status = RunStatus.RUNNING
         state.save()
+
+        skip_hook_events: set[str] = set()
+        if state.pending_hook:
+            pending_hook = dict(state.pending_hook)
+            if not self._resolve_pending_hook(context, state):
+                return state
+            pending_event = str(pending_hook.get("event") or "")
+            if pending_event:
+                skip_hook_events.add(pending_event)
 
         # Resume from the current step — re-execute it so gates
         # can prompt interactively again.
@@ -496,6 +516,7 @@ class WorkflowEngine:
             self._execute_steps(
                 remaining_steps, context, state, STEP_REGISTRY,
                 step_offset=step_offset,
+                skip_hook_events=skip_hook_events,
             )
         except KeyboardInterrupt:
             state.status = RunStatus.PAUSED
@@ -522,11 +543,14 @@ class WorkflowEngine:
         registry: dict[str, Any],
         *,
         step_offset: int = 0,
+        skip_hook_events: set[str] | None = None,
     ) -> None:
         """Execute a list of steps sequentially."""
+        skip_hook_events = skip_hook_events or set()
         for i, step_config in enumerate(steps):
             step_id = step_config.get("id", f"step-{i}")
             step_type = step_config.get("type", "command")
+            is_top_level_step = step_offset >= 0
 
             state.current_step_id = step_id
             if step_offset >= 0:
@@ -536,6 +560,23 @@ class WorkflowEngine:
             state.append_log(
                 {"event": "step_started", "step_id": step_id, "type": step_type}
             )
+
+            if is_top_level_step:
+                before_event = self._workflow_hook_event_name(
+                    context.workflow_id or state.workflow_id,
+                    step_id,
+                    "before",
+                )
+                if before_event in skip_hook_events:
+                    skip_hook_events.remove(before_event)
+                elif not self._dispatch_step_hooks(
+                    step_id,
+                    "before",
+                    context,
+                    state,
+                    pause_step_index=state.current_step_index,
+                ):
+                    return
 
             if not self._confirm_step_if_required(step_config, state):
                 return
@@ -705,6 +746,351 @@ class WorkflowEngine:
                     result.output["results"] = []
                     context.steps[step_id]["output"] = result.output
                     state.step_results[step_id]["output"] = result.output
+
+            if is_top_level_step:
+                after_event = self._workflow_hook_event_name(
+                    context.workflow_id or state.workflow_id,
+                    step_id,
+                    "after",
+                )
+                if after_event in skip_hook_events:
+                    skip_hook_events.remove(after_event)
+                elif not self._dispatch_step_hooks(
+                    step_id,
+                    "after",
+                    context,
+                    state,
+                    pause_step_index=state.current_step_index + 1,
+                ):
+                    return
+
+    def _dispatch_step_hooks(
+        self,
+        step_id: str,
+        phase: str,
+        context: StepContext,
+        state: RunState,
+        *,
+        pause_step_index: int,
+    ) -> bool:
+        """Run synchronous workflow hooks for a top-level step phase."""
+        if not self._workflow_hooks_registry_path().is_file():
+            return True
+
+        workflow_id = context.workflow_id or state.workflow_id
+        event_name = self._workflow_hook_event_name(workflow_id, step_id, phase)
+        hook_result = self._invoke_workflow_hook_runner(
+            event_name=event_name,
+            workflow_id=workflow_id,
+            stage_id=step_id,
+            phase=phase,
+            state=state,
+        )
+        facts = hook_result.get("facts", {})
+        if not isinstance(facts, dict):
+            facts = {}
+        hook_count = self._as_int(facts.get("hook_count"))
+        if hook_count <= 0:
+            return True
+
+        aggregate_status = str(facts.get("aggregate_status") or "failed")
+        action = str(facts.get("action") or self._default_hook_action(aggregate_status))
+        auto_continue = self._as_bool(
+            facts.get("auto_continue"),
+            default=aggregate_status in {"passed", "warning", "skipped"},
+        )
+        summary = str(facts.get("summary") or "")
+        artifacts = self._as_string_list(facts.get("artifact_paths"))
+        results = facts.get("results")
+        if not isinstance(results, list):
+            results = []
+
+        event_record = {
+            "schema_version": "1.0",
+            "event": event_name,
+            "workflow_id": workflow_id,
+            "stage_id": step_id,
+            "phase": phase,
+            "status": aggregate_status,
+            "action": action,
+            "auto_continue": auto_continue,
+            "summary": summary,
+            "artifact_paths": artifacts,
+            "results": results,
+        }
+        state.hook_results[event_name] = event_record
+        state.append_log(
+            {
+                "event": "workflow_hook_completed",
+                "hook_event": event_name,
+                "step_id": step_id,
+                "phase": phase,
+                "status": aggregate_status,
+                "auto_continue": auto_continue,
+                "hook_count": hook_count,
+            }
+        )
+        if auto_continue:
+            if state.pending_hook and state.pending_hook.get("event") == event_name:
+                state.pending_hook = None
+            state.save()
+            return True
+
+        state.status = RunStatus.PAUSED
+        state.current_step_index = pause_step_index
+        state.pending_hook = {
+            **event_record,
+            "resume_step_index": pause_step_index,
+            "retry_on_resume": True,
+        }
+        state.append_log(
+            {
+                "event": "workflow_hook_paused",
+                "hook_event": event_name,
+                "step_id": step_id,
+                "phase": phase,
+                "status": aggregate_status,
+                "action": action,
+                "summary": summary,
+            }
+        )
+        state.save()
+        return False
+
+    def _resolve_pending_hook(self, context: StepContext, state: RunState) -> bool:
+        pending = state.pending_hook or {}
+        stage_id = str(pending.get("stage_id") or pending.get("step_id") or "")
+        phase = str(pending.get("phase") or "")
+        if not stage_id or phase not in {"before", "after"}:
+            state.pending_hook = None
+            state.save()
+            return True
+
+        pause_step_index = self._as_int(
+            pending.get("resume_step_index"),
+            default=state.current_step_index,
+        )
+        if self._dispatch_step_hooks(
+            stage_id,
+            phase,
+            context,
+            state,
+            pause_step_index=pause_step_index,
+        ):
+            state.pending_hook = None
+            state.append_log(
+                {
+                    "event": "workflow_hook_resolved",
+                    "hook_event": pending.get("event"),
+                    "step_id": stage_id,
+                    "phase": phase,
+                }
+            )
+            state.save()
+            return True
+        return False
+
+    @staticmethod
+    def _workflow_hook_event_name(
+        workflow_id: str,
+        step_id: str,
+        phase: str,
+    ) -> str:
+        return f"workflow.{workflow_id}.{step_id}.{phase}"
+
+    def _workflow_hooks_registry_path(self) -> Path:
+        return self.project_root / ".specify" / "workflow-hooks.yml"
+
+    def _workflow_hook_runner_script(self) -> Path | None:
+        candidates = [
+            self.project_root / "scripts" / "powershell" / "invoke-workflow-hooks.ps1",
+            Path(__file__).resolve().parents[3]
+            / "scripts"
+            / "powershell"
+            / "invoke-workflow-hooks.ps1",
+            Path(__file__).resolve().parents[1]
+            / "core_pack"
+            / "scripts"
+            / "powershell"
+            / "invoke-workflow-hooks.ps1",
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return None
+
+    def _invoke_workflow_hook_runner(
+        self,
+        *,
+        event_name: str,
+        workflow_id: str,
+        stage_id: str,
+        phase: str,
+        state: RunState,
+    ) -> dict[str, Any]:
+        script = self._workflow_hook_runner_script()
+        if script is None:
+            return self._runner_failure_result(
+                event_name,
+                "invoke-workflow-hooks.ps1 not found",
+            )
+
+        context_payload = {
+            "inputs": state.inputs,
+            "steps": state.step_results,
+            "current_step_id": state.current_step_id,
+            "current_step_index": state.current_step_index,
+            "project_root": str(self.project_root),
+            "run_id": state.run_id,
+        }
+        event_slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", event_name).strip("-") or "hook"
+        context_dir = (
+            self.project_root
+            / ".specify"
+            / "workflows"
+            / "runs"
+            / state.run_id
+            / "hooks"
+            / event_slug
+        )
+        context_dir.mkdir(parents=True, exist_ok=True)
+        context_path = context_dir / "context.json"
+        with open(context_path, "w", encoding="utf-8") as f:
+            json.dump(context_payload, f, ensure_ascii=False, indent=2)
+
+        command = [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(script),
+            "-RepoRoot",
+            str(self.project_root),
+            "-WorkflowId",
+            workflow_id,
+            "-StageId",
+            stage_id,
+            "-Phase",
+            phase,
+            "-RunId",
+            state.run_id,
+            "-ContextPath",
+            str(context_path),
+            "-Json",
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=self.project_root,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                timeout=3600,
+            )
+        except subprocess.TimeoutExpired:
+            return self._runner_failure_result(
+                event_name,
+                "workflow hook runner timed out",
+            )
+
+        payload = self._read_json_object_from_text(completed.stdout)
+        if payload is None:
+            payload = self._runner_failure_result(
+                event_name,
+                "workflow hook runner did not return JSON",
+            )
+            stderr = completed.stderr.strip()
+            if stderr:
+                payload["hints"] = [stderr]
+        if completed.returncode != 0 and payload.get("status") == "ok":
+            payload["status"] = "blocked"
+            facts = payload.setdefault("facts", {})
+            if isinstance(facts, dict):
+                facts["aggregate_status"] = "failed"
+                facts["action"] = "fail"
+                facts["auto_continue"] = False
+                facts["summary"] = facts.get("summary") or "workflow hook runner failed"
+        return payload
+
+    @staticmethod
+    def _runner_failure_result(event_name: str, summary: str) -> dict[str, Any]:
+        return {
+            "tool": "invoke-workflow-hooks",
+            "status": "blocked",
+            "facts": {
+                "event": event_name,
+                "hook_count": 1,
+                "aggregate_status": "failed",
+                "action": "fail",
+                "auto_continue": False,
+                "summary": summary,
+                "artifact_paths": [],
+                "results": [],
+            },
+            "blockers": [summary],
+            "unknowns": [],
+            "hints": [],
+        }
+
+    @staticmethod
+    def _read_json_object_from_text(text: str) -> dict[str, Any] | None:
+        stripped = text.strip()
+        if not stripped:
+            return None
+        candidates = [stripped]
+        lines = [line.strip() for line in stripped.splitlines() if line.strip()]
+        candidates.extend(line for line in lines if line.startswith("{") and line.endswith("}"))
+        first = stripped.find("{")
+        last = stripped.rfind("}")
+        if first >= 0 and last > first:
+            candidates.append(stripped[first : last + 1])
+        for candidate in candidates:
+            try:
+                data = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(data, dict):
+                return data
+        return None
+
+    @staticmethod
+    def _default_hook_action(status: str) -> str:
+        if status == "requires_rework":
+            return "rework"
+        if status == "failed":
+            return "fail"
+        if status == "blocked":
+            return "pause"
+        return "continue"
+
+    @staticmethod
+    def _as_int(value: Any, default: int = 0) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _as_bool(value: Any, *, default: bool = False) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"true", "1", "yes"}:
+                return True
+            if lowered in {"false", "0", "no"}:
+                return False
+        return default
+
+    @staticmethod
+    def _as_string_list(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value] if value else []
+        if isinstance(value, list):
+            return [str(item) for item in value if item is not None]
+        return [str(value)]
 
     def _confirm_step_if_required(
         self,

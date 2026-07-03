@@ -1,6 +1,6 @@
 param(
     [string]$RepoRoot = "",
-    [ValidateSet("", "skills", "tools", "scripts", "commands", "prompts", "resources", "templates")]
+    [ValidateSet("", "skills", "tools", "scripts", "commands", "prompts", "resources", "templates", "hooks")]
     [string]$Layer = "",
     [string]$PackId = "",
     [int]$MaxSelected = 6,
