@@ -59,6 +59,7 @@ AUTOMATION_TOOLS = [
     "export-knowledge-pack",
     "install-knowledge-pack",
     "install-hook-tools",
+    "new-workflow-hook-pack",
     "compose-knowledge-packs",
     "apply-knowledge-pack",
     "update-knowledge-pack",
@@ -1059,6 +1060,131 @@ def test_hook_capability_pack_materializes_registry_and_tools(tmp_path):
     assert not (workspace / ".specify" / "capabilities" / "hooks" / "hook-demo").exists()
     assert not (workspace / ".specify" / "tools" / "demo-local-tool" / "1.0.0").exists()
     assert not (workspace / ".specify" / "tools" / "records" / "demo-local-tool-1.0.0.json").exists()
+
+
+def test_hook_scaffold_open_code_review_pack_lifecycle(tmp_path):
+    workspace = tmp_path / "workspace"
+    (workspace / ".specify").mkdir(parents=True)
+    fake_ocr = workspace / "fake-ocr.ps1"
+    fake_ocr.write_text(
+        "\n".join(
+            [
+                "param([string]$Mode)",
+                "if ($Mode -eq 'version') { Write-Output 'open-code-review 1.3.13'; exit 0 }",
+                "$payload = @{ issues = @(@{ severity = 'high'; message = 'demo blocker' }) }",
+                "$payload | ConvertTo-Json -Depth 5",
+                "exit 0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    command = "pwsh -NoProfile -File ./fake-ocr.ps1"
+    scaffold = run_specify_cli(
+        workspace,
+        "hook",
+        "scaffold",
+        "open-code-review",
+        "--event",
+        "workflow.speckit.commit.after",
+        "--version",
+        "1.3.13",
+        "--install-method",
+        "manual",
+        "--command",
+        command,
+        "--verify-command",
+        f"{command} version",
+        "--verify-timeout-seconds",
+        "10",
+        "--timeout-seconds",
+        "30",
+        "--apply",
+        "--force",
+        "--json",
+    )
+
+    assert scaffold.returncode == 0, scaffold.stdout + scaffold.stderr
+    scaffold_payload = json.loads(scaffold.stdout)
+    assert_standard_shape(scaffold_payload, "new-workflow-hook-pack")
+    assert scaffold_payload["status"] == "ok"
+    assert scaffold_payload["facts"]["pack_id"] == "open-code-review"
+    pack_root = Path(scaffold_payload["facts"]["pack_root"])
+    assert (pack_root / "hooks" / "index.yml").exists()
+    hooks_index = (pack_root / "hooks" / "index.yml").read_text(encoding="utf-8")
+    assert "workflow.speckit.commit.after" in hooks_index
+    assert 'id: "open-code-review"' in hooks_index
+    assert 'version: "1.3.13"' in hooks_index
+    assert 'install_method: "manual"' in hooks_index
+    assert "fake-ocr.ps1" in hooks_index
+
+    applied = scaffold_payload["facts"]["applied_pack"]
+    assert_standard_shape(applied, "apply-knowledge-pack")
+    assert applied["status"] == "ok"
+    assert (workspace / ".specify" / "workflow-hooks.yml").exists()
+    assert (workspace / ".specify" / "capabilities" / "hooks" / "open-code-review").exists()
+    tool_record = workspace / ".specify" / "tools" / "records" / "open-code-review-1.3.13.json"
+    assert tool_record.exists()
+    record_payload = json.loads(tool_record.read_text(encoding="utf-8"))
+    assert record_payload["id"] == "open-code-review"
+    assert record_payload["version"] == "1.3.13"
+    assert record_payload["install_method"] == "manual"
+    assert record_payload["verify_command"].endswith("./fake-ocr.ps1 version")
+
+    invoked = run_ps(
+        "invoke-workflow-hooks",
+        "-RepoRoot",
+        str(workspace),
+        "-WorkflowId",
+        "speckit",
+        "-StageId",
+        "commit",
+        "-Phase",
+        "after",
+        "-RunId",
+        "ocr-run",
+    )
+    assert_standard_shape(invoked, "invoke-workflow-hooks")
+    assert invoked["status"] == "blocked"
+    assert invoked["facts"]["aggregate_status"] == "requires_rework"
+    assert invoked["facts"]["action"] == "rework"
+    assert invoked["facts"]["auto_continue"] is False
+    assert "blocking finding" in invoked["facts"]["summary"]
+
+    repacked = run_ps(
+        "repack-knowledge-pack",
+        "-RepoRoot",
+        str(workspace),
+        "-PackId",
+        "open-code-review",
+        "-OutputDir",
+        str(tmp_path / "repacked-open-code-review"),
+        "-Force",
+    )
+    assert_standard_shape(repacked, "repack-knowledge-pack")
+    assert repacked["status"] == "ok"
+    repacked_root = Path(repacked["facts"]["pack_root"])
+    repacked_hook_index = (repacked_root / "hooks" / "index.yml").read_text(encoding="utf-8")
+    assert "workflow.speckit.commit.after" in repacked_hook_index
+    assert 'id: "open-code-review"' in repacked_hook_index
+    assert 'version: "1.3.13"' in repacked_hook_index
+    assert 'install_method: "manual"' in repacked_hook_index
+    assert "fake-ocr.ps1" in repacked_hook_index
+    assert not (repacked_root / ".specify" / "tools").exists()
+
+    uninstalled = run_ps(
+        "uninstall-knowledge-pack",
+        "-RepoRoot",
+        str(workspace),
+        "-PackId",
+        "open-code-review",
+    )
+    assert_standard_shape(uninstalled, "uninstall-knowledge-pack")
+    assert uninstalled["status"] == "ok"
+    assert not (workspace / ".specify" / "workflow-hooks.yml").exists()
+    assert not (workspace / ".specify" / "capabilities" / "hooks" / "open-code-review").exists()
+    assert not (workspace / ".specify" / "knowledge" / "records" / "open-code-review.json").exists()
+    assert not tool_record.exists()
+    assert not (workspace / ".specify" / "tools" / "open-code-review" / "1.3.13").exists()
 
 
 def test_hook_tool_required_failure_rolls_back_and_blocks_compose(tmp_path):

@@ -1,8 +1,7 @@
 # Spec Kit Task Routing
-This compact routing guide is not a full process manual. Load it with
-`AGENTS.md`, `.specify/workspace.yml`, and `.specify/memory/repository-map.md`.
+This compact routing guide is not a full manual. Load it with `AGENTS.md`, `.specify/workspace.yml`, and `.specify/memory/repository-map.md`.
 ## Default Rule
-Start light. Upgrade only when evidence, risk, or scope requires it. Do not route by matching user text keywords alone.
+Start light; upgrade only when evidence, risk, or scope requires it. Do not route by matching user text keywords alone.
 ## Internal Skill Loading
 Codex natively discovers only `.agents/skills/speckit-specify/SKILL.md`. For later stages or reusable capabilities, read `ai/workflows/skill-routing.yml` first, then load only the selected `.agents/spec-kit/skills/<skill>/SKILL.md`. Do not pre-load the internal skill directory.
 ## Stage Continuation
@@ -21,15 +20,14 @@ user pause. If stopping, do not claim automatic entry; record `blockers` and
 `next_required_human_action`. A plain completion summary or "自动进入"/
 "continue to" promise without execution is non-compliant.
 ## Workflow Hooks
-Workflow hooks are optional and default off. If `.specify/workflow-hooks.yml`
-is missing or no `workflow.<workflow-id>.<stage-id>.<before|after>` hook
-matches, do not add hook state or change output. Matching `type:
-workflow-shell` hooks are deterministic script gates: wait for
-`invoke-workflow-hooks`, continue only when the normalized result has
-`auto_continue=true`, and otherwise keep the workflow paused with the hook
-summary/artifacts. `.specify/workflow-hooks.local.yml` may disable all hooks,
-specific events, hook ids, or pack ids locally; disabled hooks are skipped
-without adding workflow hook state.
+Workflow hooks default off. If `.specify/workflow-hooks.yml` is missing or no
+`workflow.<workflow-id>.<stage-id>.<before|after>` hook matches, do not add
+hook state or change output. Matching `type: workflow-shell` hooks are
+deterministic gates: wait for `invoke-workflow-hooks`, continue only when
+`auto_continue=true`, otherwise pause with the hook summary/artifacts.
+`.specify/workflow-hooks.local.yml` may disable hooks without adding state.
+For new external-tool hooks, use `specify hook scaffold` or
+`new-workflow-hook-pack.ps1`; do not hand-write `.specify/workflow-hooks.yml`.
 ## Final Response Guard
 Before any final response after human acceptance, commit, post-commit
 self-check, or rubric work, run `inspect-workflow-closure` for the active

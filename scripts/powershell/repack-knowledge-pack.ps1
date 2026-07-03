@@ -108,7 +108,7 @@ try {
             @{ key = "PromptsDir"; name = "prompts"; published = @(@{ path = ".specify\capabilities\prompts"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\prompts") },
             @{ key = "ResourcesDir"; name = "resources"; published = @(@{ path = ".specify\capabilities\resources"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\resources") },
             @{ key = "TemplatesDir"; name = "templates"; published = @(@{ path = ".specify\capabilities\templates"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\templates") },
-            @{ key = "HooksDir"; name = "hooks"; published = @(@{ path = ".specify\capabilities\hooks"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\hooks") }
+            @{ key = "HooksDir"; name = "hooks"; published = @(@{ path = ".specify\capabilities\hooks\$PackId"; pattern = "*"; dirsOnly = $false }); overlays = @(".specify\capabilities\overlays\local\hooks") }
         )
         foreach ($spec in $layerSpecs) {
             $stage = Join-Path $capabilityStagingRoot $spec.name

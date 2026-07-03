@@ -93,6 +93,7 @@ from ._version import (
     self_upgrade as self_upgrade,
 )
 from ._knowledge import knowledge_app as _knowledge_app
+from ._hooks import hook_app as _hook_app
 
 def _locate_bundled_preset(_: str) -> Path | None:
     """Preset bundles are disabled in the Codex-only build."""
@@ -1266,6 +1267,7 @@ def version(
     console.print()
 
 app.add_typer(_knowledge_app, name="knowledge")
+app.add_typer(_hook_app, name="hook")
 app.add_typer(_self_app, name="self")
 
 

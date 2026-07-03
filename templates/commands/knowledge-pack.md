@@ -62,36 +62,31 @@ capabilities are installed under namespaced workspace-local paths.
      scenarios
 2. Validate a pack before sharing or installing:
    - `scripts/powershell/validate-knowledge-pack.ps1 -PackRoot <pack-dir> -Json`
-3. Install and apply a pack to the current workspace:
+3. Scaffold a workflow hook pack for tools such as open-code-review:
+   - `specify hook scaffold open-code-review --event workflow.speckit.commit.after --version <version> --install-method <method> --apply --force --json`
+   - Never hand-write `.specify/workflow-hooks.yml`; scaffold, validate, apply.
+4. Install and apply a pack to the current workspace:
    - `scripts/powershell/apply-knowledge-pack.ps1 -RepoRoot . -PackPath <pack-dir> -Force -Json`
    - add `-ApplyProfiles` when the pack should also replace
      `.specify/workspace.yml` and `.specify/memory/repository-map.md`
-4. For already installed packs, re-compose:
+5. For already installed packs, re-compose:
    - `scripts/powershell/compose-knowledge-packs.ps1 -RepoRoot . -PackId <id> -Json`
-5. Update or uninstall a mounted pack:
+6. Update or uninstall a mounted pack:
    - `scripts/powershell/update-knowledge-pack.ps1 -RepoRoot . -PackPath <pack-dir> -Json`
    - `scripts/powershell/uninstall-knowledge-pack.ps1 -RepoRoot . -PackId <id> -Json`
-   - update replaces the installed source by pack id, clears stale published
-     layers for that id, and preserves the current active pack set
-   - uninstall removes the installed source and namespaced published layers,
-     then re-composes remaining active packs or restores base knowledge
-   - hooks in `hooks/index.yml` are materialized to
-     `.specify/capabilities/hooks/<pack-id>/`, generate
-     `.specify/workflow-hooks.yml`, and install declared hook tools under
-     `.specify/tools/<tool-id>/<version>/`
-   - uninstall removes the pack hook layer, regenerates
-     `.specify/workflow-hooks.yml`, and prunes only hook tool versions no
-     longer referenced by any remaining active pack
-6. Repack the active workspace-local capability layer for distribution:
+   - update replaces the installed source by pack id and clears stale layers.
+   - uninstall removes namespaced layers, regenerates hook registry, and prunes
+     unused hook tool versions.
+7. Repack the active workspace-local capability layer for distribution:
    - `scripts/powershell/repack-knowledge-pack.ps1 -RepoRoot . -PackId <id> -Mode full-snapshot -IncludeProfiles -Json`
    - local capability overlays live under `.specify/capabilities/overlays/local/<layer>/`
-   - full-snapshot repack preserves active `ai/knowledge`, namespaced skills,
-     tool policies, scripts, prompts, resources, and templates when present
-7. Promote approved retrospective knowledge candidates:
+   - full-snapshot repack preserves active knowledge and capability layers,
+     including hook declarations, but not installed `.specify/tools` contents.
+8. Promote approved retrospective knowledge candidates:
    - `scripts/powershell/promote-knowledge-candidates.ps1 -RepoRoot . -FeatureDir specs/<feature> -Json`
    - With repack: `scripts/powershell/promote-knowledge-candidates.ps1 -RepoRoot . -FeatureDir specs/<feature> -Repack -PackId <id> -Force -Json`
    - Pending and rejected candidates must stay untouched.
-8. Compare a pack with its source knowledge tree:
+9. Compare a pack with its source knowledge tree:
    - `scripts/powershell/compare-knowledge-pack-equivalence.ps1 -SourceKnowledgeDir <source-ai-knowledge> -PackRoot <pack-dir> -UseSpecKitInit -Json`
    - the comparison reads `<pack-dir>/evaluation/scenarios.json` by default;
      use `-ScenarioFile <json>` to override the routing canaries
