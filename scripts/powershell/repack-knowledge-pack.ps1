@@ -107,7 +107,8 @@ try {
             @{ key = "CommandsDir"; name = "commands"; published = @(@{ path = ".specify\capabilities\commands"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\commands") },
             @{ key = "PromptsDir"; name = "prompts"; published = @(@{ path = ".specify\capabilities\prompts"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\prompts") },
             @{ key = "ResourcesDir"; name = "resources"; published = @(@{ path = ".specify\capabilities\resources"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\resources") },
-            @{ key = "TemplatesDir"; name = "templates"; published = @(@{ path = ".specify\capabilities\templates"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\templates") }
+            @{ key = "TemplatesDir"; name = "templates"; published = @(@{ path = ".specify\capabilities\templates"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\templates") },
+            @{ key = "HooksDir"; name = "hooks"; published = @(@{ path = ".specify\capabilities\hooks"; pattern = "*"; dirsOnly = $true }); overlays = @(".specify\capabilities\overlays\local\hooks") }
         )
         foreach ($spec in $layerSpecs) {
             $stage = Join-Path $capabilityStagingRoot $spec.name
@@ -145,7 +146,7 @@ try {
         if ($Force) { $exportParams.Force = $true }
         if (-not [string]::IsNullOrWhiteSpace($workspaceFile)) { $exportParams.WorkspaceFile = $workspaceFile }
         if (-not [string]::IsNullOrWhiteSpace($repositoryMap)) { $exportParams.RepositoryMap = $repositoryMap }
-        foreach ($key in @("SkillsDir", "ToolsDir", "ScriptsDir", "CommandsDir", "PromptsDir", "ResourcesDir", "TemplatesDir")) {
+        foreach ($key in @("SkillsDir", "ToolsDir", "ScriptsDir", "CommandsDir", "PromptsDir", "ResourcesDir", "TemplatesDir", "HooksDir")) {
             if ($capabilityArgs.ContainsKey($key) -and -not [string]::IsNullOrWhiteSpace($capabilityArgs[$key])) {
                 $exportParams[$key] = $capabilityArgs[$key]
             }

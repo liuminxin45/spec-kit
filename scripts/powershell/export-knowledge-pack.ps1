@@ -17,6 +17,7 @@ param(
     [string]$PromptsDir = "",
     [string]$ResourcesDir = "",
     [string]$TemplatesDir = "",
+    [string]$HooksDir = "",
     [string]$EvaluationScenariosFile = "",
     [string[]]$ToolAlias = @(),
     [switch]$Force,
@@ -65,6 +66,7 @@ try {
                 prompts = $false
                 resources = $false
                 templates = $false
+                hooks = $false
             }
 
             $layerSources = [ordered]@{
@@ -75,6 +77,7 @@ try {
                 prompts = $PromptsDir
                 resources = $ResourcesDir
                 templates = $TemplatesDir
+                hooks = $HooksDir
             }
             foreach ($layerName in $layerSources.Keys) {
                 $layerSource = $layerSources[$layerName]
@@ -156,6 +159,7 @@ try {
                 "  prompts: $($capabilityLayers['prompts'].ToString().ToLowerInvariant())",
                 "  resources: $($capabilityLayers['resources'].ToString().ToLowerInvariant())",
                 "  templates: $($capabilityLayers['templates'].ToString().ToLowerInvariant())",
+                "  hooks: $($capabilityLayers['hooks'].ToString().ToLowerInvariant())",
                 "  workspace_profile: $($hasWorkspaceProfile.ToString().ToLowerInvariant())",
                 "  repository_map_profile: $($hasRepositoryMapProfile.ToString().ToLowerInvariant())",
                 "  command_aliases: $((($ToolAlias.Count -gt 0)).ToString().ToLowerInvariant())",

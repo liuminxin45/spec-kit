@@ -42,6 +42,10 @@ function ConvertTo-KnowledgePackSlug {
     return $slug
 }
 
+function Get-KnowledgePackCapabilityLayerNames {
+    return @("skills", "tools", "scripts", "commands", "prompts", "resources", "templates", "hooks")
+}
+
 function Get-KnowledgePackManifestValue {
     param(
         [string]$ManifestPath,
@@ -147,7 +151,7 @@ function Get-KnowledgePackLockPackIds {
 function Get-KnowledgePackCapabilityLayers {
     param([string]$PackRoot)
     $layers = [ordered]@{}
-    foreach ($name in @("skills", "tools", "scripts", "commands", "prompts", "resources", "templates")) {
+    foreach ($name in Get-KnowledgePackCapabilityLayerNames) {
         $path = Join-Path $PackRoot $name
         $layers[$name] = [ordered]@{
             present = (Test-Path -LiteralPath $path -PathType Container)
@@ -155,6 +159,145 @@ function Get-KnowledgePackCapabilityLayers {
         }
     }
     return $layers
+}
+
+function Get-KnowledgePackYamlScalar {
+    param([string]$Value)
+    $clean = $Value.Trim()
+    if ($clean -eq "[]") { return "" }
+    if (
+        ($clean.StartsWith('"') -and $clean.EndsWith('"')) -or
+        ($clean.StartsWith("'") -and $clean.EndsWith("'"))
+    ) {
+        $inner = $clean.Substring(1, $clean.Length - 2)
+        if ($clean.StartsWith('"')) {
+            $inner = $inner.Replace('\"', '"').Replace('\\', '\')
+        } else {
+            $inner = $inner.Replace("''", "'")
+        }
+        return $inner
+    }
+    return $clean
+}
+
+function Get-KnowledgePackYamlInlineList {
+    param([string]$Value)
+    $clean = $Value.Trim()
+    if (-not ($clean.StartsWith("[") -and $clean.EndsWith("]"))) {
+        return @()
+    }
+    $inner = $clean.Substring(1, $clean.Length - 2).Trim()
+    if ([string]::IsNullOrWhiteSpace($inner)) { return @() }
+    $items = @()
+    foreach ($piece in ($inner -split ",")) {
+        $item = Get-KnowledgePackYamlScalar $piece
+        if (-not [string]::IsNullOrWhiteSpace($item)) {
+            $items += $item
+        }
+    }
+    return $items
+}
+
+function Add-KnowledgePackHookEntry {
+    param([System.Collections.ArrayList]$Hooks, $Current)
+    if ($null -ne $Current -and -not [string]::IsNullOrWhiteSpace($Current.id)) {
+        [void]$Hooks.Add([PSCustomObject]$Current)
+    }
+}
+
+function Read-KnowledgePackHookIndex {
+    param([string]$PackRoot)
+    $indexPath = Join-Path $PackRoot "hooks\index.yml"
+    $hooks = [System.Collections.ArrayList]::new()
+    if (-not (Test-Path -LiteralPath $indexPath -PathType Leaf)) {
+        return @()
+    }
+
+    $inHooks = $false
+    $current = $null
+    $activeListKey = ""
+    $currentTool = $null
+    foreach ($line in Get-Content -LiteralPath $indexPath) {
+        $trimmed = $line.Trim()
+        if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith("#")) {
+            continue
+        }
+        if (-not $inHooks) {
+            if ($line -match "^\s*hooks:\s*$") {
+                $inHooks = $true
+            }
+            continue
+        }
+
+        if ($line -match "^\s{2}-\s+id:\s*(.+?)\s*$") {
+            Add-KnowledgePackHookEntry -Hooks $hooks -Current $current
+            $current = [ordered]@{
+                id = Get-KnowledgePackYamlScalar $Matches[1]
+                events = @()
+                tool_dependencies = @()
+            }
+            $activeListKey = ""
+            $currentTool = $null
+            continue
+        }
+        if ($null -eq $current) { continue }
+
+        if ($line -match "^\s{4}([A-Za-z0-9_-]+):\s*(.*?)\s*$") {
+            $key = $Matches[1].Trim()
+            $value = $Matches[2]
+            $currentTool = $null
+            if ($key -in @("events", "tool_dependencies", "tools")) {
+                $list = Get-KnowledgePackYamlInlineList $value
+                if ($list.Count -gt 0) {
+                    $current[$key] = @($list)
+                    $activeListKey = ""
+                } else {
+                    $current[$key] = @()
+                    $activeListKey = $key
+                }
+            } else {
+                $current[$key] = Get-KnowledgePackYamlScalar $value
+                $activeListKey = ""
+            }
+            continue
+        }
+
+        if ($activeListKey -eq "events" -and $line -match "^\s{6}-\s+(.+?)\s*$") {
+            $current.events = @($current.events) + @((Get-KnowledgePackYamlScalar $Matches[1]))
+            continue
+        }
+        if ($activeListKey -in @("tool_dependencies", "tools") -and $line -match "^\s{6}-\s+id:\s*(.+?)\s*$") {
+            $currentTool = [ordered]@{
+                id = Get-KnowledgePackYamlScalar $Matches[1]
+            }
+            $current.tool_dependencies = @($current.tool_dependencies) + @($currentTool)
+            continue
+        }
+        if ($activeListKey -in @("tool_dependencies", "tools") -and $line -match "^\s{6}-\s+(.+?)\s*$") {
+            $current.tool_dependencies = @($current.tool_dependencies) + @((Get-KnowledgePackYamlScalar $Matches[1]))
+            $currentTool = $null
+            continue
+        }
+        if ($null -ne $currentTool -and $line -match "^\s{8}([A-Za-z0-9_-]+):\s*(.*?)\s*$") {
+            $currentTool[$Matches[1].Trim()] = Get-KnowledgePackYamlScalar $Matches[2]
+            continue
+        }
+    }
+    Add-KnowledgePackHookEntry -Hooks $hooks -Current $current
+    return @($hooks)
+}
+
+function Get-KnowledgePackObjectValue {
+    param($Object, [string]$Key)
+    if ($null -eq $Object) { return $null }
+    if ($Object -is [System.Collections.IDictionary]) {
+        if ($Object.Contains($Key)) { return $Object[$Key] }
+        return $null
+    }
+    if ($Object.PSObject.Properties.Name -contains $Key) {
+        return $Object.$Key
+    }
+    return $null
 }
 
 function Test-KnowledgePackSafeRelativePath {
@@ -171,6 +314,145 @@ function Get-KnowledgePackFileHash {
     param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return "" }
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+}
+
+function ConvertTo-KnowledgeHookToolSlug {
+    param([string]$Value)
+    $slug = ($Value.ToLowerInvariant() -replace "[^a-z0-9_.-]+", "-").Trim("-")
+    if ([string]::IsNullOrWhiteSpace($slug)) { return "hook-tool" }
+    return $slug
+}
+
+function Get-KnowledgePackHookToolReferences {
+    param([string]$PackRoot)
+    $references = @()
+    if (-not (Test-Path -LiteralPath $PackRoot -PathType Container)) { return $references }
+
+    foreach ($hook in @(Read-KnowledgePackHookIndex -PackRoot $PackRoot)) {
+        foreach ($dependency in @((Get-KnowledgePackObjectValue -Object $hook -Key "tool_dependencies"))) {
+            if ($dependency -is [string]) { continue }
+            $depId = [string](Get-KnowledgePackObjectValue -Object $dependency -Key "id")
+            $depVersion = [string](Get-KnowledgePackObjectValue -Object $dependency -Key "version")
+            if ([string]::IsNullOrWhiteSpace($depId) -or [string]::IsNullOrWhiteSpace($depVersion)) {
+                continue
+            }
+            $depSlug = ConvertTo-KnowledgeHookToolSlug -Value $depId
+            $key = "$depSlug@$depVersion"
+            if ($references | Where-Object { $_.key -eq $key }) { continue }
+            $references += [PSCustomObject]@{
+                key = $key
+                id = $depId
+                slug = $depSlug
+                version = $depVersion
+            }
+        }
+    }
+    return $references
+}
+
+function Write-KnowledgeHookToolsLock {
+    param([string]$RepoRoot)
+    $toolsRoot = Join-Path $RepoRoot ".specify\tools"
+    $recordsRoot = Join-Path $toolsRoot "records"
+    $lockPath = Join-Path $toolsRoot "lock.yml"
+
+    $records = @()
+    if (Test-Path -LiteralPath $recordsRoot -PathType Container) {
+        foreach ($file in Get-ChildItem -LiteralPath $recordsRoot -File -Filter "*.json" -Force | Sort-Object Name) {
+            try {
+                $record = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+                $record | Add-Member -NotePropertyName "record_path" -NotePropertyValue ([System.IO.Path]::GetRelativePath($RepoRoot, $file.FullName).Replace('\', '/')) -Force
+                $records += $record
+            } catch {
+                continue
+            }
+        }
+    }
+
+    if ($records.Count -eq 0) {
+        if (Test-Path -LiteralPath $lockPath -PathType Leaf) {
+            Remove-Item -LiteralPath $lockPath -Force
+        }
+        return [ordered]@{
+            path = $lockPath
+            tool_count = 0
+        }
+    }
+
+    New-Item -ItemType Directory -Force -Path $toolsRoot | Out-Null
+    $lock = @(
+        'schema_version: "1.0"',
+        'generated_by: "install-hook-tools"',
+        "tools:"
+    )
+    foreach ($tool in $records) {
+        $lock += "  - id: `"$($tool.id)`""
+        $lock += "    version: `"$($tool.version)`""
+        $lock += "    install_method: `"$($tool.install_method)`""
+        $lock += "    status: `"$($tool.status)`""
+        $lock += "    resolved_command: `"$($tool.resolved_command)`""
+        $lock += "    verify_command: `"$($tool.verify_command)`""
+        $lock += "    record_path: `"$($tool.record_path)`""
+    }
+    $lock | Set-Content -LiteralPath $lockPath -Encoding utf8
+
+    return [ordered]@{
+        path = $lockPath
+        tool_count = $records.Count
+    }
+}
+
+function Remove-UnusedKnowledgeHookTools {
+    param(
+        [string]$RepoRoot,
+        [object[]]$CandidateRefs,
+        [object[]]$ActiveRefs
+    )
+    $toolsRoot = Join-Path $RepoRoot ".specify\tools"
+    $recordsRoot = Join-Path $toolsRoot "records"
+    $activeKeys = @($ActiveRefs | ForEach-Object { [string]$_.key } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+    $removed = @()
+
+    foreach ($candidate in @($CandidateRefs)) {
+        $key = [string]$candidate.key
+        if ([string]::IsNullOrWhiteSpace($key) -or $activeKeys -contains $key) { continue }
+        $slug = [string]$candidate.slug
+        $version = [string]$candidate.version
+        if ([string]::IsNullOrWhiteSpace($slug) -or [string]::IsNullOrWhiteSpace($version)) { continue }
+
+        $toolDir = Join-Path $toolsRoot "$slug\$version"
+        $recordPath = Join-Path $recordsRoot "$slug-$version.json"
+        $removedItem = [ordered]@{
+            id = [string]$candidate.id
+            slug = $slug
+            version = $version
+            install_dir = $toolDir
+            record_path = $recordPath
+            removed_install_dir = $false
+            removed_record = $false
+        }
+
+        if (Test-Path -LiteralPath $toolDir) {
+            Remove-KnowledgePackDirectorySafe -Root $toolsRoot -Path $toolDir
+            $removedItem.removed_install_dir = $true
+        }
+        if (Test-Path -LiteralPath $recordPath -PathType Leaf) {
+            Remove-Item -LiteralPath $recordPath -Force
+            $removedItem.removed_record = $true
+        }
+
+        $toolSlugDir = Join-Path $toolsRoot $slug
+        if ((Test-Path -LiteralPath $toolSlugDir -PathType Container) -and -not (Get-ChildItem -LiteralPath $toolSlugDir -Force | Select-Object -First 1)) {
+            Remove-KnowledgePackDirectorySafe -Root $toolsRoot -Path $toolSlugDir
+        }
+        $removed += $removedItem
+    }
+
+    $lock = Write-KnowledgeHookToolsLock -RepoRoot $RepoRoot
+    return [ordered]@{
+        removed = $removed
+        lock = $lock
+    }
 }
 
 function Get-KnowledgePackFileManifest {
@@ -274,7 +556,8 @@ function Write-KnowledgePackInstallRecord {
         [string]$InstalledPath,
         $Info,
         $Validation,
-        [string]$SourcePath
+        [string]$SourcePath,
+        $HookTools = $null
     )
     $slug = ConvertTo-KnowledgePackSlug -Value $Info.id
     $recordsRoot = Join-Path $RepoRoot ".specify\knowledge\records"
@@ -324,6 +607,9 @@ function Write-KnowledgePackInstallRecord {
             files = $fileManifest
         }
         validation = $Validation
+    }
+    if ($null -ne $HookTools) {
+        $record.hook_tools = $HookTools
     }
     if ([string]::IsNullOrWhiteSpace($record["trust"]["level"])) { $record["trust"]["level"] = "local" }
     if ([string]::IsNullOrWhiteSpace($record["trust"]["source"])) { $record["trust"]["source"] = "unspecified" }
@@ -387,7 +673,7 @@ function Write-KnowledgePackCapabilityIndex {
         'auto_run_scripts: false',
         "layers:"
     )
-    foreach ($name in @("knowledge", "skills", "tools", "scripts", "commands", "prompts", "resources", "templates")) {
+    foreach ($name in @("knowledge") + (Get-KnowledgePackCapabilityLayerNames)) {
         $present = $false
         if ($Layers.Contains($name)) { $present = [bool]$Layers[$name] }
         $path = if ($name -eq "knowledge") { "ai/knowledge" } else { $name }
@@ -467,6 +753,7 @@ function Remove-KnowledgePackPublishedArtifactsForPackId {
         prompts = ".specify\capabilities\prompts\$slug"
         resources = ".specify\capabilities\resources\$slug"
         templates = ".specify\capabilities\templates\$slug"
+        hooks = ".specify\capabilities\hooks\$slug"
     }
 
     foreach ($layerName in $targets.Keys) {

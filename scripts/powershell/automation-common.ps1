@@ -950,7 +950,7 @@ function Invoke-ValidateGeneratedContext {
         },
         [ordered]@{
             path = if ($isSourceCheckout) { "templates/ai/workflows/task-routing.md" } else { "ai/workflows/task-routing.md" }
-            phrases = @("tasks -> analyze -> checklist", "standard-bugfix-lite", "workpack.md", "resolve-next-stage", "skill-routing.yml", "validate-generated-context", "validate-knowledge-index", "validate-context-budget", "select-knowledge", "select-gates", "artifact_sections", "Stage Continuation", "Final Response Guard", "inspect-workflow-closure", "workflow-observer", "promote-candidates", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "do not apply stale feature risk flags")
+            phrases = @("tasks -> analyze -> checklist", "standard-bugfix-lite", "workpack.md", "resolve-next-stage", "skill-routing.yml", "validate-generated-context", "validate-knowledge-index", "validate-context-budget", "select-knowledge", "select-gates", "artifact_sections", "Stage Continuation", "Workflow Hooks", "invoke-workflow-hooks", "auto_continue=true", "Final Response Guard", "inspect-workflow-closure", "workflow-observer", "promote-candidates", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "do not apply stale feature risk flags")
         },
         [ordered]@{
             path = if ($isSourceCheckout) { "templates/ai/workflows/skill-routing.yml" } else { "ai/workflows/skill-routing.yml" }
@@ -958,11 +958,11 @@ function Invoke-ValidateGeneratedContext {
         },
         [ordered]@{
             path = if ($isSourceCheckout) { "templates/ai/rules/ai-coding-rules.md" } else { "ai/rules/ai-coding-rules.md" }
-            phrases = @("Generated Context Drift", "standard-bugfix-lite", "workpack.md", "resolve-next-stage", "analysis.md", "validate-generated-context", "validate-knowledge-index", "Stage Continuation Contract", "Host Frontend Delivery Chain", "ensure-host-cdp", "Retrospective", "inspect-workflow-closure", "knowledge-candidates.md", "preflight-push")
+            phrases = @("Generated Context Drift", "standard-bugfix-lite", "workpack.md", "resolve-next-stage", "analysis.md", "validate-generated-context", "validate-knowledge-index", "Stage Continuation Contract", "Workflow hooks are script-owned", "invoke-workflow-hooks", "Host Frontend Delivery Chain", "ensure-host-cdp", "Retrospective", "inspect-workflow-closure", "knowledge-candidates.md", "preflight-push")
         },
         [ordered]@{
             path = $workflowPath
-            phrases = @("id: retrospective", "id: workflow-observer", "id: commit", "standard-bugfix-lite", "requires_confirmation: true", "Require workflow-record.md", "knowledge-candidates.md", "workflow-observation.md", "automatic_stage_continuation", "deterministic_next_stage", "post_human_acceptance_closure", "promote_knowledge_candidates", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "validate-knowledge-index", "validate-context-budget", "select-gates", "current-feature state only")
+            phrases = @("id: retrospective", "id: workflow-observer", "id: commit", "standard-bugfix-lite", "requires_confirmation: true", "Require workflow-record.md", "knowledge-candidates.md", "workflow-observation.md", "automatic_stage_continuation", "deterministic_next_stage", "workflow_hooks", "invoke-workflow-hooks", ".specify/workflow-hooks.yml", "post_human_acceptance_closure", "promote_knowledge_candidates", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "validate-knowledge-index", "validate-context-budget", "select-gates", "current-feature state only")
         },
         [ordered]@{
             path = if ($isSourceCheckout) { "TEAM-README.md" } else { "spec-kit/TEAM-README.md" }

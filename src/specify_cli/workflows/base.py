@@ -73,6 +73,9 @@ class StepContext:
     #: Current run ID.
     run_id: str | None = None
 
+    #: Workflow ID for lifecycle hook event names.
+    workflow_id: str | None = None
+
 
 @dataclass
 class StepResult:

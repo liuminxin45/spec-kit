@@ -24,6 +24,10 @@ or historical process documents unless the current task needs them.
   keyword matching.
 - Command templates must cite this file for the script/LLM boundary instead of
   restating the full rule block in every stage template.
+- Workflow hooks are script-owned. `invoke-workflow-hooks` synchronously runs
+  matching `type: workflow-shell` hooks and normalizes status/action/artifacts;
+  LLMs may explain hook results but must not infer success when
+  `auto_continue` is false.
 
 ## Repository Fact Source
 

@@ -20,6 +20,16 @@ failure, unresolved blocker, unclosed source/runtime delivery chain, or explicit
 user pause. If stopping, do not claim automatic entry; record `blockers` and
 `next_required_human_action`. A plain completion summary or "自动进入"/
 "continue to" promise without execution is non-compliant.
+## Workflow Hooks
+Workflow hooks are optional and default off. If `.specify/workflow-hooks.yml`
+is missing or no `workflow.<workflow-id>.<stage-id>.<before|after>` hook
+matches, do not add hook state or change output. Matching `type:
+workflow-shell` hooks are deterministic script gates: wait for
+`invoke-workflow-hooks`, continue only when the normalized result has
+`auto_continue=true`, and otherwise keep the workflow paused with the hook
+summary/artifacts. `.specify/workflow-hooks.local.yml` may disable all hooks,
+specific events, hook ids, or pack ids locally; disabled hooks are skipped
+without adding workflow hook state.
 ## Final Response Guard
 Before any final response after human acceptance, commit, post-commit
 self-check, or rubric work, run `inspect-workflow-closure` for the active
@@ -29,8 +39,9 @@ instead of reporting completion. `local_only`, `push_remote: false`, and
 push behavior; they do not skip retrospective, workflow-observer,
 post-commit-self-check, or rubric-score.
 ## Stage Progress Displays
-When the user asks for Spec Kit progress, current stage, or next stage, show
-stage rows with `阶段`, `状态`, and `阶段目标`. Use these objectives:
+When the user asks for Spec Kit progress, current stage, or next stage, show a
+stage progress table with `阶段`, `状态`, and one-sentence `阶段目标`; the visible
+columns are `阶段`, `状态`, and `阶段目标`. Use these objectives:
 
 | Stage | Objective |
 |-------|-----------|
