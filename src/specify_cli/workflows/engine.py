@@ -779,20 +779,84 @@ class WorkflowEngine:
 
         workflow_id = context.workflow_id or state.workflow_id
         event_name = self._workflow_hook_event_name(workflow_id, step_id, phase)
-        hook_result = self._invoke_workflow_hook_runner(
+        hook_facts: list[dict[str, Any]] = []
+
+        shell_result = self._invoke_workflow_hook_runner(
             event_name=event_name,
             workflow_id=workflow_id,
             stage_id=step_id,
             phase=phase,
             state=state,
         )
-        facts = hook_result.get("facts", {})
-        if not isinstance(facts, dict):
-            facts = {}
-        hook_count = self._as_int(facts.get("hook_count"))
-        if hook_count <= 0:
+        shell_facts = self._extract_hook_facts(shell_result)
+        if shell_facts is not None:
+            hook_facts.append(shell_facts)
+            if not self._hook_facts_auto_continue(shell_facts):
+                facts = self._merge_hook_facts(event_name, hook_facts)
+                return self._record_hook_dispatch(
+                    event_name,
+                    workflow_id,
+                    step_id,
+                    phase,
+                    state,
+                    facts,
+                    pause_step_index=pause_step_index,
+                )
+
+        agent_chain_result = self._invoke_agent_chain_hooks(
+            event_name=event_name,
+            workflow_id=workflow_id,
+            stage_id=step_id,
+            phase=phase,
+            context=context,
+            state=state,
+        )
+        agent_chain_facts = self._extract_hook_facts(agent_chain_result)
+        if agent_chain_facts is not None:
+            hook_facts.append(agent_chain_facts)
+
+        if not hook_facts:
             return True
 
+        facts = self._merge_hook_facts(event_name, hook_facts)
+        return self._record_hook_dispatch(
+            event_name,
+            workflow_id,
+            step_id,
+            phase,
+            state,
+            facts,
+            pause_step_index=pause_step_index,
+        )
+
+    def _extract_hook_facts(self, hook_result: dict[str, Any]) -> dict[str, Any] | None:
+        facts = hook_result.get("facts", {})
+        if not isinstance(facts, dict):
+            return None
+        hook_count = self._as_int(facts.get("hook_count"))
+        if hook_count <= 0:
+            return None
+        return facts
+
+    def _hook_facts_auto_continue(self, facts: dict[str, Any]) -> bool:
+        aggregate_status = str(facts.get("aggregate_status") or "failed")
+        return self._as_bool(
+            facts.get("auto_continue"),
+            default=aggregate_status in {"passed", "warning", "skipped"},
+        )
+
+    def _record_hook_dispatch(
+        self,
+        event_name: str,
+        workflow_id: str,
+        step_id: str,
+        phase: str,
+        state: RunState,
+        facts: dict[str, Any],
+        *,
+        pause_step_index: int,
+    ) -> bool:
+        hook_count = self._as_int(facts.get("hook_count"))
         aggregate_status = str(facts.get("aggregate_status") or "failed")
         action = str(facts.get("action") or self._default_hook_action(aggregate_status))
         auto_continue = self._as_bool(
@@ -856,6 +920,51 @@ class WorkflowEngine:
         )
         state.save()
         return False
+
+    def _merge_hook_facts(
+        self,
+        event_name: str,
+        facts_items: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        statuses: list[str] = []
+        results: list[Any] = []
+        artifacts: list[str] = []
+        summaries: list[str] = []
+        hook_count = 0
+        auto_continue = True
+
+        for facts in facts_items:
+            hook_count += self._as_int(facts.get("hook_count"))
+            status = str(facts.get("aggregate_status") or facts.get("status") or "failed")
+            statuses.append(status)
+            auto_continue = auto_continue and self._as_bool(
+                facts.get("auto_continue"),
+                default=status in {"passed", "warning", "skipped"},
+            )
+            summary = str(facts.get("summary") or "").strip()
+            if summary:
+                summaries.append(summary)
+            artifacts.extend(self._as_string_list(facts.get("artifact_paths")))
+            facts_results = facts.get("results")
+            if isinstance(facts_results, list):
+                results.extend(facts_results)
+
+        aggregate_status = self._aggregate_hook_status(statuses)
+        if aggregate_status in {"blocked", "failed", "requires_rework"}:
+            auto_continue = False
+        action = self._hook_action_for_result(aggregate_status, auto_continue)
+
+        return {
+            "event": event_name,
+            "hook_count": hook_count,
+            "aggregate_status": aggregate_status,
+            "status": aggregate_status,
+            "action": action,
+            "auto_continue": auto_continue,
+            "summary": "; ".join(summaries) if summaries else "workflow hooks completed",
+            "artifact_paths": list(dict.fromkeys(artifacts)),
+            "results": results,
+        }
 
     def _resolve_pending_hook(self, context: StepContext, state: RunState) -> bool:
         pending = state.pending_hook or {}
@@ -1012,6 +1121,789 @@ class WorkflowEngine:
                 facts["summary"] = facts.get("summary") or "workflow hook runner failed"
         return payload
 
+    def _invoke_agent_chain_hooks(
+        self,
+        *,
+        event_name: str,
+        workflow_id: str,
+        stage_id: str,
+        phase: str,
+        context: StepContext,
+        state: RunState,
+    ) -> dict[str, Any]:
+        try:
+            registry = self._read_workflow_hook_registry()
+        except Exception as exc:
+            return self._runner_failure_result(
+                event_name,
+                f"workflow hook registry could not be parsed: {exc}",
+            )
+
+        overrides = self._read_workflow_hook_overrides()
+        hook_results: list[dict[str, Any]] = []
+        disabled_hooks: list[dict[str, str]] = []
+
+        for hook in registry:
+            events = self._as_string_list(hook.get("events"))
+            if event_name not in events:
+                continue
+            disabled_reason = self._workflow_hook_disabled_reason(
+                hook,
+                event_name,
+                overrides,
+            )
+            if disabled_reason:
+                disabled_hooks.append(
+                    {
+                        "id": str(hook.get("id") or ""),
+                        "pack_id": str(hook.get("pack_id") or ""),
+                        "reason": disabled_reason,
+                    }
+                )
+                continue
+            if str(hook.get("type") or "").strip() != "workflow-agent-chain":
+                continue
+
+            hook_result = self._execute_agent_chain_hook(
+                hook,
+                event_name=event_name,
+                workflow_id=workflow_id,
+                stage_id=stage_id,
+                phase=phase,
+                context=context,
+                state=state,
+            )
+            hook_results.append(hook_result)
+            if not self._as_bool(
+                hook_result.get("auto_continue"),
+                default=hook_result.get("status") in {"passed", "warning", "skipped"},
+            ):
+                break
+
+        aggregate_status = self._aggregate_hook_status(
+            [str(item.get("status") or "") for item in hook_results]
+        )
+        auto_continue = aggregate_status in {"passed", "warning", "skipped"} and all(
+            self._as_bool(
+                item.get("auto_continue"),
+                default=item.get("status") in {"passed", "warning", "skipped"},
+            )
+            for item in hook_results
+        )
+        action = self._hook_action_for_result(aggregate_status, auto_continue)
+        summary_items = [
+            str(item.get("summary") or "").strip()
+            for item in hook_results
+            if str(item.get("summary") or "").strip()
+        ]
+        artifact_paths: list[str] = []
+        for item in hook_results:
+            artifact_paths.extend(self._as_string_list(item.get("artifact_paths")))
+            result_path = str(item.get("result_path") or "")
+            if result_path:
+                artifact_paths.append(result_path)
+
+        return {
+            "tool": "workflow-agent-chain",
+            "status": "ok" if auto_continue else "blocked",
+            "facts": {
+                "event": event_name,
+                "workflow_id": workflow_id,
+                "stage_id": stage_id,
+                "phase": phase,
+                "run_id": state.run_id,
+                "hook_count": len(hook_results),
+                "disabled_hook_count": len(disabled_hooks),
+                "disabled_hooks": disabled_hooks,
+                "aggregate_status": aggregate_status,
+                "status": aggregate_status,
+                "action": action,
+                "auto_continue": auto_continue,
+                "summary": "; ".join(summary_items) if summary_items else "no matching workflow-agent-chain hooks",
+                "artifact_paths": list(dict.fromkeys(artifact_paths)),
+                "results": hook_results,
+            },
+            "blockers": [] if auto_continue else summary_items,
+            "unknowns": [],
+            "hints": [],
+        }
+
+    def _execute_agent_chain_hook(
+        self,
+        hook: dict[str, Any],
+        *,
+        event_name: str,
+        workflow_id: str,
+        stage_id: str,
+        phase: str,
+        context: StepContext,
+        state: RunState,
+    ) -> dict[str, Any]:
+        hook_id = str(hook.get("id") or "agent-chain").strip() or "agent-chain"
+        pack_id = str(hook.get("pack_id") or "").strip()
+        event_slug = self._workflow_hook_slug(event_name)
+        hook_slug = self._workflow_hook_slug(hook_id)
+        chain_dir = (
+            self.project_root
+            / ".specify"
+            / "workflows"
+            / "runs"
+            / state.run_id
+            / "hooks"
+            / event_slug
+            / hook_slug
+        )
+        chain_dir.mkdir(parents=True, exist_ok=True)
+        chain_result_path = chain_dir / "chain-result.json"
+
+        try:
+            chain_config = self._load_agent_chain_config(hook)
+        except Exception as exc:
+            result = self._agent_chain_hook_failure(
+                hook,
+                event_name,
+                str(exc),
+                result_path=chain_result_path,
+            )
+            self._write_json(chain_result_path, result)
+            return result
+
+        steps = chain_config["steps"]
+        previous_results: list[dict[str, Any]] = []
+        artifact_paths: list[str] = []
+        short_circuited = False
+
+        for index, step in enumerate(steps):
+            if not isinstance(step, dict):
+                step = {"id": f"step-{index + 1}", "invalid": True}
+            step_id = str(step.get("id") or f"step-{index + 1}").strip() or f"step-{index + 1}"
+            step_slug = self._workflow_hook_slug(step_id)
+            input_path = chain_dir / f"{step_slug}.input.json"
+            result_path = chain_dir / f"{step_slug}.result.json"
+
+            if not self._agent_chain_step_enabled(step, previous_results):
+                integration_key = str(
+                    step.get("integration")
+                    or chain_config.get("integration")
+                    or hook.get("integration")
+                    or context.default_integration
+                    or "codex"
+                )
+                skipped = self._normalize_agent_chain_step_result(
+                    raw_result={
+                        "status": "skipped",
+                        "action": "continue",
+                        "auto_continue": True,
+                        "summary": "chain step skipped by run_if_previous_status",
+                        "artifact_paths": [],
+                    },
+                    hook=hook,
+                    step=step,
+                    event_name=event_name,
+                    result_path=result_path,
+                    exit_code=0,
+                    timed_out=False,
+                    command="",
+                    integration_key=integration_key,
+                )
+                previous_results.append(skipped)
+                self._write_json(result_path, skipped)
+                continue
+
+            resolved_skill_path = self._resolve_agent_chain_skill_path(
+                str(step.get("skill") or ""),
+                hook,
+                step,
+            )
+            input_payload = {
+                "schema_version": "1.0",
+                "event": event_name,
+                "workflow_id": workflow_id,
+                "stage_id": stage_id,
+                "phase": phase,
+                "run_id": state.run_id,
+                "project_root": str(self.project_root),
+                "hook": {
+                    "id": hook_id,
+                    "pack_id": pack_id,
+                    "type": "workflow-agent-chain",
+                    "failure_policy": hook.get("failure_policy") or "block",
+                },
+                "chain_step": {
+                    "index": index,
+                    "id": step_id,
+                    "skill": step.get("skill"),
+                    "skill_path": self._display_project_path(resolved_skill_path)
+                    if resolved_skill_path
+                    else "",
+                },
+                "inputs": state.inputs,
+                "steps": state.step_results,
+                "previous_result": previous_results[-1] if previous_results else None,
+                "previous_results": previous_results,
+                "artifact_paths": artifact_paths,
+                "result_path": str(result_path),
+            }
+            self._write_json(input_path, input_payload)
+            if result_path.exists():
+                result_path.unlink()
+
+            command_result = self._execute_agent_chain_skill_step(
+                hook=hook,
+                chain_config=chain_config,
+                step=step,
+                input_path=input_path,
+                result_path=result_path,
+                context=context,
+            )
+            raw_result = command_result.get("raw_result")
+            normalized = self._normalize_agent_chain_step_result(
+                raw_result=raw_result if isinstance(raw_result, dict) else None,
+                hook=hook,
+                step=step,
+                event_name=event_name,
+                result_path=result_path,
+                exit_code=self._as_int(command_result.get("exit_code")),
+                timed_out=bool(command_result.get("timed_out")),
+                command=str(command_result.get("command") or ""),
+                integration_key=str(command_result.get("integration") or ""),
+            )
+            self._write_json(result_path, normalized)
+            previous_results.append(normalized)
+            artifact_paths.extend(self._as_string_list(normalized.get("artifact_paths")))
+            artifact_paths.append(str(input_path))
+            artifact_paths.append(str(result_path))
+            if not normalized["auto_continue"]:
+                short_circuited = True
+                break
+
+        dirty_files = []
+        if phase == "after" and stage_id == "commit":
+            dirty_files = self._git_tracked_dirty_files()
+            if dirty_files:
+                previous_results.append(
+                    {
+                        "schema_version": "1.0",
+                        "id": f"{hook_id}.post-commit-mutation-guard",
+                        "hook_id": hook_id,
+                        "pack_id": pack_id,
+                        "event": event_name,
+                        "type": "workflow-agent-chain",
+                        "chain_step_id": "post-commit-mutation-guard",
+                        "skill": "",
+                        "status": "requires_rework",
+                        "action": "rework",
+                        "auto_continue": False,
+                        "summary": "workflow-agent-chain left tracked files dirty after commit",
+                        "artifact_paths": [],
+                        "dirty_files": dirty_files,
+                        "result_path": "",
+                        "exit_code": 0,
+                        "timed_out": False,
+                        "command": "",
+                    }
+                )
+                short_circuited = True
+
+        aggregate_status = self._aggregate_hook_status(
+            [str(item.get("status") or "") for item in previous_results]
+        )
+        auto_continue = aggregate_status in {"passed", "warning", "skipped"} and all(
+            self._as_bool(
+                item.get("auto_continue"),
+                default=item.get("status") in {"passed", "warning", "skipped"},
+            )
+            for item in previous_results
+        )
+        if dirty_files:
+            auto_continue = False
+        action = self._hook_action_for_result(aggregate_status, auto_continue)
+        summary_items = [
+            str(item.get("summary") or "").strip()
+            for item in previous_results
+            if str(item.get("summary") or "").strip()
+        ]
+        result = {
+            "schema_version": "1.0",
+            "id": hook_id,
+            "pack_id": pack_id,
+            "event": event_name,
+            "type": "workflow-agent-chain",
+            "status": aggregate_status,
+            "action": action,
+            "auto_continue": auto_continue,
+            "summary": "; ".join(summary_items) if summary_items else "workflow-agent-chain completed",
+            "artifact_paths": list(dict.fromkeys(artifact_paths + [str(chain_result_path)])),
+            "result_path": str(chain_result_path),
+            "steps": previous_results,
+            "short_circuited": short_circuited,
+        }
+        self._write_json(chain_result_path, result)
+        return result
+
+    def _execute_agent_chain_skill_step(
+        self,
+        *,
+        hook: dict[str, Any],
+        chain_config: dict[str, Any],
+        step: dict[str, Any],
+        input_path: Path,
+        result_path: Path,
+        context: StepContext,
+    ) -> dict[str, Any]:
+        from specify_cli.integrations import get_integration
+
+        skill = str(step.get("skill") or "").strip()
+        integration_key = str(
+            step.get("integration")
+            or chain_config.get("integration")
+            or hook.get("integration")
+            or context.default_integration
+            or "codex"
+        ).strip()
+        model = str(step.get("model") or chain_config.get("model") or context.default_model or "").strip() or None
+        timeout = self._as_int(
+            step.get("timeout_seconds")
+            or chain_config.get("timeout_seconds")
+            or hook.get("timeout_seconds"),
+            default=600,
+        )
+        if timeout < 1:
+            timeout = 600
+        if not skill:
+            return {
+                "raw_result": {
+                    "status": "failed",
+                    "action": "fail",
+                    "auto_continue": False,
+                    "summary": "workflow-agent-chain step missing skill",
+                    "artifact_paths": [],
+                },
+                "exit_code": 1,
+                "timed_out": False,
+                "command": "",
+                "integration": integration_key,
+            }
+
+        integration = get_integration(integration_key)
+        if integration is None:
+            return {
+                "raw_result": {
+                    "status": "blocked",
+                    "action": "pause",
+                    "auto_continue": False,
+                    "summary": f"unknown integration for workflow-agent-chain: {integration_key}",
+                    "artifact_paths": [],
+                },
+                "exit_code": 1,
+                "timed_out": False,
+                "command": "",
+                "integration": integration_key,
+            }
+
+        prompt = self._build_agent_chain_skill_prompt(
+            skill=skill,
+            skill_path=self._resolve_agent_chain_skill_path(skill, hook, step),
+            input_path=input_path,
+            result_path=result_path,
+        )
+        exec_args = integration.build_exec_args(prompt, model=model, output_json=True)
+        if exec_args is None:
+            return {
+                "raw_result": {
+                    "status": "blocked",
+                    "action": "pause",
+                    "auto_continue": False,
+                    "summary": f"integration {integration_key} does not support workflow-agent-chain dispatch",
+                    "artifact_paths": [],
+                },
+                "exit_code": 1,
+                "timed_out": False,
+                "command": "",
+                "integration": integration_key,
+            }
+        resolved_args = integration.resolve_exec_args(exec_args)
+        if resolved_args is None:
+            return {
+                "raw_result": {
+                    "status": "blocked",
+                    "action": "pause",
+                    "auto_continue": False,
+                    "summary": f"executable not found for integration {integration_key}: {exec_args[0]}",
+                    "artifact_paths": [],
+                },
+                "exit_code": 1,
+                "timed_out": False,
+                "command": " ".join(exec_args),
+                "integration": integration_key,
+            }
+
+        try:
+            completed = subprocess.run(
+                resolved_args,
+                cwd=self.project_root,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                timeout=timeout,
+            )
+            timed_out = False
+        except subprocess.TimeoutExpired as exc:
+            return {
+                "raw_result": {
+                    "status": "failed",
+                    "action": "fail",
+                    "auto_continue": False,
+                    "summary": "workflow-agent-chain step timed out",
+                    "artifact_paths": [],
+                },
+                "exit_code": 124,
+                "timed_out": True,
+                "stdout": exc.stdout or "",
+                "stderr": exc.stderr or "",
+                "command": " ".join(resolved_args),
+                "integration": integration_key,
+            }
+
+        raw_result = self._read_json_object_from_file(result_path)
+        if raw_result is None:
+            raw_result = self._read_json_object_from_text(completed.stdout)
+        if raw_result is None:
+            raw_result = {
+                "status": "failed",
+                "action": "fail",
+                "auto_continue": False,
+                "summary": "workflow-agent-chain step did not return hook result JSON",
+                "artifact_paths": [],
+            }
+            stderr = completed.stderr.strip()
+            if stderr:
+                raw_result["stderr"] = stderr
+
+        return {
+            "raw_result": raw_result,
+            "exit_code": completed.returncode,
+            "timed_out": timed_out,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+            "command": " ".join(resolved_args),
+            "integration": integration_key,
+        }
+
+    def _normalize_agent_chain_step_result(
+        self,
+        *,
+        raw_result: dict[str, Any] | None,
+        hook: dict[str, Any],
+        step: dict[str, Any],
+        event_name: str,
+        result_path: Path,
+        exit_code: int,
+        timed_out: bool,
+        command: str,
+        integration_key: str,
+    ) -> dict[str, Any]:
+        raw = raw_result if isinstance(raw_result, dict) else {}
+        status = self._normalize_hook_status(str(raw.get("status") or "failed"))
+        if timed_out:
+            status = "failed"
+        if exit_code != 0 and status in {"passed", "warning", "skipped"}:
+            status = "failed"
+
+        failure_policy = str(hook.get("failure_policy") or "block").strip().lower()
+        summary = str(raw.get("summary") or "").strip()
+        if not summary:
+            if timed_out:
+                summary = "workflow-agent-chain step timed out"
+            elif exit_code == 0:
+                summary = "workflow-agent-chain step passed"
+            else:
+                summary = f"workflow-agent-chain step failed with exit code {exit_code}"
+        if failure_policy in {"warn", "warning", "advisory"} and status in {"failed", "blocked"}:
+            status = "warning"
+            summary = f"advisory workflow-agent-chain warning: {summary}"
+
+        action = str(raw.get("action") or "").strip() or self._default_hook_action(status)
+        auto_continue = self._as_bool(
+            raw.get("auto_continue"),
+            default=status in {"passed", "warning", "skipped"} and action == "continue",
+        )
+        if status in {"blocked", "failed", "requires_rework"}:
+            auto_continue = False
+
+        hook_id = str(hook.get("id") or "agent-chain").strip() or "agent-chain"
+        step_id = str(step.get("id") or "step").strip() or "step"
+        artifacts = self._as_string_list(raw.get("artifact_paths"))
+        return {
+            "schema_version": "1.0",
+            "id": f"{hook_id}.{step_id}",
+            "hook_id": hook_id,
+            "pack_id": str(hook.get("pack_id") or ""),
+            "event": event_name,
+            "type": "workflow-agent-chain",
+            "chain_step_id": step_id,
+            "skill": str(step.get("skill") or ""),
+            "integration": integration_key,
+            "status": status,
+            "action": action,
+            "auto_continue": auto_continue,
+            "summary": summary,
+            "artifact_paths": artifacts,
+            "result_path": str(result_path),
+            "exit_code": exit_code,
+            "timed_out": timed_out,
+            "command": command,
+        }
+
+    def _load_agent_chain_config(self, hook: dict[str, Any]) -> dict[str, Any]:
+        manifest_data: dict[str, Any] = {}
+        manifest_value = str(hook.get("chain_manifest") or "").strip()
+        if manifest_value:
+            manifest_path = self._resolve_project_relative_hook_path(manifest_value)
+            if not manifest_path.is_file():
+                raise FileNotFoundError(f"workflow-agent-chain manifest not found: {manifest_value}")
+            if manifest_path.suffix.lower() == ".json":
+                with open(manifest_path, encoding="utf-8") as f:
+                    loaded = json.load(f)
+            else:
+                with open(manifest_path, encoding="utf-8") as f:
+                    loaded = yaml.safe_load(f)
+            if not isinstance(loaded, dict):
+                raise ValueError(f"workflow-agent-chain manifest must be a mapping: {manifest_value}")
+            manifest_data = loaded
+
+        steps = hook.get("steps")
+        if not isinstance(steps, list):
+            steps = manifest_data.get("steps")
+        if not isinstance(steps, list) or not steps:
+            raise ValueError("workflow-agent-chain must declare non-empty steps or chain_manifest")
+
+        return {
+            **manifest_data,
+            "integration": hook.get("integration") or manifest_data.get("integration"),
+            "model": hook.get("model") or manifest_data.get("model"),
+            "timeout_seconds": hook.get("timeout_seconds") or manifest_data.get("timeout_seconds"),
+            "steps": steps,
+        }
+
+    def _resolve_project_relative_hook_path(self, value: str) -> Path:
+        candidate = Path(value)
+        if candidate.is_absolute():
+            raise ValueError(f"workflow hook path must be project-relative: {value}")
+        resolved = (self.project_root / candidate).resolve()
+        try:
+            resolved.relative_to(self.project_root.resolve())
+        except ValueError as exc:
+            raise ValueError(f"workflow hook path escapes project root: {value}") from exc
+        return resolved
+
+    def _agent_chain_step_enabled(
+        self,
+        step: dict[str, Any],
+        previous_results: list[dict[str, Any]],
+    ) -> bool:
+        allowed = step.get("run_if_previous_status")
+        if allowed is None:
+            return True
+        allowed_statuses = set(self._as_string_list(allowed))
+        previous_status = str(previous_results[-1].get("status") or "") if previous_results else ""
+        return previous_status in allowed_statuses
+
+    def _build_agent_chain_skill_prompt(
+        self,
+        *,
+        skill: str,
+        skill_path: Path | None,
+        input_path: Path,
+        result_path: Path,
+    ) -> str:
+        input_label = self._display_project_path(input_path)
+        result_label = self._display_project_path(result_path)
+        skill_instruction = f"Run the installed Codex skill `{skill}`"
+        if skill_path is not None:
+            skill_instruction = (
+                f"Run the Codex skill `{skill}` by first reading "
+                f"`{self._display_project_path(skill_path)}`"
+            )
+        return (
+            f"{skill_instruction} as a Spec Kit workflow hook chain step. "
+            f"Read the hook input JSON at `{input_label}`. "
+            "Return a Spec Kit workflow hook result JSON object with schema_version, "
+            "status, action, auto_continue, summary, and artifact_paths. "
+            f"Write that JSON object to `{result_label}`. "
+            "Use the previous_result and previous_results fields from the input to decide "
+            "whether this step may continue. Do not report success unless the result file "
+            "contains the final hook JSON."
+        )
+
+    def _resolve_agent_chain_skill_path(
+        self,
+        skill: str,
+        hook: dict[str, Any],
+        _step: dict[str, Any],
+    ) -> Path | None:
+        candidates: list[Path] = []
+
+        clean_skill = skill.strip().strip("/\\")
+        pack_id = str(hook.get("pack_id") or "").strip()
+        if clean_skill:
+            if pack_id:
+                candidates.append(
+                    self.project_root
+                    / ".agents"
+                    / "spec-kit"
+                    / "skills"
+                    / f"{pack_id}__{clean_skill}"
+                    / "SKILL.md"
+                )
+            candidates.extend(
+                [
+                    self.project_root / ".agents" / "spec-kit" / "skills" / clean_skill / "SKILL.md",
+                    self.project_root / ".agents" / "skills" / clean_skill / "SKILL.md",
+                ]
+            )
+
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            try:
+                resolved.relative_to(self.project_root.resolve())
+            except ValueError:
+                continue
+            if resolved.is_file():
+                return resolved
+        return None
+
+    def _agent_chain_hook_failure(
+        self,
+        hook: dict[str, Any],
+        event_name: str,
+        summary: str,
+        *,
+        result_path: Path,
+    ) -> dict[str, Any]:
+        hook_id = str(hook.get("id") or "agent-chain").strip() or "agent-chain"
+        return {
+            "schema_version": "1.0",
+            "id": hook_id,
+            "pack_id": str(hook.get("pack_id") or ""),
+            "event": event_name,
+            "type": "workflow-agent-chain",
+            "status": "failed",
+            "action": "fail",
+            "auto_continue": False,
+            "summary": summary,
+            "artifact_paths": [str(result_path)],
+            "result_path": str(result_path),
+            "steps": [],
+            "short_circuited": True,
+        }
+
+    def _read_workflow_hook_registry(self) -> list[dict[str, Any]]:
+        registry_path = self._workflow_hooks_registry_path()
+        if not registry_path.is_file():
+            return []
+        with open(registry_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        if not isinstance(data, dict):
+            return []
+        hooks = data.get("hooks") or []
+        if not isinstance(hooks, list):
+            return []
+        return [hook for hook in hooks if isinstance(hook, dict)]
+
+    def _read_workflow_hook_overrides(self) -> dict[str, Any]:
+        overrides_path = self.project_root / ".specify" / "workflow-hooks.local.yml"
+        defaults: dict[str, Any] = {
+            "enabled": True,
+            "disabled_events": [],
+            "disabled_hooks": [],
+            "disabled_packs": [],
+        }
+        if not overrides_path.is_file():
+            return defaults
+        try:
+            with open(overrides_path, encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+        except yaml.YAMLError:
+            return defaults
+        if not isinstance(data, dict):
+            return defaults
+        return {
+            "enabled": self._as_bool(data.get("enabled"), default=True),
+            "disabled_events": self._as_string_list(data.get("disabled_events")),
+            "disabled_hooks": self._as_string_list(data.get("disabled_hooks")),
+            "disabled_packs": self._as_string_list(data.get("disabled_packs")),
+        }
+
+    def _workflow_hook_disabled_reason(
+        self,
+        hook: dict[str, Any],
+        event_name: str,
+        overrides: dict[str, Any],
+    ) -> str:
+        if not self._as_bool(overrides.get("enabled"), default=True):
+            return "workflow hooks disabled by .specify/workflow-hooks.local.yml"
+        if event_name in self._as_string_list(overrides.get("disabled_events")):
+            return "event disabled by .specify/workflow-hooks.local.yml"
+        hook_id = str(hook.get("id") or "")
+        if hook_id and hook_id in self._as_string_list(overrides.get("disabled_hooks")):
+            return "hook disabled by .specify/workflow-hooks.local.yml"
+        pack_id = str(hook.get("pack_id") or "")
+        if pack_id and pack_id in self._as_string_list(overrides.get("disabled_packs")):
+            return "pack disabled by .specify/workflow-hooks.local.yml"
+        return ""
+
+    def _git_tracked_dirty_files(self) -> list[str]:
+        try:
+            completed = subprocess.run(
+                ["git", "-C", str(self.project_root), "status", "--porcelain", "--untracked-files=no"],
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                timeout=30,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+        if completed.returncode != 0:
+            return []
+        files: list[str] = []
+        for line in completed.stdout.splitlines():
+            if not line.strip():
+                continue
+            path = line[3:].strip()
+            if path:
+                files.append(path)
+        return sorted(dict.fromkeys(files))
+
+    def _display_project_path(self, path: Path) -> str:
+        try:
+            return path.resolve().relative_to(self.project_root.resolve()).as_posix()
+        except ValueError:
+            return str(path)
+
+    @staticmethod
+    def _workflow_hook_slug(value: str) -> str:
+        return re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-") or "hook"
+
+    @staticmethod
+    def _write_json(path: Path, payload: Any) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def _read_json_object_from_file(path: Path) -> dict[str, Any] | None:
+        if not path.is_file():
+            return None
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return None
+        return data if isinstance(data, dict) else None
+
     @staticmethod
     def _runner_failure_result(event_name: str, summary: str) -> dict[str, Any]:
         return {
@@ -1062,6 +1954,47 @@ class WorkflowEngine:
         if status == "blocked":
             return "pause"
         return "continue"
+
+    @staticmethod
+    def _hook_action_for_result(status: str, auto_continue: bool) -> str:
+        action = WorkflowEngine._default_hook_action(status)
+        if not auto_continue and action == "continue":
+            return "pause"
+        return action
+
+    @staticmethod
+    def _normalize_hook_status(status: str) -> str:
+        normalized = status.strip().lower()
+        if normalized in {"passed", "pass", "ok", "success"}:
+            return "passed"
+        if normalized in {"warning", "warn", "advisory"}:
+            return "warning"
+        if normalized in {"skipped", "skip"}:
+            return "skipped"
+        if normalized in {"blocked", "block", "paused", "pause"}:
+            return "blocked"
+        if normalized in {"requires_rework", "requires-rework", "rework"}:
+            return "requires_rework"
+        if normalized in {"failed", "failure", "fail", "error"}:
+            return "failed"
+        return "failed"
+
+    @staticmethod
+    def _aggregate_hook_status(statuses: list[str]) -> str:
+        normalized = [WorkflowEngine._normalize_hook_status(status) for status in statuses if status]
+        if not normalized:
+            return "skipped"
+        if "requires_rework" in normalized:
+            return "requires_rework"
+        if "blocked" in normalized:
+            return "blocked"
+        if "failed" in normalized:
+            return "failed"
+        if "warning" in normalized:
+            return "warning"
+        if all(status == "skipped" for status in normalized):
+            return "skipped"
+        return "passed"
 
     @staticmethod
     def _as_int(value: Any, default: int = 0) -> int:

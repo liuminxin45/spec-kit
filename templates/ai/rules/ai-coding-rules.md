@@ -24,10 +24,13 @@ or historical process documents unless the current task needs them.
   keyword matching.
 - Command templates must cite this file for the script/LLM boundary instead of
   restating the full rule block in every stage template.
-- Workflow hooks are script-owned. `invoke-workflow-hooks` synchronously runs
-  matching `type: workflow-shell` hooks and normalizes status/action/artifacts;
-  LLMs may explain hook results but must not infer success when
-  `auto_continue` is false.
+- Workflow shell hooks are script-owned. `invoke-workflow-hooks`
+  synchronously runs matching `type: workflow-shell` hooks and normalizes
+  status/action/artifacts; LLMs may explain hook results but must not infer
+  success when `auto_continue` is false.
+- Workflow agent-chain hooks are engine-owned. `type: workflow-agent-chain`
+  runs Codex skills serially, passes `previous_result`/`previous_results`
+  between steps, and pauses on the first non-continuable result.
 - New workflow hooks for external tools must be created as portable hook packs
   through deterministic scaffolding (`specify hook scaffold` or
   `new-workflow-hook-pack.ps1`), then validated and applied. Do not directly
@@ -76,6 +79,12 @@ or historical process documents unless the current task needs them.
 
 ## Workflow Weight
 
+- Starting a new Spec Kit workflow must run `preflight-new-workflow` before
+  intake writes feature state. Dirty worktrees, non-base branches, unfinished
+  `.specify/feature.json`, or unresolved workflow runs block the new workflow
+  until the user manually resolves them or explicitly authorizes a named AI
+  action. Do not auto-stash, auto-clean, switch branches, delete specs, archive
+  state, or overwrite `.specify/feature.json`.
 - Use five primary implementation paths: `micro-fix`, `standard-bugfix-lite`,
   `standard-bugfix`, `full-sdd`, and `blocked-investigation`.
 - `validation-only` is a non-implementation mode.

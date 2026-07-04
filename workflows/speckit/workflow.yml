@@ -64,11 +64,17 @@ inputs:
     prompt: "Whether generated spec docs should be included in commit scope"
 
 steps:
+  - id: new-workflow-preflight
+    command: speckit.new-workflow-preflight
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "Before creating or overwriting any active feature state, run preflight-new-workflow.ps1. If it returns blocked, stop and report its facts, blockers, and suggestions. Do not stash, clean, switch branches, delete specs, archive state, or overwrite .specify/feature.json unless the user explicitly authorizes that named action. {{ inputs.spec }}"
+
   - id: intake
     command: speckit.intake
     integration: "{{ inputs.integration }}"
     input:
-      args: "Classify risk/profile from facts, not keyword matching. Record delivery_profile in .specify/feature.json. Use micro-fix for 1-3 file, single-repository, evidenced internal fixes; standard-bugfix-lite for compact low/medium-risk bugfixes summarized in workpack.md; standard-bugfix for compact behavior fixes that still need spec.md/plan.md and analyze; full-sdd for public API, architecture, migration, cross-repo, real-device, or optional desktop host/plugin/native delivery-chain work; blocked-investigation when root cause or validation evidence is missing. {{ inputs.spec }}"
+      args: "Run only after new-workflow-preflight is ok. Classify risk/profile from facts, not keyword matching. Record delivery_profile in .specify/feature.json. Use micro-fix for 1-3 file, single-repository, evidenced internal fixes; standard-bugfix-lite for compact low/medium-risk bugfixes summarized in workpack.md; standard-bugfix for compact behavior fixes that still need spec.md/plan.md and analyze; full-sdd for public API, architecture, migration, cross-repo, real-device, or optional desktop host/plugin/native delivery-chain work; blocked-investigation when root cause or validation evidence is missing. {{ inputs.spec }}"
 
   - id: specify
     command: speckit.specify
@@ -201,6 +207,10 @@ conditional_stages:
   promote-knowledge: "Use only for human-approved knowledge-candidates.md entries; pending or rejected entries are never promoted."
 
 stage_gate_policy:
+  new_workflow_preflight:
+    command: "preflight-new-workflow"
+    stage: "new-workflow-preflight"
+    rule: "Before intake writes or overwrites active feature state, block dirty worktrees, non-base branches, unfinished .specify/feature.json state, and unresolved workflow runs. The agent may only advise manual cleanup or proceed with a specific user-authorized safe action; it must not auto-stash, clean, switch branches, delete specs, or overwrite .specify/feature.json."
   automatic_stage_continuation:
     rule: "Every stage auto-continues to the next structurally required stage when no human acceptance, clarification, owner decision, high-risk confirmation, unavailable external dependency, build/validation failure, unresolved blocker, source/runtime delivery-chain gap, or explicit user pause remains."
     execution_contract: "Auto-continue means execute the next stage in the same agent turn. Prefer invoking the next stage command/skill; if the integration cannot invoke commands programmatically, load the next stage command template and perform its steps inline. A plain completion report that says the next stage will run is non-compliant."
@@ -229,7 +239,7 @@ stage_gate_policy:
     rule: "Before agent auto-continuation, resolve current_stage, next_stage, blockers, required_human_action, commands_to_run, and missing_artifacts from feature state and artifacts. Stage skills consume this JSON instead of relying on natural-language next-stage inference."
   workflow_hooks:
     command: "invoke-workflow-hooks"
-    rule: "Workflow hooks are optional and default off. If .specify/workflow-hooks.yml is missing or has no matching workflow.<workflow-id>.<stage-id>.<before|after> hook, behavior and output stay unchanged. Matching type workflow-shell hooks run synchronously through the deterministic runner; only auto_continue=true may enter the next stage, otherwise the workflow pauses with the normalized hook result. User-local .specify/workflow-hooks.local.yml may disable hooks without writing hook state."
+    rule: "Workflow hooks are optional and default off. If .specify/workflow-hooks.yml is missing or has no matching workflow.<workflow-id>.<stage-id>.<before|after> hook, behavior and output stay unchanged. Matching type workflow-shell hooks run synchronously through the deterministic runner. Matching type workflow-agent-chain hooks are run by the workflow engine as serial Codex skill chains with previous_result handoff and first non-continuable result short-circuiting. Only auto_continue=true may enter the next stage, otherwise the workflow pauses with the normalized hook result. User-local .specify/workflow-hooks.local.yml may disable hooks without writing hook state."
   generated_context_drift:
     command: "validate-generated-context"
     rule: "After spec-kit template changes or shared-infra refresh, check AGENTS.md, .specify/memory/repository-map.md, .specify/templates/layer-manifest.yml, ai/workflows/task-routing.md, and ai/rules/ai-coding-rules.md for required gate phrases before relying on default context."

@@ -110,8 +110,10 @@ capabilities are installed under namespaced workspace-local paths.
   commands, prompts, resources, templates, and hooks published from capability
   packs.
 - `.specify/workflow-hooks.yml` is generated only when an active pack provides
-  `type: workflow-shell` hooks. No registry or no matching event must preserve
-  existing workflow output and state.
+  `type: workflow-shell` or `type: workflow-agent-chain` hooks. No registry or
+  no matching event must preserve existing workflow output and state.
+- `workflow-agent-chain` hooks use `chain_manifest` and run Codex skills
+  serially with `previous_result`/`previous_results` handoff.
 - `.specify/workflow-hooks.local.yml` is a user-local override for temporarily
   disabling workflow hooks with `enabled: false`, `disabled_events`,
   `disabled_hooks`, or `disabled_packs`. Disabled hooks do not write workflow

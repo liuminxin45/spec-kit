@@ -243,23 +243,43 @@ try {
                 $publishedHookRoot = ".specify/capabilities/hooks/$packIdForHooks"
                 foreach ($hook in @(Read-KnowledgePackHookIndex -PackRoot $packRootForHooks)) {
                     $hookType = if ($hook.PSObject.Properties.Name -contains "type") { [string]$hook.type } else { "" }
-                    if ($hookType -ne "workflow-shell") { continue }
+                    if (@("workflow-shell", "workflow-agent-chain") -notcontains $hookType) { continue }
                     $events = @($hook.events | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
                     if ($events.Count -eq 0) { continue }
-                    $runnerCommand = Resolve-WorkflowHookRunnerCommand -Hook $hook -PublishedHookRoot $publishedHookRoot
-                    if ([string]::IsNullOrWhiteSpace($runnerCommand)) { continue }
+                    $runnerCommand = ""
+                    $chainManifest = ""
+                    if ($hookType -eq "workflow-shell") {
+                        $runnerCommand = Resolve-WorkflowHookRunnerCommand -Hook $hook -PublishedHookRoot $publishedHookRoot
+                        if ([string]::IsNullOrWhiteSpace($runnerCommand)) { continue }
+                    } elseif ($hookType -eq "workflow-agent-chain") {
+                        $chainManifest = if ($hook.PSObject.Properties.Name -contains "chain_manifest") { [string]$hook.chain_manifest } else { "" }
+                        if ([string]::IsNullOrWhiteSpace($chainManifest)) { continue }
+                        $chainManifest = $chainManifest.Replace('\', '/')
+                        if (-not (Test-KnowledgePackSafeRelativePath -RelativePath $chainManifest)) { continue }
+                    }
                     $workflowHookCount += 1
                     $hookId = "$packIdForHooks.$($hook.id)"
                     $timeout = if ($hook.PSObject.Properties.Name -contains "timeout_seconds" -and $hook.timeout_seconds) { [string]$hook.timeout_seconds } else { "600" }
                     $failurePolicy = if ($hook.PSObject.Properties.Name -contains "failure_policy" -and $hook.failure_policy) { [string]$hook.failure_policy } else { "block" }
                     $workflowHookLines += "  - id: $(Format-WorkflowHookYamlValue $hookId)"
                     $workflowHookLines += "    pack_id: $(Format-WorkflowHookYamlValue $packIdForHooks)"
-                    $workflowHookLines += '    type: "workflow-shell"'
+                    $workflowHookLines += "    type: $(Format-WorkflowHookYamlValue $hookType)"
                     $workflowHookLines += "    events:"
                     foreach ($event in $events) {
                         $workflowHookLines += "      - $(Format-WorkflowHookYamlValue $event)"
                     }
-                    $workflowHookLines += "    runner: $(Format-WorkflowHookYamlValue $runnerCommand)"
+                    if ($hookType -eq "workflow-shell") {
+                        $workflowHookLines += "    runner: $(Format-WorkflowHookYamlValue $runnerCommand)"
+                    } elseif ($hookType -eq "workflow-agent-chain") {
+                        $publishedManifest = ($publishedHookRoot.TrimEnd('/', '\') + "/" + $chainManifest).Replace('\', '/')
+                        $workflowHookLines += "    chain_manifest: $(Format-WorkflowHookYamlValue $publishedManifest)"
+                        if ($hook.PSObject.Properties.Name -contains "integration" -and -not [string]::IsNullOrWhiteSpace([string]$hook.integration)) {
+                            $workflowHookLines += "    integration: $(Format-WorkflowHookYamlValue ([string]$hook.integration))"
+                        }
+                        if ($hook.PSObject.Properties.Name -contains "model" -and -not [string]::IsNullOrWhiteSpace([string]$hook.model)) {
+                            $workflowHookLines += "    model: $(Format-WorkflowHookYamlValue ([string]$hook.model))"
+                        }
+                    }
                     $workflowHookLines += "    timeout_seconds: $timeout"
                     $workflowHookLines += "    failure_policy: $(Format-WorkflowHookYamlValue $failurePolicy)"
                 }
