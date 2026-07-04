@@ -70,6 +70,7 @@ AUTOMATION_TOOLS = [
     "get-spec-kit-version",
     "validate-spec-kit-version",
     "bump-spec-kit-version",
+    "preflight-new-workflow",
     "resolve-next-stage",
     "preflight-push",
     "invoke-workflow-hooks",
@@ -137,6 +138,42 @@ def assert_standard_shape(output: dict, tool: str):
     assert isinstance(output["blockers"], list)
     assert isinstance(output["unknowns"], list)
     assert isinstance(output["hints"], list)
+
+
+def init_git_repo(repo: Path, branch: str = "main") -> None:
+    repo.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", str(repo)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.com"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test User"], check=True)
+    subprocess.run(["git", "-C", str(repo), "branch", "-M", branch], check=True)
+
+
+def commit_all(repo: Path, message: str = "snapshot") -> None:
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-m", message], check=True, capture_output=True, text=True)
+
+
+def write_minimal_workspace(repo: Path, default_base_branch: str = "main") -> None:
+    specify = repo / ".specify"
+    specify.mkdir(parents=True, exist_ok=True)
+    (specify / "workspace.yml").write_text(
+        "\n".join(
+            [
+                "workspace:",
+                '  root: "."',
+                f'  default_base_branch: "{default_base_branch}"',
+                "branch_policy:",
+                "  require_clean_worktree: true",
+                "repositories:",
+                '  - name: "app"',
+                '    path: "."',
+                '    role: "primary"',
+                "    required: true",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def write_minimal_knowledge_index(repo: Path) -> None:
@@ -359,6 +396,126 @@ def test_resolve_next_stage_keeps_micro_fix_converge_and_standard_current_stage(
     assert decision["current_stage"] == "analyze"
     assert decision["next_stage"] == "speckit.implement"
     assert decision["missing_artifacts"] == ["validation.md"]
+
+
+def test_preflight_new_workflow_allows_clean_base_branch(tmp_path):
+    repo = tmp_path / "repo"
+    init_git_repo(repo)
+    write_minimal_workspace(repo)
+    (repo / "README.md").write_text("# Demo\n", encoding="utf-8")
+    commit_all(repo, "initial")
+
+    payload = run_ps("preflight-new-workflow", "-RepoRoot", str(repo))
+
+    assert_standard_shape(payload, "preflight-new-workflow")
+    assert payload["status"] == "ok"
+    assert payload["facts"]["decision"] == "ok"
+    assert payload["facts"]["repositories"][0]["branch"] == "main"
+
+
+def test_preflight_new_workflow_blocks_dirty_workspace(tmp_path):
+    repo = tmp_path / "repo"
+    init_git_repo(repo)
+    write_minimal_workspace(repo)
+    (repo / "README.md").write_text("# Demo\n", encoding="utf-8")
+    commit_all(repo, "initial")
+    (repo / "local-note.txt").write_text("draft\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(REPO_ROOT / "scripts" / "powershell" / "preflight-new-workflow.ps1"),
+            "-RepoRoot",
+            str(repo),
+            "-Json",
+        ],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert_standard_shape(payload, "preflight-new-workflow")
+    assert payload["status"] == "blocked"
+    assert payload["facts"]["decision"] == "human_decision_required"
+    assert payload["facts"]["repositories"][0]["untracked_dirty"] == ["local-note.txt"]
+    assert any("uncommitted or untracked changes" in blocker for blocker in payload["blockers"])
+
+
+def test_preflight_new_workflow_blocks_non_base_branch(tmp_path):
+    repo = tmp_path / "repo"
+    init_git_repo(repo)
+    write_minimal_workspace(repo)
+    (repo / "README.md").write_text("# Demo\n", encoding="utf-8")
+    commit_all(repo, "initial")
+    subprocess.run(["git", "-C", str(repo), "checkout", "-b", "feature/wip"], check=True, capture_output=True, text=True)
+
+    result = subprocess.run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(REPO_ROOT / "scripts" / "powershell" / "preflight-new-workflow.ps1"),
+            "-RepoRoot",
+            str(repo),
+            "-Json",
+        ],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "blocked"
+    assert payload["facts"]["repositories"][0]["branch"] == "feature/wip"
+    assert any("not an allowed base branch" in blocker for blocker in payload["blockers"])
+
+
+def test_preflight_new_workflow_blocks_unfinished_active_feature(tmp_path):
+    repo = tmp_path / "repo"
+    init_git_repo(repo)
+    write_minimal_workspace(repo)
+    feature_dir = repo / "specs" / "001-active"
+    feature_dir.mkdir(parents=True)
+    (feature_dir / "workflow-state.json").write_text(
+        json.dumps({"status": "running", "intake": {"status": "completed"}}),
+        encoding="utf-8",
+    )
+    (repo / ".specify" / "feature.json").write_text(
+        json.dumps({"feature_directory": "specs/001-active", "spec_branch": "001-active"}),
+        encoding="utf-8",
+    )
+    (repo / "README.md").write_text("# Demo\n", encoding="utf-8")
+    commit_all(repo, "active feature state")
+
+    result = subprocess.run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(REPO_ROOT / "scripts" / "powershell" / "preflight-new-workflow.ps1"),
+            "-RepoRoot",
+            str(repo),
+            "-Json",
+        ],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "blocked"
+    assert payload["facts"]["decision"] == "resume_required"
+    assert payload["facts"]["active_feature"]["terminal"] is False
+    assert any("Active Spec Kit feature is not terminal" in blocker for blocker in payload["blockers"])
 
 
 def test_preflight_push_blocks_unrelated_history_and_knowledge_leak(tmp_path):
@@ -1060,6 +1217,114 @@ def test_hook_capability_pack_materializes_registry_and_tools(tmp_path):
     assert not (workspace / ".specify" / "capabilities" / "hooks" / "hook-demo").exists()
     assert not (workspace / ".specify" / "tools" / "demo-local-tool" / "1.0.0").exists()
     assert not (workspace / ".specify" / "tools" / "records" / "demo-local-tool-1.0.0.json").exists()
+
+
+def test_agent_chain_hook_pack_materializes_chain_manifest(tmp_path):
+    source = tmp_path / "source-knowledge"
+    (source / "workspace").mkdir(parents=True)
+    (source / "index.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "policy:",
+                "  default_context: false",
+                "  no_full_text_search_required: true",
+                '  repository_map_authority: ".specify/memory/repository-map.md"',
+                "  max_selected_guides: 3",
+                "workspace:",
+                "  overview:",
+                '    guide: "workspace/overview.md"',
+                '    authority: "reviewed"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (source / "workspace" / "overview.md").write_text("Agent chain hook overview.\n", encoding="utf-8")
+
+    hook_source = tmp_path / "agent-chain-hooks"
+    chain_dir = hook_source / "review-chain"
+    chain_dir.mkdir(parents=True)
+    (chain_dir / "chain.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                'integration: "codex"',
+                "steps:",
+                '  - id: "review"',
+                '    skill: "requesting-code-review"',
+                '  - id: "simplify"',
+                '    skill: "code-simplifier"',
+                '    run_if_previous_status: ["passed", "warning"]',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (hook_source / "index.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "hooks:",
+                '  - id: "post-commit-review-chain"',
+                '    type: "workflow-agent-chain"',
+                "    events:",
+                '      - "workflow.speckit.commit.after"',
+                '    chain_manifest: "review-chain/chain.yml"',
+                "    timeout_seconds: 1800",
+                '    failure_policy: "block"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    pack = tmp_path / "packs" / "agent-chain-demo"
+    exported = run_ps(
+        "export-knowledge-pack",
+        "-SourceKnowledgeDir",
+        str(source),
+        "-PackId",
+        "agent-chain-demo",
+        "-OutputDir",
+        str(pack),
+        "-HooksDir",
+        str(hook_source),
+        "-Force",
+    )
+    assert_standard_shape(exported, "export-knowledge-pack")
+    assert exported["status"] == "ok"
+    validation = exported["facts"]["validation"]["facts"]
+    assert validation["workflow_hook_count"] == 1
+    assert validation["legacy_hook_count"] == 0
+    assert validation["hook_schema_offenders"] == []
+
+    workspace = tmp_path / "workspace"
+    (workspace / ".specify").mkdir(parents=True)
+    applied = run_ps(
+        "apply-knowledge-pack",
+        "-RepoRoot",
+        str(workspace),
+        "-PackPath",
+        str(pack),
+        "-Force",
+    )
+    assert_standard_shape(applied, "apply-knowledge-pack")
+    assert applied["status"] == "ok"
+    assert (
+        workspace
+        / ".specify"
+        / "capabilities"
+        / "hooks"
+        / "agent-chain-demo"
+        / "review-chain"
+        / "chain.yml"
+    ).exists()
+    workflow_hooks = (workspace / ".specify" / "workflow-hooks.yml").read_text(encoding="utf-8")
+    assert 'type: "workflow-agent-chain"' in workflow_hooks
+    assert "workflow.speckit.commit.after" in workflow_hooks
+    assert 'chain_manifest: ".specify/capabilities/hooks/agent-chain-demo/review-chain/chain.yml"' in workflow_hooks
+    assert "runner:" not in workflow_hooks
 
 
 def test_hook_scaffold_open_code_review_pack_lifecycle(tmp_path):
@@ -3846,7 +4111,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         "direct runtime replacement\nhost CDP validation\n"
         "ensure-host-cdp\n"
         "stale/current-feature hint\nread the current plan only\n"
-        "standard-bugfix-lite\nworkpack.md\npreflight-push\n"
+        "standard-bugfix-lite\nworkpack.md\npreflight-new-workflow\npreflight-push\n"
         "select-knowledge\nselect-gates\nvalidate-knowledge-index\nvalidate-context-budget\n"
         "inspect-validation-capabilities\ninspect-workflow-closure\nknowledge-candidates.md\n",
         encoding="utf-8",
@@ -3882,7 +4147,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         "tasks -> analyze -> checklist\nstandard-bugfix-lite\nworkpack.md\nresolve-next-stage\n"
         "validate-generated-context\nvalidate-knowledge-index\n"
         "validate-context-budget\nselect-knowledge\nselect-gates\nskill-routing.yml\nartifact_sections\n"
-        "Stage Continuation\nWorkflow Hooks\ninvoke-workflow-hooks\nauto_continue=true\n"
+        "Stage Continuation\nNew Workflow Start\npreflight-new-workflow\nWorkflow Hooks\ninvoke-workflow-hooks\nworkflow-agent-chain\nauto_continue=true\n"
         "Final Response Guard\ninspect-workflow-closure\n"
         "workflow-observer\npromote-candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
@@ -3892,23 +4157,23 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
     )
     (repo / "ai" / "workflows" / "skill-routing.yml").write_text(
         "internal_skill_root\n.agents/spec-kit/skills\nload_only_selected_skill\n"
-        "speckit-fact-layer\nspeckit-test-plan\nspeckit-quality-vision\n"
+        "speckit-new-workflow-preflight\nspeckit-fact-layer\nspeckit-test-plan\nspeckit-quality-vision\n"
         "speckit-acceptance-rubric\nspeckit-ai-self-acceptance\n"
         "speckit-workflow-observer\nspeckit-promote-knowledge\ncommit-message\n",
         encoding="utf-8",
     )
     (repo / "ai" / "rules" / "ai-coding-rules.md").write_text(
         "Generated Context Drift\nstandard-bugfix-lite\nworkpack.md\nresolve-next-stage\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
-        "Stage Continuation Contract\nWorkflow hooks are script-owned\ninvoke-workflow-hooks\nHost Frontend Delivery Chain\n"
+        "Stage Continuation Contract\npreflight-new-workflow\nWorkflow shell hooks are script-owned\nWorkflow agent-chain hooks are engine-owned\ninvoke-workflow-hooks\nHost Frontend Delivery Chain\n"
         "ensure-host-cdp\n"
         "Retrospective/留痕 is mandatory before commit\n"
         "inspect-workflow-closure\nknowledge-candidates.md\npreflight-push\n",
         encoding="utf-8",
     )
     (repo / "spec-kit" / "workflows" / "speckit" / "workflow.yml").write_text(
-        "id: retrospective\nid: workflow-observer\nid: commit\nstandard-bugfix-lite\nrequires_confirmation: true\nRequire workflow-record.md\n"
+        "id: new-workflow-preflight\npreflight-new-workflow\nid: retrospective\nid: workflow-observer\nid: commit\nstandard-bugfix-lite\nrequires_confirmation: true\nRequire workflow-record.md\n"
         "knowledge-candidates.md\nworkflow-observation.md\n"
-        "automatic_stage_continuation\ndeterministic_next_stage\nworkflow_hooks\ninvoke-workflow-hooks\n.specify/workflow-hooks.yml\npost_human_acceptance_closure\n"
+        "automatic_stage_continuation\ndeterministic_next_stage\nworkflow_hooks\ninvoke-workflow-hooks\nworkflow-agent-chain\n.specify/workflow-hooks.yml\npost_human_acceptance_closure\n"
         "promote_knowledge_candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
         "capture-cdp-screenshot\n"
@@ -3981,6 +4246,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         "cleanup-host-cdp.ps1",
         "validate-context-budget.ps1",
         "resolve-next-stage.ps1",
+        "preflight-new-workflow.ps1",
         "preflight-push.ps1",
         "sync-native-runtime-artifacts.ps1",
         "validate-rpc-proto-bundle.ps1",
@@ -4039,7 +4305,7 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         "direct runtime replacement\nhost CDP validation\n"
         "ensure-host-cdp\n"
         "stale/current-feature hint\nread the current plan only\n"
-        "standard-bugfix-lite\nworkpack.md\npreflight-push\n"
+        "standard-bugfix-lite\nworkpack.md\npreflight-new-workflow\npreflight-push\n"
         "select-knowledge\nselect-gates\nvalidate-knowledge-index\nvalidate-context-budget\n"
         "inspect-validation-capabilities\ninspect-workflow-closure\nknowledge-candidates.md\n",
         encoding="utf-8",
@@ -4067,7 +4333,7 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         "tasks -> analyze -> checklist\nstandard-bugfix-lite\nworkpack.md\nresolve-next-stage\n"
         "validate-generated-context\nvalidate-knowledge-index\n"
         "validate-context-budget\nselect-knowledge\nselect-gates\nskill-routing.yml\nartifact_sections\n"
-        "Stage Continuation\nWorkflow Hooks\ninvoke-workflow-hooks\nauto_continue=true\n"
+        "Stage Continuation\nNew Workflow Start\npreflight-new-workflow\nWorkflow Hooks\ninvoke-workflow-hooks\nworkflow-agent-chain\nauto_continue=true\n"
         "Final Response Guard\ninspect-workflow-closure\n"
         "workflow-observer\npromote-candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
@@ -4077,23 +4343,23 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
     )
     (repo / "ai" / "workflows" / "skill-routing.yml").write_text(
         "internal_skill_root\n.agents/spec-kit/skills\nload_only_selected_skill\n"
-        "speckit-fact-layer\nspeckit-test-plan\nspeckit-quality-vision\n"
+        "speckit-new-workflow-preflight\nspeckit-fact-layer\nspeckit-test-plan\nspeckit-quality-vision\n"
         "speckit-acceptance-rubric\nspeckit-ai-self-acceptance\n"
         "speckit-workflow-observer\nspeckit-promote-knowledge\ncommit-message\n",
         encoding="utf-8",
     )
     (repo / "ai" / "rules" / "ai-coding-rules.md").write_text(
         "Generated Context Drift\nstandard-bugfix-lite\nworkpack.md\nresolve-next-stage\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
-        "Stage Continuation Contract\nWorkflow hooks are script-owned\ninvoke-workflow-hooks\nHost Frontend Delivery Chain\n"
+        "Stage Continuation Contract\npreflight-new-workflow\nWorkflow shell hooks are script-owned\nWorkflow agent-chain hooks are engine-owned\ninvoke-workflow-hooks\nHost Frontend Delivery Chain\n"
         "ensure-host-cdp\n"
         "Retrospective/留痕 is mandatory before commit\n"
         "inspect-workflow-closure\nknowledge-candidates.md\npreflight-push\n",
         encoding="utf-8",
     )
     (repo / "spec-kit" / "workflows" / "speckit" / "workflow.yml").write_text(
-        "id: retrospective\nid: workflow-observer\nid: commit\nstandard-bugfix-lite\nrequires_confirmation: true\nRequire workflow-record.md\n"
+        "id: new-workflow-preflight\npreflight-new-workflow\nid: retrospective\nid: workflow-observer\nid: commit\nstandard-bugfix-lite\nrequires_confirmation: true\nRequire workflow-record.md\n"
         "knowledge-candidates.md\nworkflow-observation.md\n"
-        "automatic_stage_continuation\ndeterministic_next_stage\nworkflow_hooks\ninvoke-workflow-hooks\n.specify/workflow-hooks.yml\npost_human_acceptance_closure\n"
+        "automatic_stage_continuation\ndeterministic_next_stage\nworkflow_hooks\ninvoke-workflow-hooks\nworkflow-agent-chain\n.specify/workflow-hooks.yml\npost_human_acceptance_closure\n"
         "promote_knowledge_candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
         "capture-cdp-screenshot\n"
@@ -4162,6 +4428,7 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         "cleanup-host-cdp.ps1",
         "validate-context-budget.ps1",
         "resolve-next-stage.ps1",
+        "preflight-new-workflow.ps1",
         "preflight-push.ps1",
         "sync-native-runtime-artifacts.ps1",
         "validate-rpc-proto-bundle.ps1",

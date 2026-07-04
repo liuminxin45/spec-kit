@@ -12,6 +12,7 @@ policy:
     - "Do not duplicate gate-pack, knowledge-guide, or command details in this map."
     - "Do not treat this map as source truth for product behavior."
 stage_skills:
+  new-workflow-preflight: "speckit-new-workflow-preflight"
   intake: "speckit-intake"
   specify: "speckit-specify"
   clarify: "speckit-clarify"

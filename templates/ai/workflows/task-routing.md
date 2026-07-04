@@ -19,12 +19,23 @@ failure, unresolved blocker, unclosed source/runtime delivery chain, or explicit
 user pause. If stopping, do not claim automatic entry; record `blockers` and
 `next_required_human_action`. A plain completion summary or "自动进入"/
 "continue to" promise without execution is non-compliant.
+## New Workflow Start
+Before `speckit-intake` starts a new task or overwrites active feature state,
+run `preflight-new-workflow`. Dirty worktrees, non-base branches, unfinished
+`.specify/feature.json` state, and unresolved workflow runs block the new
+workflow. The agent may explain suggested actions, but must not stash, clean,
+switch branches, delete specs, archive state, or overwrite `.specify/feature.json`
+unless the user explicitly authorizes that named action.
 ## Workflow Hooks
 Workflow hooks default off. If `.specify/workflow-hooks.yml` is missing or no
 `workflow.<workflow-id>.<stage-id>.<before|after>` hook matches, do not add
 hook state or change output. Matching `type: workflow-shell` hooks are
 deterministic gates: wait for `invoke-workflow-hooks`, continue only when
-`auto_continue=true`, otherwise pause with the hook summary/artifacts.
+`auto_continue=true`, otherwise pause with the hook summary/artifacts. Matching
+`type: workflow-agent-chain` hooks run engine-owned Codex skill chains
+serially; each step receives `previous_result`/`previous_results`, and the
+first `auto_continue=false`, `blocked`, `failed`, or `requires_rework` result
+short-circuits the chain and pauses the workflow.
 `.specify/workflow-hooks.local.yml` may disable hooks without adding state.
 For new external-tool hooks, use `specify hook scaffold` or
 `new-workflow-hook-pack.ps1`; do not hand-write `.specify/workflow-hooks.yml`.
@@ -43,6 +54,7 @@ columns are `阶段`, `状态`, and `阶段目标`. Use these objectives:
 
 | Stage | Objective |
 |-------|-----------|
+| `speckit-new-workflow-preflight` | Block unsafe new workflow starts before intake mutates active feature state. |
 | `speckit-intake` | Classify request risk/profile and write current feature routing state. |
 | `speckit-specify` | Capture scope, acceptance criteria, affected repositories, and known risks. |
 | `speckit-clarify` | Resolve or record only blocking high-impact ambiguities before planning. |

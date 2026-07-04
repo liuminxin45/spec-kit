@@ -89,6 +89,10 @@ This avoids stale knowledge and keeps AI coding context bounded.
 - Required repositories from `.specify/workspace.yml` must be present. If a
   required repo is missing, run `inspect-workspace-repositories` and block
   instead of scanning other repositories to guess an implementation owner.
+- Before starting a new Spec Kit workflow, run `preflight-new-workflow`; dirty
+  worktrees, non-base branches, unfinished `.specify/feature.json`, or
+  unresolved workflow runs block intake until the user manually resolves them
+  or explicitly authorizes a named AI action.
 - If a UI/CSS/layout patch fails once, collect runtime DOM/CSS/computed
   style/box metrics through DevTools/CDP before a second patch, unless the user
   provides copied DOM/CSS evidence.

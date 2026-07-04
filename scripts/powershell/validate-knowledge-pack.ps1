@@ -166,13 +166,14 @@ try {
             }
             $validInstallMethods = @("pack-local-script", "npm", "github-release", "manual")
             $validFailurePolicies = @("block", "warn", "warning", "advisory")
-            $validHookTypes = @("workflow-shell")
+            $validHookTypes = @("workflow-shell", "workflow-agent-chain")
             foreach ($hook in @(Read-KnowledgePackHookIndex -PackRoot $packRootResolved)) {
                 $hookId = [string](Get-KnowledgePackObjectValue -Object $hook -Key "id")
                 $hookType = [string](Get-KnowledgePackObjectValue -Object $hook -Key "type")
                 $events = @((Get-KnowledgePackObjectValue -Object $hook -Key "events") | ForEach-Object { [string]$_ } | Where-Object { $_ })
                 $runner = [string](Get-KnowledgePackObjectValue -Object $hook -Key "runner")
                 $command = [string](Get-KnowledgePackObjectValue -Object $hook -Key "command")
+                $chainManifest = [string](Get-KnowledgePackObjectValue -Object $hook -Key "chain_manifest")
                 $timeout = [string](Get-KnowledgePackObjectValue -Object $hook -Key "timeout_seconds")
                 $failurePolicy = [string](Get-KnowledgePackObjectValue -Object $hook -Key "failure_policy")
                 if ([string]::IsNullOrWhiteSpace($hookId)) {
@@ -193,18 +194,42 @@ try {
                         $hookSchemaOffenders += "hook $hookId has invalid event: $event"
                     }
                 }
-                if ([string]::IsNullOrWhiteSpace($runner) -and [string]::IsNullOrWhiteSpace($command)) {
-                    $hookSchemaOffenders += "hook $hookId must declare runner or command"
-                }
-                foreach ($candidateRunner in @($runner, $command) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) {
-                    $normalizedRunner = $candidateRunner.Replace('\', '/')
-                    if ([System.IO.Path]::IsPathRooted($normalizedRunner) -or $normalizedRunner -match '(^|/)\.\.($|/)' -or $normalizedRunner -match '^[A-Za-z]:') {
-                        $hookSchemaOffenders += "hook $hookId uses unsafe runner path: $candidateRunner"
+                if ($hookType -eq "workflow-shell") {
+                    if ([string]::IsNullOrWhiteSpace($runner) -and [string]::IsNullOrWhiteSpace($command)) {
+                        $hookSchemaOffenders += "hook $hookId must declare runner or command"
                     }
-                    if ((Test-KnowledgePackSafeRelativePath -RelativePath $normalizedRunner) -and $normalizedRunner -match "\.(ps1|sh|cmd|bat)$") {
-                        $runnerPath = Join-Path $capabilityLayers["hooks"].path ($normalizedRunner -replace "/", "\")
-                        if (-not (Test-Path -LiteralPath $runnerPath -PathType Leaf)) {
-                            $hookSchemaOffenders += "hook $hookId runner file not found: $normalizedRunner"
+                    foreach ($candidateRunner in @($runner, $command) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) {
+                        $normalizedRunner = $candidateRunner.Replace('\', '/')
+                        if ([System.IO.Path]::IsPathRooted($normalizedRunner) -or $normalizedRunner -match '(^|/)\.\.($|/)' -or $normalizedRunner -match '^[A-Za-z]:') {
+                            $hookSchemaOffenders += "hook $hookId uses unsafe runner path: $candidateRunner"
+                        }
+                        if ((Test-KnowledgePackSafeRelativePath -RelativePath $normalizedRunner) -and $normalizedRunner -match "\.(ps1|sh|cmd|bat)$") {
+                            $runnerPath = Join-Path $capabilityLayers["hooks"].path ($normalizedRunner -replace "/", "\")
+                            if (-not (Test-Path -LiteralPath $runnerPath -PathType Leaf)) {
+                                $hookSchemaOffenders += "hook $hookId runner file not found: $normalizedRunner"
+                            }
+                        }
+                    }
+                }
+                if ($hookType -eq "workflow-agent-chain") {
+                    if ([string]::IsNullOrWhiteSpace($chainManifest)) {
+                        $hookSchemaOffenders += "hook $hookId must declare chain_manifest"
+                    } elseif (-not (Test-KnowledgePackSafeRelativePath -RelativePath $chainManifest)) {
+                        $hookSchemaOffenders += "hook $hookId has unsafe chain_manifest: $chainManifest"
+                    } elseif (@(".yml", ".yaml", ".json") -notcontains [System.IO.Path]::GetExtension($chainManifest).ToLowerInvariant()) {
+                        $hookSchemaOffenders += "hook $hookId chain_manifest must be .yml, .yaml, or .json: $chainManifest"
+                    } else {
+                        $chainManifestPath = Join-Path $capabilityLayers["hooks"].path ($chainManifest -replace "/", "\")
+                        if (-not (Test-Path -LiteralPath $chainManifestPath -PathType Leaf)) {
+                            $hookSchemaOffenders += "hook $hookId chain_manifest file not found: $chainManifest"
+                        } else {
+                            $chainText = Get-Content -LiteralPath $chainManifestPath -Raw
+                            if ($chainText -notmatch "(?m)^\s*steps\s*:") {
+                                $hookSchemaOffenders += "hook $hookId chain_manifest missing steps: $chainManifest"
+                            }
+                            if ($chainText -notmatch "(?m)^\s*skill\s*:") {
+                                $hookSchemaOffenders += "hook $hookId chain_manifest missing skill entries: $chainManifest"
+                            }
                         }
                     }
                 }

@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 from specify_cli.integrations.base import IntegrationBase
+from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -104,6 +105,7 @@ def test_workflow_uses_lean_default_chain_with_conditional_stages():
 
     steps = workflow_doc["steps"]
     assert [step["id"] for step in steps] == [
+        "new-workflow-preflight",
         "intake",
         "specify",
         "plan",
@@ -125,6 +127,8 @@ def test_workflow_uses_lean_default_chain_with_conditional_stages():
     ]
 
     by_id = {step["id"]: step for step in steps}
+    assert "preflight-new-workflow" in by_id["new-workflow-preflight"]["input"]["args"]
+    assert "Run only after new-workflow-preflight is ok" in by_id["intake"]["input"]["args"]
     assert "requires_confirmation" not in by_id["acceptance"]
     assert by_id["human-acceptance"]["type"] == "gate"
     assert by_id["human-acceptance"]["skip_profiles"] == ["validation-only", "blocked-investigation"]
@@ -187,6 +191,7 @@ def test_conditional_stage_descriptions_do_not_weaken_hard_gates():
     assert stage_gate_policy["next_stage_routing"]["full-sdd"]["before_implement"].startswith(
         "tasks -> analyze -> checklist"
     )
+    assert stage_gate_policy["new_workflow_preflight"]["command"] == "preflight-new-workflow"
     assert stage_gate_policy["hard_implementation_preflight"]["command"] == "validate-feature-artifacts"
     assert stage_gate_policy["deterministic_next_stage"]["command"] == "resolve-next-stage"
     assert stage_gate_policy["generated_context_drift"]["command"] == "validate-generated-context"
@@ -549,6 +554,331 @@ def test_workflow_before_hook_blocks_before_step_and_resume_runs_step_once(tmp_p
     assert resumed_payload["status"] == "completed"
     assert "pending_hook" not in resumed_payload
     assert (project / "first.count").read_text(encoding="utf-8") == "1"
+
+
+def test_workflow_agent_chain_runs_serially_and_passes_previous_result(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    chain_dir = project / ".specify" / "capabilities" / "hooks" / "local"
+    chain_dir.mkdir(parents=True)
+    pack_skill_root = project / ".agents" / "spec-kit" / "skills"
+    (pack_skill_root / "local__requesting-code-review").mkdir(parents=True)
+    (pack_skill_root / "local__requesting-code-review" / "SKILL.md").write_text(
+        "# Request Review\n",
+        encoding="utf-8",
+    )
+    (pack_skill_root / "local__code-simplifier").mkdir(parents=True)
+    (pack_skill_root / "local__code-simplifier" / "SKILL.md").write_text(
+        "# Simplify\n",
+        encoding="utf-8",
+    )
+    workflow = WorkflowDefinition.from_string(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "workflow:",
+                '  id: "demo"',
+                '  name: "Demo"',
+                '  version: "1.0.0"',
+                '  integration: "codex"',
+                "steps:",
+                '  - id: "echo"',
+                '    type: "shell"',
+                f"    run: '{Path(sys.executable).as_posix()} -c \"print(''ok'')\"'",
+            ]
+        )
+    )
+    (project / ".specify" / "workflow-hooks.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "hooks:",
+                '  - id: "local.review-chain"',
+                '    pack_id: "local"',
+                '    type: "workflow-agent-chain"',
+                "    events:",
+                '      - "workflow.demo.echo.after"',
+                '    chain_manifest: ".specify/capabilities/hooks/local/chain.yml"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (chain_dir / "chain.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "steps:",
+                '  - id: "review"',
+                '    skill: "requesting-code-review"',
+                '  - id: "simplify"',
+                '    skill: "code-simplifier"',
+                '    run_if_previous_status: ["passed"]',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    calls = []
+
+    def fake_chain_step(**kwargs):
+        step = kwargs["step"]
+        input_payload = json.loads(kwargs["input_path"].read_text(encoding="utf-8"))
+        calls.append(
+            (
+                step["id"],
+                input_payload["previous_result"],
+                input_payload["chain_step"]["skill_path"],
+            )
+        )
+        raw = {
+            "schema_version": "1.0",
+            "status": "passed",
+            "action": "continue",
+            "auto_continue": True,
+            "summary": f"{step['id']} passed",
+            "artifact_paths": [],
+        }
+        kwargs["result_path"].write_text(json.dumps(raw), encoding="utf-8")
+        return {
+            "raw_result": raw,
+            "exit_code": 0,
+            "timed_out": False,
+            "command": "fake-agent",
+            "integration": "codex",
+        }
+
+    engine = WorkflowEngine(project)
+    monkeypatch.setattr(engine, "_execute_agent_chain_skill_step", fake_chain_step)
+    state = engine.execute(workflow, run_id="chainpass")
+
+    assert state.status.value == "completed"
+    assert calls[0] == ("review", None, ".agents/spec-kit/skills/local__requesting-code-review/SKILL.md")
+    assert calls[1][0] == "simplify"
+    assert calls[1][1]["chain_step_id"] == "review"
+    assert calls[1][2] == ".agents/spec-kit/skills/local__code-simplifier/SKILL.md"
+    event = state.hook_results["workflow.demo.echo.after"]
+    assert event["status"] == "passed"
+    assert event["auto_continue"] is True
+    chain_result = event["results"][0]
+    assert [step["chain_step_id"] for step in chain_result["steps"]] == ["review", "simplify"]
+
+
+def test_workflow_agent_chain_local_override_disables_without_state(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    workflow = WorkflowDefinition.from_string(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "workflow:",
+                '  id: "demo"',
+                '  name: "Demo"',
+                '  version: "1.0.0"',
+                '  integration: "codex"',
+                "steps:",
+                '  - id: "echo"',
+                '    type: "shell"',
+                f"    run: '{Path(sys.executable).as_posix()} -c \"print(''ok'')\"'",
+            ]
+        )
+    )
+    (project / ".specify" / "workflow-hooks.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "hooks:",
+                '  - id: "local.review-chain"',
+                '    pack_id: "local"',
+                '    type: "workflow-agent-chain"',
+                "    events:",
+                '      - "workflow.demo.echo.after"',
+                "    steps:",
+                '      - id: "review"',
+                '        skill: "requesting-code-review"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (project / ".specify" / "workflow-hooks.local.yml").write_text(
+        "\n".join(
+            [
+                "disabled_hooks:",
+                '  - "local.review-chain"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fail_if_called(**_kwargs):
+        raise AssertionError("disabled workflow-agent-chain hook should not run")
+
+    engine = WorkflowEngine(project)
+    monkeypatch.setattr(engine, "_execute_agent_chain_skill_step", fail_if_called)
+    state = engine.execute(workflow, run_id="chaindisabled")
+
+    assert state.status.value == "completed"
+    assert state.hook_results == {}
+    assert state.pending_hook is None
+
+
+def test_workflow_agent_chain_short_circuits_and_pauses(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    workflow = WorkflowDefinition.from_string(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "workflow:",
+                '  id: "demo"',
+                '  name: "Demo"',
+                '  version: "1.0.0"',
+                '  integration: "codex"',
+                "steps:",
+                '  - id: "echo"',
+                '    type: "shell"',
+                f"    run: '{Path(sys.executable).as_posix()} -c \"print(''ok'')\"'",
+                '  - id: "next"',
+                '    type: "shell"',
+                f"    run: '{Path(sys.executable).as_posix()} -c \"from pathlib import Path; Path(''next.txt'').write_text(''ran'')\"'",
+            ]
+        )
+    )
+    (project / ".specify" / "workflow-hooks.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "hooks:",
+                '  - id: "local.review-chain"',
+                '    type: "workflow-agent-chain"',
+                "    events:",
+                '      - "workflow.demo.echo.after"',
+                "    steps:",
+                '      - id: "review"',
+                '        skill: "requesting-code-review"',
+                '      - id: "simplify"',
+                '        skill: "code-simplifier"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    calls = []
+
+    def fake_chain_step(**kwargs):
+        step = kwargs["step"]
+        calls.append(step["id"])
+        raw = {
+            "schema_version": "1.0",
+            "status": "blocked",
+            "action": "pause",
+            "auto_continue": False,
+            "summary": "review needs human approval",
+            "artifact_paths": [],
+        }
+        kwargs["result_path"].write_text(json.dumps(raw), encoding="utf-8")
+        return {
+            "raw_result": raw,
+            "exit_code": 0,
+            "timed_out": False,
+            "command": "fake-agent",
+            "integration": "codex",
+        }
+
+    engine = WorkflowEngine(project)
+    monkeypatch.setattr(engine, "_execute_agent_chain_skill_step", fake_chain_step)
+    state = engine.execute(workflow, run_id="chainblock")
+
+    assert state.status.value == "paused"
+    assert state.current_step_index == 1
+    assert calls == ["review"]
+    assert not (project / "next.txt").exists()
+    assert state.pending_hook["event"] == "workflow.demo.echo.after"
+    assert state.pending_hook["status"] == "blocked"
+    chain_result = state.hook_results["workflow.demo.echo.after"]["results"][0]
+    assert chain_result["short_circuited"] is True
+    assert [step["chain_step_id"] for step in chain_result["steps"]] == ["review"]
+
+
+def test_workflow_agent_chain_commit_after_dirty_files_require_rework(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init", str(project)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(project), "config", "user.email", "test@example.com"], check=True)
+    subprocess.run(["git", "-C", str(project), "config", "user.name", "Test User"], check=True)
+    tracked = project / "tracked.txt"
+    tracked.write_text("clean\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(project), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(project), "commit", "-m", "initial"], check=True, capture_output=True, text=True)
+    (project / ".specify").mkdir(parents=True)
+    workflow = WorkflowDefinition.from_string(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "workflow:",
+                '  id: "demo"',
+                '  name: "Demo"',
+                '  version: "1.0.0"',
+                '  integration: "codex"',
+                "steps:",
+                '  - id: "commit"',
+                '    type: "shell"',
+                f"    run: '{Path(sys.executable).as_posix()} -c \"print(''committed'')\"'",
+            ]
+        )
+    )
+    (project / ".specify" / "workflow-hooks.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "hooks:",
+                '  - id: "local.review-chain"',
+                '    type: "workflow-agent-chain"',
+                "    events:",
+                '      - "workflow.demo.commit.after"',
+                "    steps:",
+                '      - id: "fix"',
+                '        skill: "code-simplifier"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_chain_step(**kwargs):
+        tracked.write_text("dirty after hook\n", encoding="utf-8")
+        raw = {
+            "schema_version": "1.0",
+            "status": "passed",
+            "action": "continue",
+            "auto_continue": True,
+            "summary": "fixed low-risk issue",
+            "artifact_paths": [],
+        }
+        kwargs["result_path"].write_text(json.dumps(raw), encoding="utf-8")
+        return {
+            "raw_result": raw,
+            "exit_code": 0,
+            "timed_out": False,
+            "command": "fake-agent",
+            "integration": "codex",
+        }
+
+    engine = WorkflowEngine(project)
+    monkeypatch.setattr(engine, "_execute_agent_chain_skill_step", fake_chain_step)
+    state = engine.execute(workflow, run_id="chaindirty")
+
+    assert state.status.value == "paused"
+    event = state.hook_results["workflow.demo.commit.after"]
+    assert event["status"] == "requires_rework"
+    assert event["action"] == "rework"
+    assert event["auto_continue"] is False
+    guard_step = event["results"][0]["steps"][-1]
+    assert guard_step["chain_step_id"] == "post-commit-mutation-guard"
+    assert guard_step["dirty_files"] == ["tracked.txt"]
 
 
 def test_integration_status_reports_codex_only_project_diagnostics(tmp_path):
