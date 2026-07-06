@@ -15,6 +15,7 @@ RUNTIME_TEMPLATE_FILES = {
     "checklist-template.md",
     "acceptance-rubric-template.md",
     "fact-pack-template.md",
+    "implementation-summary-template.md",
     "intake-template.md",
     "layer-manifest.yml",
     "plan-template.md",

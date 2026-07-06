@@ -39,6 +39,23 @@ short-circuits the chain and pauses the workflow.
 `.specify/workflow-hooks.local.yml` may disable hooks without adding state.
 For new external-tool hooks, use `specify hook scaffold` or
 `new-workflow-hook-pack.ps1`; do not hand-write `.specify/workflow-hooks.yml`.
+## Implementation Summary
+For implementation profiles, read `implementation-summary.md` first when asking
+what actually shipped. It is created during `implement`, verified during
+`converge`, linked from acceptance, and required before commit. Keep it a
+compact index: final solution, changed code/config/scripts/docs/tests,
+mechanism changes, plan/spec deltas, omitted work, validation/acceptance
+summary, residual risks, follow-ups, and evidence links.
+## Root-Fix Decision Gate
+For bugfix work, `plan.md`, `workpack.md`, or `micro-fix.md` must compare Root
+fix, Mitigation, Compatibility fallback, and Containment when applicable before
+implementation. A root fix eliminates the failure mechanism or class under
+reasonable scale growth. Mitigation reduces probability/impact, containment
+limits impact temporarily, and compatibility fallback preserves old behavior,
+interfaces, data, rollout, or rollback paths; those must not be called root
+fix. Cleanup, release, reset, retry, fallback, and quantity/scope limits need
+explicit proof before they count as root fix. Non-root-fix decisions keep
+residual risk and follow-up root-fix route in `implementation-summary.md`.
 ## Final Response Guard
 Before any final response after human acceptance, commit, post-commit
 self-check, or rubric work, run `inspect-workflow-closure` for the active
@@ -102,6 +119,10 @@ flags, not separate default workflows.
   and installed pack guides route context only until source evidence or human
   review promotes them.
 - Missing root cause or validation condition: route to `blocked-investigation` through `skill-routing.yml`.
+- Missing Root-Fix Decision Gate on bugfix work: block implementation or return
+  to plan/analyze. If the selected fix is mitigation, containment, or
+  compatibility fallback, keep the label explicit and carry residual risk plus
+  follow-up root-fix route through convergence and closure.
 - During `clarify` and `plan`, load the `test-plan` capability from
   `skill-routing.yml` when changed behavior needs API, E2E/interface,
   regression, fixture, smoke, UI, or device test planning. If the plan is
@@ -150,6 +171,9 @@ flags, not separate default workflows.
   dependency. `speckit-converge` must close promised-vs-delivered gaps before
   human acceptance.
 - Source/runtime artifact mismatch: fix repository source before acceptance or commit.
+- Missing `implementation-summary.md`: return to `speckit.implement` or
+  `speckit.converge`; do not ask for human acceptance or commit without a final
+  actual implementation index.
 - After human acceptance, run `inspect-workflow-closure`; if it reports
   `speckit.retrospective`, `speckit.workflow-observer`, `speckit.commit`,
   `speckit.post-commit-self-check`, or `speckit.rubric-score`, continue that

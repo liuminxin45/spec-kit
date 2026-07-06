@@ -71,13 +71,22 @@ For `micro-fix`, keep the lightweight evidence path unless the bug is no longer 
    - `AI Context Contract`: decision-critical facts, exact sources/commands, selected gate packs, context to load, context to avoid, and missing facts/blockers.
    - Delivery profile, task type, affected repositories, and routing assumptions.
    - Root Cause Evidence for bugfix work, including Counterexample, Blast Radius, and Validation Mapping.
+   - `Root-Fix Decision Gate` for bugfix work: compare Root fix,
+     Mitigation, Compatibility fallback, and Containment when applicable.
+     Record whether each candidate eliminates the failure mechanism, whether
+     scale growth can still fail, complexity/risk, compatibility/migration
+     impact, validation, select/reject reason, residual risk, and follow-up
+     root-fix route. Cleanup/release/reset/retry/fallback/limit-only options
+     must not be described as root fix unless they eliminate the mechanism.
    - Affected modules, ownership boundaries, public contract impact, and file ownership decisions.
    - `Quality Vision Link`: quality tier, UI baseline status, and human baseline decision if any.
     - `测试用例计划`: API/E2E/interface/regression/fixture/smoke rows, review status, and N/A reasons.
    - `Acceptance Rubric Link`: rubric path, Essential/Pitfall counts, and review state.
    - Implementation Slices with allowed scope, forbidden scope, validation, progress update, and stop conditions.
    - Validation plan and `AI Self-Acceptance Contract`.
-    For `standard-bugfix-lite`, place the same essentials in `workpack.md`: root cause, one bounded change slice, validation, and acceptance-rubric summary.
+    For `standard-bugfix-lite`, place the same essentials in `workpack.md`:
+    root cause, Root-Fix Decision Gate, one bounded change slice, validation,
+    and acceptance-rubric summary.
 9. Produce or update supporting artifacts only when the capability needs them:
    - `research.md`: unknowns, tradeoffs, prior art, source behavior discovery, and alternatives rejected.
    - `data-model.md`: durable state, DTOs, serialized fields, SDK structs, UI state, or database-like records.
@@ -106,6 +115,13 @@ Do not paste full gate details into `plan.md`; cite selected gate ids and record
 - Use bounded search from repository-map, affected repositories, known module directories, and named symbols/files with `rg`; do not scan the whole `workspace_root`.
 - Do not spawn a subagent/explorer for simple local lookup.
 - If root cause is unknown, write a bounded investigation slice with search scope, command budget, stop conditions, and evidence to collect.
+- For bugfixes, prefer a root fix that eliminates the failure category. If
+  cost, risk, or compatibility makes that unacceptable now, mark the selected
+  approach as mitigation, containment, or compatibility fallback and retain the
+  residual risk, scale boundary, and follow-up root-fix route.
+- Do not use "current project is enough" as the reason to mark a local fix as
+  root fix. Record future compatibility cost, scale boundary, and the trigger
+  for upgrading to root fix.
 - For migration, do not plan implementation without source behavior reference or explicit owner-approved N/A.
 - For UI/UX changes, every new or modified icon, tooltip, label, menu item, button, layout/style rule, and visible interaction state must cite a reliable source.
 - For UI parity work, selected gate packs must name source behavior, target UI, UI element traversal inventory, dynamic states, host validation, scrollbar, clipping, compression, and runtime DOM / computed style / box metrics evidence.

@@ -101,6 +101,19 @@ or historical process documents unless the current task needs them.
   `checklist` too when risk is high, UI/runtime evidence is involved,
   validation readiness is non-trivial, or the change crosses service/runtime/UI
   boundaries.
+- Bugfix work must complete a Root-Fix Decision Gate before implementation:
+  compare root fix, mitigation, compatibility fallback, and containment when
+  applicable. Do not call cleanup, release, reset, retry, fallback, rate/quantity
+  limiting, or impact narrowing a root fix unless evidence shows the failure
+  mechanism is eliminated under reasonable scale growth. Non-root-fix choices
+  must keep residual risk and a follow-up root-fix route.
+- For implementation profiles, `implementation-summary.md` is the first
+  artifact for final actual implementation facts. It must summarize the final
+  approach, changed code/config/scripts/docs/tests, mechanism changes,
+  plan/spec deltas, final fix type, eliminated failure mechanism, remaining
+  failure path, omitted work, validation/acceptance result, residual risks,
+  compatibility impact, follow-up root-fix route, and evidence links without
+  copying raw evidence.
 - A user's "next stage" instruction does not override structured gates in
   `.specify/feature.json`, `workflow-state.json`, or
   `.specify/templates/layer-manifest.yml`.

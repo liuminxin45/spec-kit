@@ -141,8 +141,14 @@ def test_workflow_uses_lean_default_chain_with_conditional_stages():
     assert by_id["fact-layer"]["profiles"] == ["blocked-investigation"]
     assert by_id["analyze"]["profiles"] == ["standard-bugfix", "full-sdd"]
     assert by_id["implement"]["skip_profiles"] == ["validation-only", "blocked-investigation"]
+    assert "implementation-summary.md" in by_id["implement"]["input"]["args"]
+    assert "Root-Fix Decision Gate" in by_id["plan"]["input"]["args"]
+    assert "Root-Fix Decision Gate" in by_id["analyze"]["input"]["args"]
     assert by_id["converge"]["skip_profiles"] == ["validation-only", "blocked-investigation"]
     assert "convergence.md" in by_id["converge"]["input"]["args"]
+    assert "implementation-summary.md" in by_id["converge"]["input"]["args"]
+    assert "implementation-summary.md" in by_id["acceptance"]["input"]["args"]
+    assert "implementation-summary.md" in by_id["commit"]["input"]["args"]
     assert "keep" in by_id["complete-branch"]["input"]["args"].lower()
     assert "spec branch" in by_id["complete-branch"]["input"]["args"].lower()
     assert "do not push" in by_id["complete-branch"]["input"]["args"].lower()
@@ -194,6 +200,7 @@ def test_conditional_stage_descriptions_do_not_weaken_hard_gates():
     assert stage_gate_policy["new_workflow_preflight"]["command"] == "preflight-new-workflow"
     assert stage_gate_policy["hard_implementation_preflight"]["command"] == "validate-feature-artifacts"
     assert stage_gate_policy["deterministic_next_stage"]["command"] == "resolve-next-stage"
+    assert stage_gate_policy["root_fix_decision_gate"]["command"] == "Root-Fix Decision Gate"
     assert stage_gate_policy["generated_context_drift"]["command"] == "validate-generated-context"
     assert stage_gate_policy["knowledge_index_drift"]["command"] == "validate-knowledge-index"
 
@@ -901,6 +908,7 @@ def test_new_command_templates_define_delivery_stages():
         "templates/commands/micro-fix.md": [
             "micro-fix.md",
             "Root Cause Evidence",
+            "Root-Fix Decision Gate",
             "Acceptance Lite",
             "Do not search the whole `workspace_root`",
         ],
@@ -921,6 +929,7 @@ def test_new_command_templates_define_delivery_stages():
         "templates/commands/acceptance.md": [
             "acceptance.md",
             "acceptance-checklist.md",
+            "implementation-summary.md",
             "用户确认",
             "验收通过",
         ],
@@ -951,6 +960,7 @@ def test_new_command_templates_define_delivery_stages():
             "acceptance-rubric.md",
             "Essential",
             "Pitfall",
+            "Root-Fix Decision Gate",
             "L1 功能与需求闭合",
             "L5 上下文与自动化治理",
         ],
@@ -960,6 +970,7 @@ def test_new_command_templates_define_delivery_stages():
             "PASS",
             "FAIL",
             "BLOCKED",
+            "Root-Fix Decision Gate",
             "speckit-converge",
             "CDP",
             "console",
@@ -967,12 +978,15 @@ def test_new_command_templates_define_delivery_stages():
         ],
         "templates/commands/converge.md": [
             "convergence.md",
+            "implementation-summary.md",
+            "Root-Fix Decision Gate",
             "promised-vs-delivered",
             "speckit.implement",
             "status: passed",
             "speckit.acceptance",
         ],
         "templates/commands/retrospective.md": [
+            "implementation-summary.md",
             "workflow-record.md",
             "improvement-candidates.md",
             "knowledge-candidates.md",
@@ -1242,10 +1256,12 @@ def test_quality_vision_rubric_and_ai_self_acceptance_are_routed_on_demand():
     assert "Quality Vision Link" in plan_template
     assert "Acceptance Rubric Link" in plan_template
     assert "AI Self-Acceptance Contract" in plan_template
+    assert "Root-Fix Decision Gate" in plan_template
     assert "UI Baseline" in quality_template
     assert "needs-human-baseline" in quality_template
     assert "Essential" in rubric_template
     assert "Pitfall" in rubric_template
+    assert "Root-Fix Decision Gate Rules" in rubric_template
     assert "Actual Workflow Rubric Audit" in rubric_template
     assert "Hard gates" in rubric_template
     assert "Complete-branch allowed" in rubric_template
@@ -3041,6 +3057,8 @@ def test_open_source_readme_documents_pack_and_generated_knowledge_starts():
     assert "specify knowledge bootstrap --project-dir . --json" in readme
     assert "specify knowledge generate-pack --project-dir . --pack-id <id> --include-profiles --json" in readme
     assert "specify knowledge finalize-pack --project-dir . --pack-id <id> --include-profiles --apply --force" in readme
+    assert "implementation-summary.md" in readme
+    assert "Root-Fix 决策门禁" in readme
     assert "specify knowledge repack --project-dir . --pack-id <id> --include-profiles --force --json" in readme
     assert ".specify/knowledge-pack-generation/ai-synthesis/ai/knowledge/" in readme
     assert "source-coverage-ledger.json" in readme

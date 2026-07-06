@@ -97,6 +97,17 @@ investigation scope is bounded and whether implementation is still blocked.
    - Missing or weak `Root Cause Evidence` for bugfixes: Symptom, Call Path,
      Evidence, Excluded Alternatives, Counterexample, Blast Radius,
      Validation Mapping, and Confidence.
+   - Missing or weak `Root-Fix Decision Gate` for bugfixes: Root fix,
+     Mitigation, and Compatibility fallback must be compared; Containment must
+     be compared or marked N/A with a reason.
+   - Bugfix plans that mark mitigation, containment, compatibility fallback,
+     cleanup, release, reset, retry, fallback, rate/quantity limiting, or
+     impact narrowing as root fix without proving the failure mechanism is
+     eliminated.
+   - Bugfix plans whose selected root fix still has a scale-growth failure path
+     through the same mechanism.
+   - Non-root-fix decisions that omit residual risk, compatibility/migration
+     impact, or follow-up root-fix route.
    - Bugfix plan/tasks that pre-write a concrete patch before evidence is high.
    - Plans that treat module similarity as sufficient proof without proving the
      current call path and failure mode.
@@ -221,7 +232,7 @@ conclusion in the chat response:
     branch completion.
   - Do not ask the developer to approve root cause correctness, test
     sufficiency, fallback semantics, or implementation correctness.
-  - If root cause, tests, fallback semantics, or implementation correctness are
+  - If root cause, Root-Fix Decision Gate, tests, fallback semantics, or implementation correctness are
     uncertain, report a blocking/high finding instead of asking for approval.
   - If no blocking issues remain, continue to the auto-capable
     `speckit.checklist` / `$speckit-checklist`.

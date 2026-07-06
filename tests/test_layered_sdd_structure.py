@@ -118,6 +118,8 @@ def test_agents_template_uses_minimal_default_context():
     assert "select-gates" in task_routing
     assert "validate-context-budget" in task_routing
     assert "skill-routing.yml" in task_routing
+    assert "Root-Fix Decision Gate" in task_routing
+    assert "Root-Fix Decision Gate" in agents_template
     assert "internal_skill_root" in skill_routing
     assert ".agents/spec-kit/skills" in skill_routing
     assert "load_only_selected_skill" in skill_routing
@@ -192,12 +194,17 @@ def test_validation_templates_are_minimal_and_installed(tmp_path):
 
     assert (SPEC_KIT_ROOT / "templates/ai/templates/validation-template.md").is_file()
     assert (SPEC_KIT_ROOT / "templates/ai/templates/evidence-template.md").is_file()
+    assert (SPEC_KIT_ROOT / "templates/implementation-summary-template.md").is_file()
     assert not (SPEC_KIT_ROOT / "templates/ai/templates/knowledge-entry-template.md").exists()
     assert not (SPEC_KIT_ROOT / "templates/ai/templates/skill-template.md").exists()
 
     assert manifest["artifact_sets"]["validation"] == ["validation.md", "acceptance.md"]
     assert manifest["artifact_sets"]["validation-only"] == ["validation.md"]
+    assert "implementation-summary.md" in manifest["artifact_sets"]["converge"]
     assert "Evidence Index" in manifest["artifact_sections"]["evidence.md"]
+    assert "Root-Fix Decision Gate" in manifest["artifact_sections"]["workpack.md"]
+    assert "Final Implemented Solution" in manifest["artifact_sections"]["implementation-summary.md"]
+    assert "Final fix type" in manifest["artifact_sections"]["implementation-summary.md"]
 
     project_root = tmp_path / "project"
     project_root.mkdir()
@@ -213,6 +220,7 @@ def test_validation_templates_are_minimal_and_installed(tmp_path):
 
     assert (project_root / "ai/templates/validation-template.md").is_file()
     assert (project_root / "ai/templates/evidence-template.md").is_file()
+    assert (project_root / ".specify/templates/implementation-summary-template.md").is_file()
     assert not (project_root / "ai/templates/knowledge-entry-template.md").exists()
     assert not (project_root / "ai/templates/skill-template.md").exists()
 

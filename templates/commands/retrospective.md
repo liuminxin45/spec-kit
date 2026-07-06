@@ -51,7 +51,7 @@ promote lessons or knowledge into long-term policy.
 1. Run the prerequisite script and parse `FEATURE_DIR` and `AVAILABLE_DOCS`.
 2. Load available feature artifacts: `intake.md`, `spec.md`, `plan.md`,
    `tasks.md`, `progress.md`, `review.md`, `lessons.md`, `validation.md`,
-   `evidence.md`, `fact-pack.md`, `acceptance.md`, `acceptance-checklist.md`,
+   `implementation-summary.md`, `evidence.md`, `fact-pack.md`, `acceptance.md`, `acceptance-checklist.md`,
    `checklists/`, and `FEATURE_DIR/cdp-screenshots/screenshots-index.md` when
    present.
 3. Confirm final acceptance has explicit evidence.
@@ -77,9 +77,9 @@ promote lessons or knowledge into long-term policy.
       quality, remaining risk, and whether the system had enough evidence.
     - Rubric readiness: list evidence paths needed for final post-commit
       Rubric scoring, including AI Self-Acceptance, API/E2E plan, plugin
-      `.plugin` package evidence when applicable, CDP/runtime evidence when
-      applicable, and workflow compliance risks. Do not output final Rubric
-      scores in retrospective.
+     `.plugin` package evidence when applicable, CDP/runtime evidence when
+     applicable, `implementation-summary.md`, and workflow compliance risks.
+     Do not output final Rubric scores in retrospective.
    - `Accepted Gaps`: owner/user-accepted validation gaps, unsupported
      automation, product tradeoffs, excluded scope, and the evidence showing
      they were accepted.

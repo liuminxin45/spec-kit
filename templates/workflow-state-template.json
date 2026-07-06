@@ -80,6 +80,17 @@
     "latest_biz_log": "",
     "devtools_target": ""
   },
+  "implementation_summary": {
+    "status": "pending",
+    "artifact": "implementation-summary.md"
+  },
+  "root_fix_decision": {
+    "status": "pending",
+    "artifact": "",
+    "final_fix_type": "",
+    "eliminated_failure_mechanism": "",
+    "follow_up_root_fix_route": ""
+  },
   "acceptance": {
     "status": "pending",
     "evidence": ""

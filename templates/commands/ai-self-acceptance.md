@@ -62,12 +62,16 @@ surface:
 5. Treat missing UI baseline, wrong CDP target, missing key-path screenshot for
    UI-visible CDP validation, stale runtime artifact, uninspected console/log
    errors, or unrun feasible smoke as `FAIL`, not a human-acceptance item.
-6. Use `BLOCKED` only for external facts the agent cannot fix or obtain:
+6. For bugfix work, fail when Root-Fix Decision Gate is missing, final fix type
+   is absent, a scale-growth failure path is still present but labeled root
+   fix, or cleanup/release/reset/retry/fallback/limiting is treated as root fix
+   without evidence that the failure mechanism is eliminated.
+7. Use `BLOCKED` only for external facts the agent cannot fix or obtain:
    unavailable device, missing permission, unknown unsafe process owner, missing
    owner decision, or unavailable tool after recovery attempts.
-7. Write `validation.md` `AI Self-Acceptance` / `AI Acceptance Result` with the
+8. Write `validation.md` `AI Self-Acceptance` / `AI Acceptance Result` with the
    rubric row results, blockers, evidence links, and next action.
-8. Do not output final Rubric scores here. Record criteria coverage and
+9. Do not output final Rubric scores here. Record criteria coverage and
    triggered pitfalls only; final L1-L5 Rubric scoring is emitted by
    `speckit.rubric-score` after the one post-commit self-check.
 

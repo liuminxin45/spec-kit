@@ -47,6 +47,7 @@ confirmation.
      used plan-embedded slices.
    - `FEATURE_DIR/plan.md`
    - `FEATURE_DIR/progress.md`
+   - `FEATURE_DIR/implementation-summary.md`
    - `FEATURE_DIR/acceptance.md`
    - `FEATURE_DIR/acceptance-checklist.md`
    - `FEATURE_DIR/workflow-record.md` when present
@@ -63,11 +64,18 @@ confirmation.
    `workflow-record.md`, missing `improvement-candidates.md`, missing
    `knowledge-candidates.md`, missing `workflow-observation.md`, or
    `workflow-state.json` `retrospective.status` not equal to `completed` as a
-   hard blocker. Return to `speckit.retrospective` or
+   hard blocker. Missing `implementation-summary.md` or incomplete
+   `workflow-state.json` `implementation_summary` is a hard blocker; return to
+   `speckit.implement` or `speckit.converge` before committing. For bugfix
+   work, missing or contradictory Root-Fix Decision Gate closure is also a hard
+   blocker: final fix type must be explicit, root fix must eliminate the
+   failure mechanism, and non-root-fix outcomes must keep residual risk plus
+   follow-up root-fix route. Return to `speckit.retrospective` or
    `speckit.workflow-observer` according to `inspect-workflow-closure`; do not
    inspect, stage, or commit repository files until this preflight passes.
    Require `workflow-record.md`, `improvement-candidates.md`,
-   `knowledge-candidates.md`, and `workflow-observation.md` before commit.
+   `knowledge-candidates.md`, `workflow-observation.md`, and
+   `implementation-summary.md` before commit.
    If retrospective artifacts are missing, stop and return to
    `speckit.retrospective`.
    If workflow-observer artifacts are missing, stop and return to
