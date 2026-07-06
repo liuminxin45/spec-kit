@@ -20,6 +20,23 @@
 - 总分低于 90、任一 hard gate 失败、任一维度低于 80 且无 blocker 或
   owner/user accepted gap 证据时，禁止 complete-branch。
 
+## Root-Fix Decision Gate Rules
+
+For bugfix work, missing Root-Fix Decision Gate is an Essential failure. The
+rubric must verify:
+
+- Final fix type is explicit: root fix / mitigation / containment /
+  compatibility fallback.
+- A fix may be called root fix only when it eliminates the failure mechanism and
+  has no known same-mechanism scale-growth failure path.
+- Cleanup, release, reset, retry, fallback, rate limiting, quantity limiting,
+  or impact narrowing must be checked as likely mitigation unless the evidence
+  proves the failure mechanism is eliminated.
+- If the selected fix is mitigation, containment, or compatibility fallback,
+  residual risk and follow-up root-fix route must be recorded.
+- "Current project is enough" is not a root-fix reason unless future
+  compatibility cost, scale boundary, and root-fix upgrade trigger are recorded.
+
 ## 评分项
 
 | ID | 层级 | 重要性 | 权重 | 准则 | 所需证据 | 通过条件 | 来源 | 状态 |
@@ -29,7 +46,9 @@
 | R-003 | L3 工作流阶段合规 | Essential | 1.0 |  |  |  |  |  |
 | R-004 | L4 交付与仓库状态 | Important | 0.7 |  |  |  |  |  |
 | R-005 | L5 上下文与自动化治理 | Important | 0.7 |  |  |  |  |  |
+| R-006 | L1 功能与需求闭合 | Essential | 1.0 | Bugfix Root-Fix Decision Gate 完成且最终 fix type 未被误标 | plan.md/workpack.md Root-Fix Decision Gate, implementation-summary.md | 非 root fix 明确标记残留风险和后续 root-fix 路线；root fix 消除失败机制且无同机制规模失败路径 | Root-Fix Decision Gate |  |
 | P-001 | Pitfall | Pitfall | 0.9 |  |  | Not triggered |  |  |
+| P-002 | Pitfall | Pitfall | 0.9 | Mitigation / containment / compatibility fallback 被描述成 root fix | Root-Fix Decision Gate, implementation-summary.md, validation.md | Not triggered | Root-Fix Decision Gate |  |
 
 ## 评审摘要
 

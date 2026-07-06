@@ -51,6 +51,15 @@ Create or update `FEATURE_DIR/micro-fix.md` with:
   - Blast Radius.
   - Validation Mapping.
   - Confidence.
+- `## Root-Fix Decision Gate`
+  - Compare at least Root fix, Mitigation, and Compatibility fallback.
+    Containment may be `N/A` with a reason.
+  - For each candidate, record whether it eliminates the failure mechanism,
+    whether scale growth can still fail, complexity/risk, compatibility impact,
+    validation, select/reject reason, residual risk, and follow-up root-fix route.
+  - Cleanup, release, reset, retry, fallback, rate/quantity limiting, or
+    impact narrowing is mitigation unless evidence proves the mechanism is
+    eliminated.
 - `## Change Plan`
   - Files allowed to change.
   - Files/behaviors forbidden.

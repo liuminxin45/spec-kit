@@ -69,9 +69,15 @@ self-acceptance.
    Include rows that allow scoring the actual workflow, AI validation closure,
    plugin package evidence when applicable, and UI/UX quality after
    implementation.
+   For bugfix work, include an Essential Root-Fix Decision Gate row and a
+   Pitfall row for mitigation / containment / compatibility fallback being
+   mislabeled as root fix.
 3. Include negative `Pitfall` rows for high-risk errors such as false UI-only
    state, wrong API payload, stale runtime artifact, wrong CDP target, XSS,
    duplicate submit, or unhandled network/device failure when relevant.
+   Also include the generic bugfix pitfall when a plan only cleans, releases,
+   resets, retries, falls back, limits quantity/scope, or narrows impact
+   without evidence that the failure mechanism itself is eliminated.
 4. For UI rows, cite the baseline source from `quality-vision.md` or mark a
    blocker when no approved baseline exists.
 5. Write `acceptance-rubric.md` using
@@ -88,6 +94,12 @@ self-acceptance.
   accepted gaps, stop for human review before implementation.
 - Keep detailed commands and evidence outside the rubric; cite evidence types
   and pass conditions only.
+- Missing Root-Fix Decision Gate is an Essential failure for bugfix work. If the
+  final approach is not root fix, require explicit mitigation / containment /
+  compatibility fallback labeling, residual risk, and follow-up root-fix route.
+- Do not accept "current project is enough" as a root-fix reason unless the
+  rubric cites future compatibility cost, scale boundary, and the trigger for
+  upgrading to root fix.
 
 ## Output
 

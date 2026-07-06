@@ -1,6 +1,6 @@
 [project]
 name = "specify-cli"
-version = "0.9.3"
+version = "0.9.4"
 description = "Codex-only Specify CLI for Spec Kit AI delivery workflows."
 requires-python = ">=3.11"
 dependencies = [
@@ -33,6 +33,7 @@ packages = ["src/specify_cli"]
 "templates/checklist-template.md" = "specify_cli/core_pack/templates/checklist-template.md"
 "templates/constitution-template.md" = "specify_cli/core_pack/templates/constitution-template.md"
 "templates/fact-pack-template.md" = "specify_cli/core_pack/templates/fact-pack-template.md"
+"templates/implementation-summary-template.md" = "specify_cli/core_pack/templates/implementation-summary-template.md"
 "templates/intake-template.md" = "specify_cli/core_pack/templates/intake-template.md"
 "templates/layer-manifest.yml" = "specify_cli/core_pack/templates/layer-manifest.yml"
 "templates/pitfalls-template.md" = "specify_cli/core_pack/templates/pitfalls-template.md"

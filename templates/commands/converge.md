@@ -32,6 +32,7 @@ Converge is the post-implementation reconciliation stage. It verifies that imple
 - `FEATURE_DIR/plan.md` when present
 - `FEATURE_DIR/tasks.md` when present
 - `FEATURE_DIR/progress.md`
+- `FEATURE_DIR/implementation-summary.md`
 - `FEATURE_DIR/validation.md`
 - `FEATURE_DIR/acceptance-rubric.md` when code was changed
 
@@ -47,7 +48,23 @@ Converge is the post-implementation reconciliation stage. It verifies that imple
    - If fixable, return to `speckit.implement` with the exact missing item and required validation.
    - If not fixable, write the external blocker and required human action.
 4. For every `accepted-gap`, require explicit owner/user evidence in progress or acceptance artifacts.
-5. Write or update `FEATURE_DIR/convergence.md`.
+5. Verify `implementation-summary.md` answers what was actually implemented:
+    final solution, changed code/config/scripts/docs/tests, mechanism changes,
+    plan/spec deltas, not-implemented items, validation/acceptance evidence,
+    residual risks, and evidence links. If it is missing, return to
+    `speckit.implement`; if it is incomplete, update it before writing
+    convergence.
+6. For bugfix work, verify the Root-Fix Decision Gate closure:
+   - final fix type is explicit: root fix / mitigation / containment /
+     compatibility fallback
+   - eliminated failure mechanism is yes / no / partial
+   - remaining failure path is recorded
+   - mitigation, containment, or compatibility fallback is not described as root
+     fix
+   - root fix has no known same-mechanism scale-growth failure path
+   - non-root-fix outcomes record residual risk and follow-up root-fix route
+   Missing or contradictory information returns to `speckit.implement`.
+7. Write or update `FEATURE_DIR/convergence.md`.
 
 ## Output Contract
 
@@ -55,6 +72,8 @@ Converge is the post-implementation reconciliation stage. It verifies that imple
 
 - `status: passed | blocked | returned-to-implement`
 - promised-vs-delivered table
+- link to `implementation-summary.md`
+- Root-Fix Decision Gate result and final fix type for bugfix work
 - open gaps and their next stage
 - accepted gaps with evidence reference
 - validation commands or runtime evidence used

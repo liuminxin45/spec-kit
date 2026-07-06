@@ -80,13 +80,13 @@ steps:
     command: speckit.specify
     integration: "{{ inputs.integration }}"
     input:
-      args: "Create only the minimum intent artifact required by the selected profile. For micro-fix, use lightweight progress/micro-fix notes. For standard-bugfix-lite, create or update workpack.md with root cause, slice, validation, and acceptance-rubric summary. For standard/full work, create or update spec.md with scope, non-goals, acceptance, affected repos from repository-map, and known risks. Do not scan the workspace to infer repository roles. Do not push or create remote tracking."
+      args: "Create only the minimum intent artifact required by the selected profile. For micro-fix, use lightweight progress/micro-fix notes. For standard-bugfix-lite, create or update workpack.md with root cause, Root-Fix Decision Gate, slice, validation, and acceptance-rubric summary. For standard/full work, create or update spec.md with scope, non-goals, acceptance, affected repos from repository-map, and known risks. Do not scan the workspace to infer repository roles. Do not push or create remote tracking."
 
   - id: plan
     command: speckit.plan
     integration: "{{ inputs.integration }}"
     input:
-      args: "Create the smallest executable plan. Standard-bugfix-lite uses workpack.md instead of full spec.md/plan.md unless a high-risk gate is selected. Standard-bugfix may keep Implementation Slices inside plan.md and skip tasks.md. Draft and negotiate the API/E2E/interface test-case plan through speckit-test-plan; continue only when obvious or reviewed. For UI/UX/copy/parity work, create quality-vision.md through speckit-quality-vision with baseline screenshot/design/source or owner-approved N/A. Create acceptance-rubric.md through speckit-acceptance-rubric before implementation unless the lite workpack contains a sufficient rubric summary. Full-sdd may add tasks.md/research/contracts only when required by risk or scope. For UI/layout repeated failure, require fact-layer evidence before another patch. Optional desktop host/plugin/native gate packs may require a Source Behavior Execution Map, source/runtime/package delivery evidence, or real host validation. For source/runtime/plugin work, plan repository source-file edits, not installed runtime plugin directories or built artifacts."
+      args: "Create the smallest executable plan. Standard-bugfix-lite uses workpack.md instead of full spec.md/plan.md unless a high-risk gate is selected. Standard-bugfix may keep Implementation Slices inside plan.md and skip tasks.md. Bugfix planning must include Root-Fix Decision Gate: compare Root fix, Mitigation, Compatibility fallback, and Containment when applicable; do not label cleanup/release/reset/retry/fallback/limiting as root fix unless it eliminates the failure mechanism. Draft and negotiate the API/E2E/interface test-case plan through speckit-test-plan; continue only when obvious or reviewed. For UI/UX/copy/parity work, create quality-vision.md through speckit-quality-vision with baseline screenshot/design/source or owner-approved N/A. Create acceptance-rubric.md through speckit-acceptance-rubric before implementation unless the lite workpack contains a sufficient rubric summary. Full-sdd may add tasks.md/research/contracts only when required by risk or scope. For UI/layout repeated failure, require fact-layer evidence before another patch. Optional desktop host/plugin/native gate packs may require a Source Behavior Execution Map, source/runtime/package delivery evidence, or real host validation. For source/runtime/plugin work, plan repository source-file edits, not installed runtime plugin directories or built artifacts."
 
   - id: validation
     command: speckit.validation
@@ -114,7 +114,7 @@ steps:
     integration: "{{ inputs.integration }}"
     profiles: ["standard-bugfix", "full-sdd"]
     input:
-      args: "Analyze spec/plan/tasks consistency, blockers, traceability, root-cause evidence, and implementation readiness before source changes."
+      args: "Analyze spec/plan/tasks consistency, blockers, traceability, root-cause evidence, Root-Fix Decision Gate, and implementation readiness before source changes."
 
   - id: checklist
     command: speckit.checklist
@@ -128,21 +128,21 @@ steps:
     integration: "{{ inputs.integration }}"
     skip_profiles: ["validation-only", "blocked-investigation"]
     input:
-      args: "Implement from plan slices, tasks.md when present, or micro-fix evidence. Keep searches bounded to affected repos. Update progress.md. Required validation belongs here. After any code change, run speckit-ai-self-acceptance against acceptance-rubric.md; PASS may continue to converge, FAIL loops to implement/fact-layer, BLOCKED requires a true external dependency. If a first UI/CSS/layout patch fails, stop and collect/request runtime DOM/CSS/computed style/box metrics before a second patch. Product and plugin fixes must target repository source, not installed runtime plugin directories or built artifacts. For selected host-embedded frontend plugin gates, follow source edit -> frontend build -> direct runtime replacement -> real host CDP verification, first running ensure-host-cdp with safe process recovery to reuse, launch, stop verified host debug blockers, or diagnose the real host instead of jumping to manual acceptance. For selected native/plugin bridge gates, build/package or export native output, sync explicit runtime artifacts with sync-native-runtime-artifacts when validating locally, validate RPC proto bundle fields when bridge/proto changes, restart host, then run real host/CDP validation. Do not commit, push, merge, or delete branches."
+      args: "Implement from plan slices, tasks.md when present, or micro-fix evidence. Keep searches bounded to affected repos. Update progress.md and create/update implementation-summary.md as the final actual implementation index, including final fix type, eliminated failure mechanism, remaining failure path, residual risk, follow-up root-fix route, compatibility impact, and validation evidence. Required validation belongs here. After any code change, run speckit-ai-self-acceptance against acceptance-rubric.md; PASS may continue to converge only when implementation-summary.md exists and workflow-state.json links it, FAIL loops to implement/fact-layer, BLOCKED requires a true external dependency. If a first UI/CSS/layout patch fails, stop and collect/request runtime DOM/CSS/computed style/box metrics before a second patch. Product and plugin fixes must target repository source, not installed runtime plugin directories or built artifacts. For selected host-embedded frontend plugin gates, follow source edit -> frontend build -> direct runtime replacement -> real host CDP verification, first running ensure-host-cdp with safe process recovery to reuse, launch, stop verified host debug blockers, or diagnose the real host instead of jumping to manual acceptance. For selected native/plugin bridge gates, build/package or export native output, sync explicit runtime artifacts with sync-native-runtime-artifacts when validating locally, validate RPC proto bundle fields when bridge/proto changes, restart host, then run real host/CDP validation. Do not commit, push, merge, or delete branches."
 
   - id: converge
     command: speckit.converge
     integration: "{{ inputs.integration }}"
     skip_profiles: ["validation-only", "blocked-investigation"]
     input:
-      args: "After implementation and before human acceptance, reconcile promised behavior against delivered code/test/runtime evidence. Write convergence.md. If fixable gaps remain, return to speckit.implement with exact missing items; if only accepted gaps or true external blockers remain, record evidence. Only convergence status passed may continue to acceptance."
+      args: "After implementation and before human acceptance, reconcile promised behavior against delivered code/test/runtime evidence. Require and update implementation-summary.md, then write convergence.md. For bugfix work, verify Root-Fix Decision Gate closure and final fix type; non-root-fix outcomes must keep residual risk and follow-up root-fix route. If fixable gaps remain, return to speckit.implement with exact missing items; if only accepted gaps or true external blockers remain, record evidence. Only convergence status passed may continue to acceptance."
 
   - id: acceptance
     command: speckit.acceptance
     integration: "{{ inputs.integration }}"
     skip_profiles: ["validation-only", "blocked-investigation"]
     input:
-      args: "Generate executable user acceptance steps and expected results only after AI-owned validation is PASS or explicitly blocked by an external dependency. Pair validation.md with acceptance.md. Create evidence.md/fact-pack.md only when raw evidence is too large or runtime facts are required. Wait for explicit user confirmation that acceptance passes."
+      args: "Generate executable user acceptance steps and expected results only after AI-owned validation is PASS, implementation-summary.md exists, and convergence.md passed, or validation is explicitly blocked by an external dependency. Pair validation.md with acceptance.md and link implementation-summary.md as the first final actual implementation artifact. Create evidence.md/fact-pack.md only when raw evidence is too large or runtime facts are required. Wait for explicit user confirmation that acceptance passes."
 
   - id: human-acceptance
     type: gate
@@ -170,7 +170,7 @@ steps:
     integration: "{{ inputs.integration }}"
     skip_profiles: ["validation-only", "blocked-investigation"]
     input:
-      args: "Inspect scope and source/runtime consistency only after retrospective/留痕 and workflow-observer are complete. Require workflow-record.md, improvement-candidates.md, knowledge-candidates.md, and workflow-observation.md before commit. Also require workflow-state.json retrospective.status=completed, AI Self-Acceptance PASS, reviewed API/E2E test plan or explicit N/A, and applicable plugin .plugin package evidence before commit. Resolve spec-doc inclusion from include_spec_docs={{ inputs.include_spec_docs }} or deterministic feature policy; default to exclude generated spec docs when no policy exists. Use the commit-message skill, validate the exact message, stage only approved source/test/spec scope, commit automatically when gates pass, validate the post-commit message, and do not push."
+      args: "Inspect scope and source/runtime consistency only after retrospective/留痕 and workflow-observer are complete. Require workflow-record.md, implementation-summary.md, improvement-candidates.md, knowledge-candidates.md, and workflow-observation.md before commit. Also require workflow-state.json implementation_summary.status=completed, retrospective.status=completed, AI Self-Acceptance PASS, reviewed API/E2E test plan or explicit N/A, and applicable plugin .plugin package evidence before commit. Resolve spec-doc inclusion from include_spec_docs={{ inputs.include_spec_docs }} or deterministic feature policy; default to exclude generated spec docs when no policy exists. Use the commit-message skill, validate the exact message, stage only approved source/test/spec scope, commit automatically when gates pass, validate the post-commit message, and do not push."
 
   - id: post-commit-self-check
     command: speckit.post-commit-self-check
@@ -258,6 +258,9 @@ stage_gate_policy:
   acceptance_rubric:
     command: "speckit-acceptance-rubric"
     rule: "During plan, convert requirements, negotiated test cases, and quality vision into self-contained Essential/Important/Optional/Pitfall criteria across relevant L1-L4 layers."
+  root_fix_decision_gate:
+    command: "Root-Fix Decision Gate"
+    rule: "For bugfix work, compare Root fix, Mitigation, Compatibility fallback, and Containment when applicable before implementation. A root fix eliminates the failure mechanism or failure class under reasonable scale growth. Mitigation reduces probability or impact while the mechanism remains. Containment temporarily limits impact. Compatibility fallback preserves old behavior/interface/data or rollout/rollback migration and cannot replace root fix. Cleanup, release, reset, retry, fallback, and limiting are not root fix unless evidence proves the mechanism is eliminated. Non-root-fix selections must record residual risk and follow-up root-fix route."
   knowledge_index_drift:
     command: "validate-knowledge-index"
     rule: "After ai/knowledge/index.yml or guide changes, verify selected guides exist, repository keys match workspace.yml, guides stay bounded, and no machine-specific paths are stored."
@@ -302,3 +305,6 @@ stage_gate_policy:
   ai_self_acceptance_gate:
     command: "speckit-ai-self-acceptance"
     rule: "After code changes, judge acceptance-rubric.md with concrete build/test/CDP/browser/log/runtime evidence. PASS is required before converge; FAIL returns to implement/fact-layer; BLOCKED needs external blocker evidence. Converge must pass before human acceptance."
+  implementation_summary:
+    command: "implementation-summary.md"
+    rule: "After implementation, maintain implementation-summary.md as the compact final actual implementation index: final solution, changed code/config/scripts/docs/tests, mechanism changes, plan/spec deltas, not-implemented items, validation and acceptance summary, residual risks, follow-ups, and links to evidence artifacts. Missing implementation-summary.md blocks converge, acceptance, commit, closure, and post-commit self-check for implementation profiles."

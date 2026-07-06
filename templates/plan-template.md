@@ -5,10 +5,10 @@
 
 ## L2 Artifact Contract
 
-Required sections for L2 are: `人类审核摘要`, `概览`, `分流对齐`,
-`AI Context Contract`, `Root Cause Evidence`, `技术上下文`, `影响模块与边界`,
+Required L2 sections: `人类审核摘要`, `概览`, `分流对齐`, `AI Context Contract`,
+`Root Cause Evidence`, `Root-Fix Decision Gate`, `技术上下文`, `影响模块与边界`,
 `Quality Vision Link`, `测试用例计划`, `Acceptance Rubric Link`,
-`Implementation Slices`, `验证计划`, and `AI Self-Acceptance Contract`.
+`Implementation Slices`, `验证计划`, `AI Self-Acceptance Contract`.
 
 Keep this plan as a decision map. Put detailed runtime facts in `fact-pack.md`,
 raw command evidence in `evidence.md`, and durable facts in code or selected
@@ -18,11 +18,7 @@ knowledge/gate maps.
 
 该摘要只用于人工导航，不得替代或删减后续 AI/流程读取区。
 
-- 目标:
-- 实际范围:
-- 主要风险:
-- 验证入口:
-- 下一阶段:
+- 目标 / 实际范围 / 主要风险 / 验证入口 / 下一阶段:
 
 ## 必需人工决策
 
@@ -50,17 +46,11 @@ knowledge/gate maps.
 |------|-------------------|------------|--------|
 |  |  |  | known/missing |
 
-### Context To Load
+### Context To Load / Avoid
 
-| Context | Trigger | Reason |
-|---------|---------|--------|
-|  |  |  |
-
-### Context To Avoid
-
-| Context | Reason |
-|---------|--------|
-|  |  |
+| Context | Load or Avoid | Trigger / Reason |
+|---------|---------------|------------------|
+|  | load/avoid |  |
 
 ### Missing Context / Blockers
 
@@ -80,6 +70,29 @@ short reason.
 - Validation Mapping:
 - Confidence:
 
+## Root-Fix Decision Gate
+
+Use this gate for bugfix work. For non-bugfix work, write `N/A` with a reason.
+Definitions: Root fix eliminates the mechanism/class under reasonable scale;
+Mitigation reduces probability/impact while it remains; Containment temporarily
+limits impact; Compatibility fallback preserves old behavior/interface/data for
+migration, rollout, or rollback and does not replace a root fix.
+
+| Candidate | Type | Eliminates failure mechanism? | Scale-growth failure path | Complexity / implementation risk | Compatibility / migration impact | Validation | Select / reject reason | Residual risk | Follow-up root-fix route |
+|-----------|------|-------------------------------|---------------------------|----------------------------------|----------------------------------|------------|------------------------|---------------|--------------------------|
+| A | Root fix | yes/no/partial |  |  |  |  |  |  |  |
+| B | Mitigation | yes/no/partial |  |  |  |  |  |  |  |
+| C | Compatibility fallback | yes/no/partial |  |  |  |  |  |  |  |
+| D | Containment / N/A | yes/no/partial |  |  |  |  |  |  |  |
+
+- Selected fix type: root fix / mitigation / containment / compatibility fallback
+- Eliminated failure mechanism: yes / no / partial
+- If not root fix, residual risk and follow-up root-fix route:
+- High-risk prompt: for environment variables, global state, caches, locks,
+  queues, resource handles, lifecycle, persisted state, singletons/registries,
+  shared state, dynamic dependency resolution, retry, cleanup, reset, fallback,
+  or limits, verify the mechanism itself is eliminated before claiming root fix.
+
 ## 技术上下文
 
 - Existing pattern/API/helper to reuse:
@@ -96,22 +109,15 @@ short reason.
 ## UI 展示、Service 转发与 Runtime 事实边界
 
 Fill only when UI/service/runtime boundaries are relevant; otherwise `N/A`.
-
-- `runtime/domain owner` runtime/business facts:
-- `forwarding bridge` forwarding APIs:
-- Frontend display composition:
-- UI must not infer/cache:
-- Refresh/event timing:
+- Runtime/domain facts, forwarding APIs, display composition, no-infer/cache
+  constraints, refresh/event timing:
 
 ## Identity / State / API Boundary
 
 Fill only when identity, state, bridge, RPC/N-API, JS/UI, or public API is
 affected; otherwise `N/A`.
-
-- Cross-boundary identity:
-- Runtime state owner:
-- API/DTO/field owner:
-- Legacy/debug/test API handling:
+- Cross-boundary identity, runtime state owner, API/DTO/field owner,
+  legacy/debug/test API handling:
 
 ## Gate Pack Plan
 
@@ -124,8 +130,7 @@ here.
 
 ## Source Behavior Execution Map
 
-Required for Qt-to-frontend migration that crosses UI/service/SDK or real-device
-state semantics; otherwise `N/A`.
+Required for UI/service/SDK or real-device state migrations; otherwise `N/A`.
 
 | Source UI Behavior | Native/service/API Path | State/DTO/API Fact | Frontend Runtime Proof |
 |--------------------|---------------------|--------------------|------------------------|
@@ -133,11 +138,8 @@ state semantics; otherwise `N/A`.
 
 ## UI / UX / 文案 Evidence Gate
 
-Required only for visible UI/UX/copy/style changes; otherwise `N/A`.
-For UI parity work, cite the selected `qt-parity` and `host-cdp` gate facts.
-Include dynamic states, host constraints, scrollbar, clipping, compression, and
-runtime DOM / computed style / box metrics when layout can differ at runtime.
-For 0px-level visual repair, include a UI Element Traversal Inventory / 0px Alignment Matrix with baseline anchors and batch patch strategy.
+Required only for visible UI/UX/copy/style changes; otherwise `N/A`. For parity
+or layout repair, cite selected gates plus runtime DOM/computed-style/box facts.
 
 | Visible Change | Evidence Source | Target Selector/Component | Status |
 |----------------|-----------------|---------------------------|--------|
@@ -157,9 +159,8 @@ Required for UI/UX/copy/parity work; otherwise `N/A`.
 
 ## 测试用例计划
 
-> 由 `speckit-test-plan` 在 clarify/plan 阶段协商生成。测试用例不能由 AI
-> 自由发挥；每行必须追溯到场景、需求、契约或风险。若存在歧义，先停下等待
-> 人工审核。
+> 由 `speckit-test-plan` 协商生成；每行追溯到场景、需求、契约或风险。
+> 若存在歧义，先停下等待人工审核。
 
 | ID | Type | Scenario/Requirement | Test Intent | Target Path/Command | Fixture/Data | Review Status |
 |----|------|----------------------|-------------|---------------------|--------------|---------------|
@@ -179,7 +180,7 @@ Required for UI/UX/copy/parity work; otherwise `N/A`.
 
 ## Supporting Artifacts
 
-Record optional artifact paths only when used: `research.md`, `data-model.md`,
+Record only used optional artifacts: `research.md`, `data-model.md`,
 `contracts/`, `quickstart.md`, `fact-pack.md`, `evidence.md`.
 
 ## 兼容性与迁移风险
@@ -205,9 +206,7 @@ Record optional artifact paths only when used: `research.md`, `data-model.md`,
 
 ## 项目结构说明
 
-- Existing files reused:
-- New focused files:
-- Generated/runtime artifacts excluded:
+- Existing files reused / new focused files / generated artifacts excluded:
 
 ## 复杂度跟踪
 

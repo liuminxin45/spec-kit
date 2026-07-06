@@ -110,6 +110,8 @@ Choose only items relevant to the feature:
 - Bugfix Root Cause Evidence: Symptom, Call Path, Evidence, Excluded
   Alternatives, Counterexample, Blast Radius, Validation Mapping, and
   Confidence.
+- Bugfix Root-Fix Decision Gate: Root fix, Mitigation, Compatibility fallback,
+  and applicable Containment candidates are compared before implementation.
 - Semantic safety for fallback/status/permission/device behavior. A known gap
   on the exact changed core behavior is blocking, not a pass.
 - Delivery profile correctness: `micro-fix` must be single-repo, small,
@@ -156,8 +158,8 @@ Choose only items relevant to the feature:
 - Treat missing Implementation Slices or missing progress.md update contract as
   blocking before implementation.
 - For bugfixes, treat missing Root Cause Evidence, missing counterexample or
-  blast-radius review, or tasks that pre-write an unproven concrete patch as
-  blocking before implementation.
+  blast-radius review, missing Root-Fix Decision Gate, or tasks that pre-write
+  an unproven concrete patch as blocking before implementation.
 - Treat whole-workspace searches, unbounded `find` commands, or simple lookups
   delegated to explorer/subagent as checklist failures unless explicitly
   bounded.

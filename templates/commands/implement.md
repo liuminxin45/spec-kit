@@ -37,7 +37,8 @@ Implement the active capability as a slice loop:
 2. Patch only its allowed source scope.
 3. Run the selected validation and gate packs.
 4. Record evidence in `progress.md`.
-5. Continue only when validation passes and no stop condition is met.
+5. Write the final actual implementation index in `implementation-summary.md`.
+6. Continue only when validation passes and no stop condition is met.
 
 This stage does not perform user acceptance, simplification, optional test-hardening, commit, branch completion, branch deletion, push, or remote tracking setup.
 
@@ -47,6 +48,7 @@ This stage does not perform user acceptance, simplification, optional test-harde
 - `FEATURE_DIR/plan.md`
 - `FEATURE_DIR/tasks.md` when present
 - `FEATURE_DIR/progress.md` when present, otherwise create it before the first slice update
+- `FEATURE_DIR/implementation-summary.md` when present, otherwise create it from `.specify/templates/implementation-summary-template.md` before reporting implementation complete
 - `.specify/feature.json` routing fields when present
 - `.specify/memory/constitution.md` when present
 
@@ -81,6 +83,13 @@ Optional artifacts such as `research.md`, `data-model.md`, `contracts/`, `quicks
    - Use bounded search from repository-map, affected repositories, known directories, and named symbols/files.
    - Run documented validation plus selected gate evidence.
    - Update `progress.md` with current slice, changed files, validation result, selected gates, remaining risk, and next slice.
+   - Update `implementation-summary.md` with the actual solution chosen, final
+     fix type, whether the failure mechanism was eliminated, remaining failure
+     path, changed files grouped by code/config/scripts/docs/tests, mechanism
+     changes, plan/spec deltas, not-implemented items, validation/acceptance
+     evidence links, residual risks, compatibility impact, follow-up root-fix
+     route, and follow-ups. Keep it an index and summary; link evidence instead
+     of copying logs or full validation output.
 8. Respect selected gate packs.
    - `host-cdp`: run `ensure-host-cdp`, confirm `http://127.0.0.1:9222`, inspect `/json/list`, record `webSocketDebuggerUrl`, select `app-main-window` or another valid product target, reject `Plugin Workbench`, `base-win.html`, `devtools://`, and complete the CDP host recovery ladder before manual acceptance. Use the Workbench target only for `plugin-host` DevTools / Workbench itself. Isolated plugin preview is fallback evidence, not primary host evidence.
    - `frontend-runtime-sync`: source edit -> frontend build -> direct runtime replacement -> real host CDP verification; record source-to-runtime mapping, host-served runtime plugin directory, removed stale runtime files, and final `.plugin` package evidence before commit/complete-branch.
@@ -118,6 +127,9 @@ Optional artifacts such as `research.md`, `data-model.md`, `contracts/`, `quicks
 - Keep encoding/localization conversions at documented boundaries.
 - Maintain `review.md` and feature-local `lessons.md` when human navigation or pitfall records change.
 - Confirm Root Cause Evidence before bugfix edits when applicable, and use bounded search with `rg`; do not scan the whole `workspace_root` or spawn an explorer for simple lookup.
+- Confirm Root-Fix Decision Gate before bugfix edits. Do not implement a
+  cleanup/release/reset/retry/fallback/limit-only approach as root fix unless
+  the plan proves it eliminates the failure mechanism.
 - UI evidence sources include Qt UI/source/delegate/QSS/resource, product design/mockup/export, tooltip, visible copy, and owner/user decision. Do not substitute a text button for an icon+tooltip; stop for clarify or blocked investigation when evidence is missing.
 
 ## Fact Layer Gate
@@ -138,6 +150,9 @@ Optional artifacts such as `research.md`, `data-model.md`, `contracts/`, `quicks
 - When AI changed code, completion requires explicit AI acceptance `PASS` in `validation.md` or an evidence-backed blocker.
 - Completion also requires the `speckit-ai-self-acceptance` skill result to be
   reflected in `validation.md`; missing rubric judgment is incomplete work.
+- Completion requires `implementation-summary.md` to exist, link from
+  `workflow-state.json` `implementation_summary.artifact`, and record
+  `implementation_summary.status = completed`.
 - Human acceptance is after AI-owned technical validation. It is not a substitute for fixable CDP/browser/device/build/runtime validation.
 - UI self-validation is advisory rather than a hard gate only when lower-level automated tests fully cover behavior and host rendering/event/runtime state is irrelevant.
 - If validation fails or the symptom persists, keep the loop inside this stage: collect facts, patch repository source, rebuild, sync runtime output when relevant, and rerun validation until it passes or a real blocker is recorded.
@@ -152,6 +167,7 @@ Report in Chinese:
 - Test cases added or updated, plus rerun result.
 - Selected gate packs and evidence.
 - `progress.md` slice status and remaining risk.
+- `implementation-summary.md` path and final actual change summary.
 - `review.md` / `lessons.md` updates when relevant.
 - Confirmation that no commit, branch cherry-pick/delete, push, or remote tracking action was performed.
 - Remaining gaps or blocked tasks.

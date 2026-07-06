@@ -96,6 +96,9 @@ function Get-ClosureDecision {
     $rubricDone = (Is-CompleteStatus (Get-Status $State "rubric_score")) -or (Has-Artifact "rubric-score.md")
 
     if (-not ($accepted -or $commitDone -or $postDone -or $rubricDone)) { return $null }
+    if (-not (Has-Artifact "implementation-summary.md")) {
+        return Set-Decision "acceptance" "speckit.converge" @("implementation-summary.md")
+    }
     if (-not (Is-CompleteStatus (Get-Status $State "retrospective"))) {
         return Set-Decision "acceptance" "speckit.retrospective" @("workflow-record.md", "improvement-candidates.md", "knowledge-candidates.md")
     }
@@ -180,6 +183,8 @@ if ([string]::IsNullOrWhiteSpace($FeatureDir) -or -not (Test-Path -LiteralPath $
             $decision = Set-Decision "specify" "speckit.micro-fix" @("micro-fix.md or progress.md")
         } elseif (-not (Has-Artifact "validation.md")) {
             $decision = Set-Decision "micro-fix" "speckit.implement" @("validation.md")
+        } elseif (-not (Has-Artifact "implementation-summary.md")) {
+            $decision = Set-Decision "implement" "speckit.implement" @("implementation-summary.md")
         } elseif (-not (Has-Artifact "convergence.md")) {
             $decision = Set-Decision "implement" "speckit.converge" @("convergence.md")
         } elseif (-not (Has-Artifact "acceptance.md")) {
@@ -192,6 +197,8 @@ if ([string]::IsNullOrWhiteSpace($FeatureDir) -or -not (Test-Path -LiteralPath $
             $decision = Set-Decision "specify" "speckit.plan" @("workpack.md")
         } elseif (-not (Has-Artifact "validation.md")) {
             $decision = Set-Decision "plan" "speckit.implement" @("validation.md")
+        } elseif (-not (Has-Artifact "implementation-summary.md")) {
+            $decision = Set-Decision "implement" "speckit.implement" @("implementation-summary.md")
         } elseif (-not (Has-Artifact "convergence.md")) {
             $decision = Set-Decision "implement" "speckit.converge" @("convergence.md")
         } elseif (-not (Has-Artifact "acceptance.md")) {
@@ -213,6 +220,8 @@ if ([string]::IsNullOrWhiteSpace($FeatureDir) -or -not (Test-Path -LiteralPath $
         } elseif (-not (Has-Artifact "validation.md")) {
             $currentBeforeImplement = if ($profile -eq "full-sdd" -or $needsChecklist) { "checklist" } else { "analyze" }
             $decision = Set-Decision $currentBeforeImplement "speckit.implement" @("validation.md")
+        } elseif (-not (Has-Artifact "implementation-summary.md")) {
+            $decision = Set-Decision "implement" "speckit.implement" @("implementation-summary.md")
         } elseif (-not (Has-Artifact "convergence.md")) {
             $decision = Set-Decision "implement" "speckit.converge" @("convergence.md")
         } elseif (-not (Has-Artifact "acceptance.md")) {

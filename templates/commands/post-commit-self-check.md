@@ -37,13 +37,17 @@ evidence; it does not output the final Rubric score.
 ## Execution Steps
 
 1. Run `post-commit-self-check` for the active `FEATURE_DIR`.
-2. Confirm required artifacts exist: `validation.md`, `acceptance.md`,
-   `workflow-record.md`, `improvement-candidates.md`,
+2. Confirm required artifacts exist: `implementation-summary.md`,
+   `validation.md`, `acceptance.md`, `workflow-record.md`, `improvement-candidates.md`,
    `knowledge-candidates.md`, `workflow-observation.md`, and
    `workflow-state.json`.
 3. Run `inspect-workflow-closure`; if it reports a stage before this self-check,
    return to `facts.next_required_stage`.
-4. Confirm `retrospective.status = completed`.
+4. Confirm `implementation_summary.status = completed` and
+   `retrospective.status = completed`.
+   For bugfix work, confirm the final fix type is explicit and the
+   implementation summary does not label mitigation / containment /
+   compatibility fallback as root fix.
 5. Confirm `AI Self-Acceptance = PASS`, API/E2E test-plan status, applicable
    `.plugin` package evidence, CDP/host/runtime evidence or true blockers, and
    post-commit message validation are recorded in the feature evidence.

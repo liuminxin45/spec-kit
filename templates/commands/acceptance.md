@@ -2,6 +2,7 @@
 description: Generate user acceptance instructions and checklist for a completed capability.
 scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json -IncludeTasks
+  preflight_ps: scripts/powershell/validate-feature-artifacts.ps1 -Json -Stage acceptance -FeatureDir <feature-dir>
 ---
 
 ## User Input
@@ -46,6 +47,7 @@ It explains how the user should test and how the workflow records whether
    - `FEATURE_DIR/tasks.md` when present; for `standard-bugfix`, `plan.md`
      slices may replace it.
    - `FEATURE_DIR/progress.md` when present
+   - `FEATURE_DIR/implementation-summary.md`
    - `FEATURE_DIR/validation.md` when present
    - `FEATURE_DIR/evidence.md` when present
    - `FEATURE_DIR/fact-pack.md` when present
@@ -70,6 +72,11 @@ It explains how the user should test and how the workflow records whether
    - If AI changed code and `convergence.md` is missing or does not record
      `status: passed`, stop and return to `speckit-converge`; human acceptance
      is after promised-vs-delivered reconciliation, not before it.
+   - If `implementation-summary.md` is missing or does not describe the final
+      actual implemented solution, changed files, plan/spec deltas,
+      final fix type, eliminated failure mechanism, remaining failure path,
+      not-implemented items, validation/acceptance evidence, and residual risks,
+      stop and return to `speckit-converge`.
 4. Ensure validation artifacts are visible:
    - `acceptance.md` remains user-facing.
    - `evidence.md` remains tool/test-facing when complex/runtime/tool-heavy
@@ -126,6 +133,8 @@ It explains how the user should test and how the workflow records whether
    - Expected results.
    - Failure signals and rollback/stop notes.
    - Evidence already collected by the agent.
+   - Link to `implementation-summary.md` as the first artifact for final actual
+     implementation details.
    - Links to `validation.md` and `evidence.md` when present.
    - Known gaps that need user judgment.
    - `Accepted Gaps`: any known missing validation, unsupported automation,
@@ -159,8 +168,8 @@ It explains how the user should test and how the workflow records whether
    by AI: list the scenario model, commands, assertions, and pass/fail result
    there instead of delegating those checks to manual acceptance.
 9. Update `review.md` when present so the human navigation page links to
-   `acceptance.md`, `acceptance-checklist.md`, `validation.md`, and
-   `evidence.md` when those artifacts exist.
+   `implementation-summary.md`, `acceptance.md`, `acceptance-checklist.md`,
+   `validation.md`, and `evidence.md` when those artifacts exist.
 10. Do not mark acceptance as passed yourself.
    - If the user already gave pre-confirmed acceptance before this stage ran,
      backfill `validation.md`, `acceptance.md`, and `acceptance-checklist.md`,

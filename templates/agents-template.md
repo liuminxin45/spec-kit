@@ -17,12 +17,13 @@ treat `.specify/feature.json` as a stale/current-feature hint. Do not load the
 active feature's `specs/<feature>/*` artifacts or apply its risk flags unless
 the user explicitly resumes that feature.
 
-Then read only active feature files for the selected path: lightweight fix
-uses `progress.md` or `micro-fix.md`; standard-lite work uses `workpack.md` and
-`progress.md`; standard work uses `spec.md`, `plan.md`, and `progress.md`;
-heavy work adds `tasks.md`, `research.md`, `contracts/`, or `data-model.md`
-only when needed; runtime/debug work adds `fact-pack.md`, latest logs, or
-DevTools evidence only for unclear/repeated/runtime symptoms.
+Then read only active feature files for the selected path: use
+`implementation-summary.md` first for final actual implementation facts when
+present; lightweight fix uses `progress.md` or `micro-fix.md`; standard-lite
+work uses `workpack.md` and `progress.md`; standard work uses `spec.md`,
+`plan.md`, and `progress.md`; heavy work adds `tasks.md`, `research.md`,
+`contracts/`, or `data-model.md` only when needed; runtime/debug work adds
+`fact-pack.md`, latest logs, or DevTools evidence only for unclear/repeated/runtime symptoms.
 
 ## Do Not Load By Default
 
@@ -38,6 +39,10 @@ This avoids stale knowledge and keeps AI coding context bounded.
   ownership by scanning source trees.
 - Product or plugin fixes belong in repository source files, not only installed
   runtime plugin directories or built artifacts.
+- Bugfix work must complete a Root-Fix Decision Gate before implementation:
+  compare root fix, mitigation, compatibility fallback, and containment when
+  applicable. Do not describe cleanup, release, reset, retry, fallback, or
+  limiting as root fix unless the failure mechanism is eliminated.
 - When a task needs plugin source, build output, package artifact, or runtime
   directory context, use the `Project Path Categories` section in
   `.specify/memory/repository-map.md` first. When repository-map is not enough,

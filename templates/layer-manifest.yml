@@ -46,6 +46,12 @@ artifact_sets:
     - "spec.md"
     - "plan.md"
     - "progress.md"
+    - "implementation-summary.md"
+    - "validation.md"
+    - "workflow-state.json"
+  acceptance:
+    - "implementation-summary.md"
+    - "convergence.md"
     - "validation.md"
     - "workflow-state.json"
   full-sdd-implement:
@@ -63,6 +69,7 @@ artifact_sets:
   commit:
     - "spec.md"
     - "plan.md"
+    - "implementation-summary.md"
     - "validation.md"
     - "acceptance.md"
     - "workflow-state.json"
@@ -72,6 +79,7 @@ artifact_sets:
     - "workflow-observation.md"
   standard-bugfix-lite-commit:
     - "workpack.md"
+    - "implementation-summary.md"
     - "validation.md"
     - "acceptance.md"
     - "workflow-state.json"
@@ -83,6 +91,7 @@ artifact_sets:
     - "spec.md"
     - "plan.md"
     - "tasks.md"
+    - "implementation-summary.md"
     - "validation.md"
     - "acceptance.md"
     - "workflow-state.json"
@@ -145,6 +154,7 @@ artifact_sections:
   workpack.md:
     - "人类审核摘要"
     - "Root Cause"
+    - "Root-Fix Decision Gate"
     - "Change Slice"
     - "Validation"
     - "Acceptance Rubric Summary"
@@ -157,6 +167,16 @@ artifact_sections:
     - "Evidence Index"
     - "Commands"
     - "Runtime Facts"
+  implementation-summary.md:
+    - "Final Implemented Solution"
+    - "Final fix type"
+    - "Actual Change Index"
+    - "Mechanism Changes"
+    - "Plan / Spec Delta"
+    - "Not Implemented"
+    - "Validation And Acceptance"
+    - "Residual Risk And Follow-ups"
+    - "Evidence Links"
   analysis.md:
     - "人类审核摘要"
     - "Specification Analysis Report"
@@ -282,6 +302,7 @@ layers:
       - "templates/workpack-template.md"
       - "templates/quality-vision-template.md"
       - "templates/acceptance-rubric-template.md"
+      - "templates/implementation-summary-template.md"
       - "templates/tasks-template.md"
       - "templates/workflow-state-template.json"
       - "templates/commands/*.md"
@@ -392,6 +413,7 @@ layers:
       - "specs/<feature>/validation.md"
       - "specs/<feature>/acceptance.md"
       - "specs/<feature>/acceptance-checklist.md"
+      - "specs/<feature>/implementation-summary.md"
       - "specs/<feature>/fact-pack.md"
       - "specs/<feature>/evidence.md"
       - "specs/<feature>/workflow-record.md"
