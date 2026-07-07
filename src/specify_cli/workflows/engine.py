@@ -535,6 +535,77 @@ class WorkflowEngine:
         state.save()
         return state
 
+    def dispatch_hooks(
+        self,
+        *,
+        workflow_id: str,
+        stage_id: str,
+        phase: str,
+        run_id: str | None = None,
+        inputs: dict[str, Any] | None = None,
+        step_results: dict[str, dict[str, Any]] | None = None,
+        default_integration: str | None = "codex",
+        default_model: str | None = None,
+    ) -> RunState:
+        """Dispatch workflow hooks without executing the workflow stage itself.
+
+        This is the public hook boundary used by stage-skill executions that do
+        not run through ``specify workflow run``. It intentionally reuses the
+        same hook dispatcher as the YAML workflow engine so ``workflow-shell``
+        and ``workflow-agent-chain`` have one execution contract.
+        """
+        normalized_phase = phase.strip().lower()
+        if normalized_phase not in {"before", "after"}:
+            msg = f"Invalid hook phase {phase!r}: expected 'before' or 'after'."
+            raise ValueError(msg)
+        if not workflow_id.strip():
+            raise ValueError("workflow_id is required")
+        if not stage_id.strip():
+            raise ValueError("stage_id is required")
+
+        state = RunState(
+            run_id=run_id,
+            workflow_id=workflow_id.strip(),
+            project_root=self.project_root,
+        )
+        state.inputs = inputs or {}
+        state.step_results = step_results or {}
+        state.current_step_id = stage_id.strip()
+        state.current_step_index = 0
+        state.status = RunStatus.RUNNING
+        state.save()
+
+        context = StepContext(
+            inputs=state.inputs,
+            steps=state.step_results,
+            default_integration=default_integration,
+            default_model=default_model,
+            default_options={},
+            project_root=str(self.project_root),
+            run_id=state.run_id,
+            workflow_id=state.workflow_id,
+        )
+
+        try:
+            can_continue = self._dispatch_step_hooks(
+                stage_id.strip(),
+                normalized_phase,
+                context,
+                state,
+                pause_step_index=0,
+            )
+        except Exception as exc:
+            state.status = RunStatus.FAILED
+            state.append_log({"event": "workflow_hook_dispatch_failed", "error": str(exc)})
+            state.save()
+            raise
+
+        if can_continue and state.status == RunStatus.RUNNING:
+            state.status = RunStatus.COMPLETED
+        state.append_log({"event": "workflow_hook_dispatch_finished", "status": state.status.value})
+        state.save()
+        return state
+
     def _execute_steps(
         self,
         steps: list[dict[str, Any]],
@@ -868,6 +939,31 @@ class WorkflowEngine:
         results = facts.get("results")
         if not isinstance(results, list):
             results = []
+        if auto_continue and phase == "after" and step_id == "commit":
+            dirty_files = self._git_tracked_dirty_files()
+            if dirty_files:
+                results.append(
+                    {
+                        "schema_version": "1.0",
+                        "id": f"{event_name}.post-commit-mutation-guard",
+                        "event": event_name,
+                        "type": "workflow-hook-mutation-guard",
+                        "status": "requires_rework",
+                        "action": "rework",
+                        "auto_continue": False,
+                        "summary": "workflow hook left tracked files dirty after commit",
+                        "artifact_paths": [],
+                        "dirty_files": dirty_files,
+                    }
+                )
+                aggregate_status = "requires_rework"
+                action = "rework"
+                auto_continue = False
+                summary = (
+                    f"{summary}; workflow hook left tracked files dirty after commit"
+                    if summary
+                    else "workflow hook left tracked files dirty after commit"
+                )
 
         event_record = {
             "schema_version": "1.0",

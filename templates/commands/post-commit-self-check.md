@@ -36,7 +36,9 @@ evidence; it does not output the final Rubric score.
 
 ## Execution Steps
 
-1. Run `post-commit-self-check` for the active `FEATURE_DIR`.
+1. Run `post-commit-self-check` for the active `FEATURE_DIR`. This script must
+   execute any missing active `workflow.speckit.commit.after` hook through
+   `specify workflow invoke-hooks` before reporting success.
 2. Confirm required artifacts exist: `implementation-summary.md`,
    `validation.md`, `acceptance.md`, `workflow-record.md`, `improvement-candidates.md`,
    `knowledge-candidates.md`, `workflow-observation.md`, and
@@ -50,7 +52,9 @@ evidence; it does not output the final Rubric score.
    compatibility fallback as root fix.
 5. Confirm `AI Self-Acceptance = PASS`, API/E2E test-plan status, applicable
    `.plugin` package evidence, CDP/host/runtime evidence or true blockers, and
-   post-commit message validation are recorded in the feature evidence.
+   post-commit message validation are recorded in the feature evidence. If an
+   active commit-after hook exists, confirm `workflow-state.json` contains
+   `hook_results.workflow.speckit.commit.after.auto_continue = true`.
 6. If a deterministic fix is required, apply it, amend the commit once, and do
    not run another self-check.
 

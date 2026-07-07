@@ -250,6 +250,425 @@ function Get-ObjectPropertyValue {
     return $null
 }
 
+function Get-HookYamlScalar {
+    param([string]$Value)
+    $clean = $Value.Trim()
+    if ($clean -eq "[]") { return "" }
+    if (
+        ($clean.StartsWith('"') -and $clean.EndsWith('"')) -or
+        ($clean.StartsWith("'") -and $clean.EndsWith("'"))
+    ) {
+        $inner = $clean.Substring(1, $clean.Length - 2)
+        if ($clean.StartsWith('"')) {
+            $inner = $inner.Replace('\"', '"').Replace('\\', '\')
+        } else {
+            $inner = $inner.Replace("''", "'")
+        }
+        return $inner
+    }
+    return $clean
+}
+
+function Get-HookYamlInlineList {
+    param([string]$Value)
+    $clean = $Value.Trim()
+    if (-not ($clean.StartsWith("[") -and $clean.EndsWith("]"))) {
+        return @()
+    }
+    $inner = $clean.Substring(1, $clean.Length - 2).Trim()
+    if ([string]::IsNullOrWhiteSpace($inner)) {
+        return @()
+    }
+    $items = @()
+    foreach ($piece in ($inner -split ",")) {
+        $item = Get-HookYamlScalar $piece
+        if (-not [string]::IsNullOrWhiteSpace($item)) {
+            $items += $item
+        }
+    }
+    return $items
+}
+
+function ConvertTo-HookStringList {
+    param($Value)
+    if ($null -eq $Value) { return @() }
+    if ($Value -is [string]) {
+        if ([string]::IsNullOrWhiteSpace($Value)) { return @() }
+        return @($Value)
+    }
+    if ($Value -is [System.Array]) {
+        return @($Value | ForEach-Object { [string]$_ })
+    }
+    return @([string]$Value)
+}
+
+function ConvertTo-HookBoolValue {
+    param($Value, [bool]$Default = $false)
+    if ($Value -is [bool]) { return [bool]$Value }
+    if ($Value -is [string]) {
+        $lower = $Value.Trim().ToLowerInvariant()
+        if ($lower -in @("true", "1", "yes")) { return $true }
+        if ($lower -in @("false", "0", "no")) { return $false }
+    }
+    return $Default
+}
+
+function Add-AutomationWorkflowHookEntry {
+    param([System.Collections.ArrayList]$Hooks, $Current)
+    if ($null -ne $Current -and -not [string]::IsNullOrWhiteSpace($Current.id)) {
+        [void]$Hooks.Add([PSCustomObject]$Current)
+    }
+}
+
+function Read-AutomationWorkflowHookRegistry {
+    $path = Join-Path $RepoRoot ".specify/workflow-hooks.yml"
+    $hooks = [System.Collections.ArrayList]::new()
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        return @()
+    }
+
+    $inHooks = $false
+    $current = $null
+    $activeListKey = ""
+    foreach ($line in Get-Content -LiteralPath $path) {
+        $trimmed = $line.Trim()
+        if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith("#")) {
+            continue
+        }
+        if (-not $inHooks) {
+            if ($line -match "^\s*hooks:\s*$") {
+                $inHooks = $true
+            }
+            continue
+        }
+
+        if ($line -match "^\s{2}-\s+id:\s*(.+?)\s*$") {
+            Add-AutomationWorkflowHookEntry -Hooks $hooks -Current $current
+            $current = [ordered]@{
+                id = Get-HookYamlScalar $Matches[1]
+                events = @()
+            }
+            $activeListKey = ""
+            continue
+        }
+        if ($null -eq $current) {
+            continue
+        }
+
+        if ($line -match "^\s{4}([A-Za-z0-9_-]+):\s*(.*?)\s*$") {
+            $key = $Matches[1].Trim()
+            $value = $Matches[2]
+            if ($key -eq "events") {
+                $list = Get-HookYamlInlineList $value
+                if ($list.Count -gt 0) {
+                    $current[$key] = @($list)
+                    $activeListKey = ""
+                } else {
+                    $current[$key] = @()
+                    $activeListKey = $key
+                }
+            } else {
+                $current[$key] = Get-HookYamlScalar $value
+                $activeListKey = ""
+            }
+            continue
+        }
+        if ($activeListKey -and $line -match "^\s{6}-\s+(.+?)\s*$") {
+            $current[$activeListKey] = @($current[$activeListKey]) + @((Get-HookYamlScalar $Matches[1]))
+        }
+    }
+    Add-AutomationWorkflowHookEntry -Hooks $hooks -Current $current
+    return @($hooks)
+}
+
+function Read-AutomationWorkflowHookOverrides {
+    $path = Join-Path $RepoRoot ".specify/workflow-hooks.local.yml"
+    $overrides = [ordered]@{
+        enabled = $true
+        disabled_events = @()
+        disabled_hooks = @()
+        disabled_packs = @()
+    }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        return [PSCustomObject]$overrides
+    }
+
+    $activeListKey = ""
+    foreach ($line in Get-Content -LiteralPath $path) {
+        $trimmed = $line.Trim()
+        if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith("#")) {
+            continue
+        }
+        if ($line -match "^\s{0,2}([A-Za-z0-9_-]+):\s*(.*?)\s*$") {
+            $key = $Matches[1].Trim()
+            $value = $Matches[2]
+            if ($key -eq "enabled") {
+                $overrides.enabled = ConvertTo-HookBoolValue -Value (Get-HookYamlScalar $value) -Default $true
+                $activeListKey = ""
+                continue
+            }
+            if ($key -in @("disabled_events", "disabled_hooks", "disabled_packs")) {
+                $list = Get-HookYamlInlineList $value
+                if ($list.Count -gt 0) {
+                    $overrides[$key] = @($list)
+                    $activeListKey = ""
+                } else {
+                    $overrides[$key] = @()
+                    $activeListKey = $key
+                }
+                continue
+            }
+            $activeListKey = ""
+            continue
+        }
+        if ($activeListKey -and $line -match "^\s{2,4}-\s+(.+?)\s*$") {
+            $overrides[$activeListKey] = @($overrides[$activeListKey]) + @((Get-HookYamlScalar $Matches[1]))
+        }
+    }
+    return [PSCustomObject]$overrides
+}
+
+function Test-AutomationWorkflowHookDisabled {
+    param($Hook, [string]$Event, $Overrides)
+    if ($null -eq $Overrides) { return "" }
+    if (-not [bool]$Overrides.enabled) {
+        return "workflow hooks disabled by .specify/workflow-hooks.local.yml"
+    }
+    if ((ConvertTo-HookStringList $Overrides.disabled_events) -contains $Event) {
+        return "event disabled by .specify/workflow-hooks.local.yml"
+    }
+    $hookId = [string](Get-ObjectPropertyValue -Object $Hook -PropertyName "id")
+    $packId = [string](Get-ObjectPropertyValue -Object $Hook -PropertyName "pack_id")
+    if (-not [string]::IsNullOrWhiteSpace($hookId) -and (ConvertTo-HookStringList $Overrides.disabled_hooks) -contains $hookId) {
+        return "hook disabled by .specify/workflow-hooks.local.yml"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($packId) -and (ConvertTo-HookStringList $Overrides.disabled_packs) -contains $packId) {
+        return "pack disabled by .specify/workflow-hooks.local.yml"
+    }
+    return ""
+}
+
+function Get-WorkflowHookGate {
+    param(
+        [string]$WorkflowId,
+        [string]$StageId,
+        [string]$Phase,
+        [string]$ResolvedFeatureDir
+    )
+    $event = "workflow.$WorkflowId.$StageId.$Phase"
+    $registryPath = Join-Path $RepoRoot ".specify/workflow-hooks.yml"
+    $activeHooks = @()
+    $disabledHooks = @()
+    $unsupportedHooks = @()
+    $overrides = Read-AutomationWorkflowHookOverrides
+    foreach ($hook in @(Read-AutomationWorkflowHookRegistry)) {
+        $events = ConvertTo-HookStringList (Get-ObjectPropertyValue -Object $hook -PropertyName "events")
+        if ($events -notcontains $event) { continue }
+        $disabledReason = Test-AutomationWorkflowHookDisabled -Hook $hook -Event $event -Overrides $overrides
+        if (-not [string]::IsNullOrWhiteSpace($disabledReason)) {
+            $disabledHooks += [ordered]@{
+                id = [string](Get-ObjectPropertyValue -Object $hook -PropertyName "id")
+                pack_id = [string](Get-ObjectPropertyValue -Object $hook -PropertyName "pack_id")
+                reason = $disabledReason
+            }
+            continue
+        }
+        $type = [string](Get-ObjectPropertyValue -Object $hook -PropertyName "type")
+        $hookRecord = [ordered]@{
+            id = [string](Get-ObjectPropertyValue -Object $hook -PropertyName "id")
+            pack_id = [string](Get-ObjectPropertyValue -Object $hook -PropertyName "pack_id")
+            type = $type
+        }
+        if ($type -notin @("workflow-shell", "workflow-agent-chain")) {
+            $unsupportedHooks += $hookRecord
+        }
+        $activeHooks += $hookRecord
+    }
+
+    $gate = [ordered]@{
+        checked = $true
+        event = $event
+        registry = $registryPath
+        required = ($activeHooks.Count -gt 0)
+        gate_status = "not_required"
+        active_hook_count = $activeHooks.Count
+        active_hooks = @($activeHooks)
+        disabled_hooks = @($disabledHooks)
+        unsupported_hooks = @($unsupportedHooks)
+        result_status = ""
+        auto_continue = $null
+        action = ""
+        summary = ""
+        artifact_paths = @()
+    }
+    if ($activeHooks.Count -eq 0) {
+        return $gate
+    }
+    if ($unsupportedHooks.Count -gt 0) {
+        $gate.gate_status = "blocked"
+        $gate.summary = "unsupported workflow hook type is active"
+        return $gate
+    }
+
+    $statePath = Join-Path $ResolvedFeatureDir "workflow-state.json"
+    $state = Read-JsonObject $statePath
+    if ($null -eq $state) {
+        $gate.gate_status = "blocked"
+        $gate.summary = "workflow-state.json missing or invalid; hook result cannot be verified"
+        return $gate
+    }
+    $hookResults = Get-ObjectPropertyValue -Object $state -PropertyName "hook_results"
+    $eventResult = Get-ObjectPropertyValue -Object $hookResults -PropertyName $event
+    if ($null -eq $eventResult) {
+        $gate.gate_status = "blocked"
+        $gate.summary = "required workflow hook has no recorded result"
+        return $gate
+    }
+
+    $status = [string](Get-ObjectPropertyValue -Object $eventResult -PropertyName "status")
+    $action = [string](Get-ObjectPropertyValue -Object $eventResult -PropertyName "action")
+    $autoContinue = ConvertTo-HookBoolValue -Value (Get-ObjectPropertyValue -Object $eventResult -PropertyName "auto_continue") -Default $false
+    $results = Get-ObjectPropertyValue -Object $eventResult -PropertyName "results"
+    $artifactPaths = ConvertTo-HookStringList (Get-ObjectPropertyValue -Object $eventResult -PropertyName "artifact_paths")
+    $gate.result_status = $status
+    $gate.action = $action
+    $gate.auto_continue = $autoContinue
+    $gate.summary = [string](Get-ObjectPropertyValue -Object $eventResult -PropertyName "summary")
+    $gate.artifact_paths = @($artifactPaths)
+
+    if (@($results).Count -eq 0) {
+        $gate.gate_status = "blocked"
+        $gate.summary = "required workflow hook result has no executed hook records"
+    } elseif (-not $autoContinue -or $status -in @("blocked", "failed", "requires_rework")) {
+        $gate.gate_status = "blocked"
+    } else {
+        $gate.gate_status = "ok"
+    }
+    return $gate
+}
+
+function Invoke-WorkflowHookDispatcherCli {
+    param(
+        [string]$WorkflowId,
+        [string]$StageId,
+        [string]$Phase,
+        [string]$ResolvedFeatureDir
+    )
+    $sourceRoot = Get-SpecKitSourceRoot
+    $exe = ""
+    $baseArgs = @()
+    if (-not [string]::IsNullOrWhiteSpace($sourceRoot) -and (Test-Path -LiteralPath (Join-Path $sourceRoot "src/specify_cli/__init__.py") -PathType Leaf)) {
+        $python = if (-not [string]::IsNullOrWhiteSpace($env:PYTHON)) { $env:PYTHON } else { "python" }
+        $srcPath = Join-Path $sourceRoot "src"
+        $exe = $python
+        $baseArgs = @(
+            "-c",
+            "import sys; sys.path.insert(0, r'$srcPath'); import specify_cli; specify_cli.main()"
+        )
+    } else {
+        $specify = Get-Command specify -ErrorAction SilentlyContinue
+        if ($null -ne $specify) {
+            $exe = $specify.Source
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($exe)) {
+        return [ordered]@{
+            status = "blocked"
+            exit_code = 127
+            summary = "specify CLI not found; cannot dispatch workflow hooks"
+            payload = $null
+            stdout = ""
+            stderr = ""
+        }
+    }
+
+    $arguments = @($baseArgs) + @(
+        "workflow",
+        "invoke-hooks",
+        $StageId,
+        "--workflow-id",
+        $WorkflowId,
+        "--phase",
+        $Phase,
+        "--feature-dir",
+        $ResolvedFeatureDir,
+        "--json"
+    )
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $exe
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.WorkingDirectory = $RepoRoot
+    foreach ($arg in $arguments) {
+        [void]$psi.ArgumentList.Add($arg)
+    }
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $psi
+    [void]$process.Start()
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+
+    $payload = $null
+    if (-not [string]::IsNullOrWhiteSpace($stdout)) {
+        try {
+            $payload = $stdout | ConvertFrom-Json
+        } catch {
+            $payload = $null
+        }
+    }
+    $summary = if ($payload -and (Get-ObjectPropertyValue -Object $payload -PropertyName "pending_hook")) {
+        [string](Get-ObjectPropertyValue -Object (Get-ObjectPropertyValue -Object $payload -PropertyName "pending_hook") -PropertyName "summary")
+    } elseif ($process.ExitCode -eq 0) {
+        "workflow hook dispatcher completed"
+    } else {
+        "workflow hook dispatcher failed with exit code $($process.ExitCode)"
+    }
+    return [ordered]@{
+        status = if ($process.ExitCode -eq 0) { "ok" } else { "blocked" }
+        exit_code = $process.ExitCode
+        summary = $summary
+        payload = $payload
+        stdout = $stdout
+        stderr = $stderr
+    }
+}
+
+function Ensure-WorkflowHookGate {
+    param(
+        $Result,
+        [string]$WorkflowId,
+        [string]$StageId,
+        [string]$Phase,
+        [string]$ResolvedFeatureDir,
+        [switch]$InvokeIfMissing
+    )
+    $gate = Get-WorkflowHookGate -WorkflowId $WorkflowId -StageId $StageId -Phase $Phase -ResolvedFeatureDir $ResolvedFeatureDir
+    if (-not $gate.required) {
+        return $gate
+    }
+
+    if ($InvokeIfMissing -and $gate.gate_status -eq "blocked" -and $gate.summary -eq "required workflow hook has no recorded result") {
+        $dispatch = Invoke-WorkflowHookDispatcherCli -WorkflowId $WorkflowId -StageId $StageId -Phase $Phase -ResolvedFeatureDir $ResolvedFeatureDir
+        $gate["dispatch"] = $dispatch
+        $gate = Get-WorkflowHookGate -WorkflowId $WorkflowId -StageId $StageId -Phase $Phase -ResolvedFeatureDir $ResolvedFeatureDir
+        $gate["dispatch"] = $dispatch
+        if ($dispatch.status -eq "blocked" -and $gate.gate_status -ne "ok") {
+            Set-Blocked $Result $dispatch.summary
+        }
+    }
+
+    if ($gate.gate_status -eq "blocked") {
+        $message = "workflow hook $($gate.event) is required but not continuable: $($gate.summary)"
+        if ([string]::IsNullOrWhiteSpace($gate.summary)) {
+            $message = "workflow hook $($gate.event) is required but not continuable"
+        }
+        Set-Blocked $Result $message
+    }
+    return $gate
+}
+
 function Get-WorkflowStateStatus {
     param($State, [string]$NodeName)
     $node = Get-ObjectPropertyValue -Object $State -PropertyName $NodeName
@@ -1207,7 +1626,7 @@ function Invoke-ValidateGeneratedContext {
         },
         [ordered]@{
             path = if ($isSourceCheckout) { "templates/ai/workflows/task-routing.md" } else { "ai/workflows/task-routing.md" }
-            phrases = @("tasks -> analyze -> checklist", "standard-bugfix-lite", "workpack.md", "implementation-summary.md", "Root-Fix Decision Gate", "resolve-next-stage", "skill-routing.yml", "validate-generated-context", "validate-knowledge-index", "validate-context-budget", "select-knowledge", "select-gates", "artifact_sections", "Stage Continuation", "New Workflow Start", "preflight-new-workflow", "Workflow Hooks", "invoke-workflow-hooks", "workflow-agent-chain", "auto_continue=true", "Final Response Guard", "inspect-workflow-closure", "workflow-observer", "promote-candidates", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "do not apply stale feature risk flags")
+            phrases = @("tasks -> analyze -> checklist", "standard-bugfix-lite", "workpack.md", "implementation-summary.md", "Root-Fix Decision Gate", "resolve-next-stage", "skill-routing.yml", "validate-generated-context", "validate-knowledge-index", "validate-context-budget", "select-knowledge", "select-gates", "artifact_sections", "Stage Continuation", "New Workflow Start", "preflight-new-workflow", "Workflow Hooks", "specify workflow invoke-hooks", "workflow-agent-chain", "auto_continue=true", "Final Response Guard", "inspect-workflow-closure", "workflow-observer", "promote-candidates", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "do not apply stale feature risk flags")
         },
         [ordered]@{
             path = if ($isSourceCheckout) { "templates/ai/workflows/skill-routing.yml" } else { "ai/workflows/skill-routing.yml" }
@@ -1215,11 +1634,11 @@ function Invoke-ValidateGeneratedContext {
         },
         [ordered]@{
             path = if ($isSourceCheckout) { "templates/ai/rules/ai-coding-rules.md" } else { "ai/rules/ai-coding-rules.md" }
-            phrases = @("Generated Context Drift", "standard-bugfix-lite", "workpack.md", "implementation-summary.md", "Root-Fix Decision Gate", "resolve-next-stage", "analysis.md", "validate-generated-context", "validate-knowledge-index", "Stage Continuation Contract", "preflight-new-workflow", "Workflow shell hooks are script-owned", "Workflow agent-chain hooks are engine-owned", "invoke-workflow-hooks", "Host Frontend Delivery Chain", "ensure-host-cdp", "Retrospective", "inspect-workflow-closure", "knowledge-candidates.md", "preflight-push")
+            phrases = @("Generated Context Drift", "standard-bugfix-lite", "workpack.md", "implementation-summary.md", "Root-Fix Decision Gate", "resolve-next-stage", "analysis.md", "validate-generated-context", "validate-knowledge-index", "Stage Continuation Contract", "preflight-new-workflow", "Workflow hooks are dispatched through the unified engine entry", "specify workflow invoke-hooks", "workflow-agent-chain", "Host Frontend Delivery Chain", "ensure-host-cdp", "Retrospective", "inspect-workflow-closure", "knowledge-candidates.md", "preflight-push")
         },
         [ordered]@{
             path = $workflowPath
-            phrases = @("id: new-workflow-preflight", "preflight-new-workflow", "id: retrospective", "id: workflow-observer", "id: commit", "standard-bugfix-lite", "requires_confirmation: true", "Require workflow-record.md", "implementation-summary.md", "root_fix_decision_gate", "knowledge-candidates.md", "workflow-observation.md", "automatic_stage_continuation", "deterministic_next_stage", "workflow_hooks", "invoke-workflow-hooks", "workflow-agent-chain", ".specify/workflow-hooks.yml", "post_human_acceptance_closure", "promote_knowledge_candidates", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "validate-knowledge-index", "validate-context-budget", "select-gates", "current-feature state only")
+            phrases = @("id: new-workflow-preflight", "preflight-new-workflow", "id: retrospective", "id: workflow-observer", "id: commit", "standard-bugfix-lite", "requires_confirmation: true", "Require workflow-record.md", "implementation-summary.md", "root_fix_decision_gate", "knowledge-candidates.md", "workflow-observation.md", "automatic_stage_continuation", "deterministic_next_stage", "workflow_hooks", "specify workflow invoke-hooks", "workflow-agent-chain", ".specify/workflow-hooks.yml", "post_human_acceptance_closure", "promote_knowledge_candidates", "inspect-host-cdp-target", "ensure-host-cdp", "capture-cdp-screenshot", "validate-knowledge-index", "validate-context-budget", "select-gates", "current-feature state only")
         },
         [ordered]@{
             path = if ($isSourceCheckout) { "TEAM-README.md" } else { "spec-kit/TEAM-README.md" }
@@ -1974,12 +2393,20 @@ function Invoke-PostCommitSelfCheck {
     }
     $routing = Read-FeatureRouting -Result $result
     $rootFixGate = Invoke-ValidateRootFixDecisionGate -Result $result -Routing $routing -RequireSummaryGate
+    $workflowHookGate = Ensure-WorkflowHookGate `
+        -Result $result `
+        -WorkflowId "speckit" `
+        -StageId "commit" `
+        -Phase "after" `
+        -ResolvedFeatureDir (Resolve-FeatureDirPath $FeatureDir) `
+        -InvokeIfMissing
 
     $result.facts.feature_dir = $FeatureDir
     $result.facts.required_files = $requiredFiles
     $result.facts.missing = $missing
     $result.facts.implementation_summary_status = $implementationSummaryStatus
     $result.facts.root_fix_decision_gate = $rootFixGate
+    $result.facts.workflow_hook_gate = $workflowHookGate
     $result.facts.retrospective_status = $retrospectiveStatus
     $result.facts.single_pass = $true
     $result.facts.amend_required = $false
@@ -2255,6 +2682,19 @@ function Invoke-InspectWorkflowClosure {
     if ($closureRequired) {
         $rootFixGate = Invoke-ValidateRootFixDecisionGate -Result $result -Routing $closureRouting -RequireSummaryGate
     }
+    $workflowHookGate = [ordered]@{
+        checked = $false
+        required = $false
+        gate_status = "not_checked"
+    }
+    if ($commitDetected) {
+        $workflowHookGate = Ensure-WorkflowHookGate `
+            -Result $result `
+            -WorkflowId "speckit" `
+            -StageId "commit" `
+            -Phase "after" `
+            -ResolvedFeatureDir $resolvedFeatureDir
+    }
 
     $result.facts.delivery_profile = $deliveryProfile
     $result.facts.acceptance_status = $acceptanceStatus
@@ -2267,6 +2707,7 @@ function Invoke-InspectWorkflowClosure {
     $result.facts.missing_artifacts = @($missingArtifacts | Select-Object -Unique)
     $result.facts.artifacts = $artifacts
     $result.facts.root_fix_decision_gate = $rootFixGate
+    $result.facts.workflow_hook_gate = $workflowHookGate
     if ($rubricValidation) {
         $result.facts.rubric_validation = $rubricValidation
     }
@@ -2307,6 +2748,12 @@ function Invoke-InspectWorkflowClosure {
         } elseif (-not $commitDetected) {
             $nextRequiredStage = "speckit.commit"
             Set-Blocked $result "acceptance closure requires commit after retrospective and workflow observer"
+        } elseif ($workflowHookGate.checked -and $workflowHookGate.required -and $workflowHookGate.gate_status -ne "ok") {
+            if ($workflowHookGate.result_status -eq "requires_rework" -or $workflowHookGate.action -eq "rework") {
+                $nextRequiredStage = "speckit.implement"
+            } else {
+                $nextRequiredStage = "speckit.post-commit-self-check"
+            }
         } elseif (-not $postCommitCompleted) {
             $nextRequiredStage = "speckit.post-commit-self-check"
             Set-Blocked $result "commit detected but post-commit self-check is missing"
