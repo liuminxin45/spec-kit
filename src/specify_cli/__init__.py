@@ -4695,6 +4695,112 @@ def _workflow_state_payload(state: Any, project_root: Path) -> dict[str, Any]:
     return payload
 
 
+def _merge_feature_hook_state(feature_dir: str, state: Any, project_root: Path) -> Path | None:
+    hook_results = getattr(state, "hook_results", {})
+    pending_hook = getattr(state, "pending_hook", None)
+    if not hook_results and not pending_hook:
+        return None
+
+    feature_path = Path(feature_dir)
+    if not feature_path.is_absolute():
+        feature_path = project_root / feature_path
+    feature_path = feature_path.resolve()
+    if not feature_path.is_dir():
+        raise ValueError(f"Feature directory not found: {feature_path}")
+    state_path = feature_path / "workflow-state.json"
+
+    payload: dict[str, Any] = {}
+    if state_path.is_file():
+        try:
+            loaded = json.loads(state_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                payload = loaded
+        except json.JSONDecodeError:
+            raise ValueError(f"workflow-state.json is not valid JSON: {state_path}")
+
+    existing_hook_results = payload.get("hook_results")
+    if not isinstance(existing_hook_results, dict):
+        existing_hook_results = {}
+    existing_hook_results.update(hook_results)
+    payload["hook_results"] = existing_hook_results
+
+    if pending_hook:
+        payload["pending_hook"] = pending_hook
+    else:
+        payload.pop("pending_hook", None)
+
+    state_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return state_path
+
+
+@workflow_app.command("invoke-hooks")
+def workflow_invoke_hooks(
+    stage_id: str = typer.Argument(..., help="Workflow stage ID whose hooks should run"),
+    workflow_id: str = typer.Option("speckit", "--workflow-id", help="Workflow ID for hook event names"),
+    phase: str = typer.Option("after", "--phase", help="Hook phase: before or after"),
+    run_id: str | None = typer.Option(None, "--run-id", help="Optional workflow hook run id"),
+    feature_dir: str = typer.Option("", "--feature-dir", help="Feature directory whose workflow-state.json should record hook results"),
+    input_values: list[str] | None = typer.Option(
+        None, "--input", "-i", help="Hook context input values as key=value pairs"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable hook run state JSON"),
+):
+    """Invoke workflow hooks through the same dispatcher used by workflow run."""
+    from .workflows.engine import WorkflowEngine
+
+    project_root = _require_specify_project()
+    engine = WorkflowEngine(project_root)
+    inputs = _parse_workflow_inputs(input_values)
+    if feature_dir:
+        inputs.setdefault("feature_dir", feature_dir)
+
+    try:
+        state = engine.dispatch_hooks(
+            workflow_id=workflow_id,
+            stage_id=stage_id,
+            phase=phase,
+            run_id=run_id,
+            inputs=inputs,
+            default_integration="codex",
+        )
+        feature_state_path = (
+            _merge_feature_hook_state(feature_dir, state, project_root)
+            if feature_dir
+            else None
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+    except Exception as exc:
+        console.print(f"[red]Workflow hook dispatch failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+    payload = _workflow_state_payload(state, project_root)
+    if feature_state_path is not None:
+        payload["feature_workflow_state"] = str(feature_state_path)
+
+    if json_output:
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    else:
+        status_colors = {
+            "completed": "green",
+            "paused": "yellow",
+            "failed": "red",
+            "aborted": "red",
+        }
+        color = status_colors.get(state.status.value, "white")
+        console.print(f"[{color}]Hook status: {state.status.value}[/{color}]")
+        if getattr(state, "pending_hook", None):
+            pending = state.pending_hook or {}
+            console.print(f"[yellow]Pending hook:[/yellow] {pending.get('event')}")
+
+    if state.status.value in {"paused", "failed", "aborted"}:
+        raise typer.Exit(1)
+
+
 @workflow_app.command("run")
 def workflow_run(
     source: str = typer.Argument(..., help="Workflow ID or YAML file path"),

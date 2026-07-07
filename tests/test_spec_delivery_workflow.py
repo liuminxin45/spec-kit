@@ -397,6 +397,74 @@ def test_workflow_hook_local_override_disables_matching_hook(tmp_path):
     assert not (project / ".specify" / "hook-ran").exists()
 
 
+def test_workflow_invoke_hooks_records_feature_state(tmp_path):
+    project = tmp_path / "project"
+    hook_dir = project / ".specify" / "capabilities" / "hooks" / "local"
+    hook_dir.mkdir(parents=True)
+    feature_dir = project / "specs" / "001-demo"
+    feature_dir.mkdir(parents=True)
+    (feature_dir / "workflow-state.json").write_text(
+        json.dumps({"workflow_model": {"delivery_profile": "standard-bugfix"}}),
+        encoding="utf-8",
+    )
+    (hook_dir / "pass.ps1").write_text(
+        "\n".join(
+            [
+                "$payload = [ordered]@{",
+                '  schema_version = "1.0"',
+                '  status = "passed"',
+                '  action = "continue"',
+                "  auto_continue = $true",
+                '  summary = "commit after hook passed"',
+                "  artifact_paths = @()",
+                "}",
+                "$payload | ConvertTo-Json -Depth 5",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (project / ".specify" / "workflow-hooks.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "hooks:",
+                '  - id: "local.commit-after"',
+                '    type: "workflow-shell"',
+                "    events:",
+                '      - "workflow.speckit.commit.after"',
+                '    runner: \'pwsh -NoProfile -File ".specify/capabilities/hooks/local/pass.ps1"\'',
+                '    failure_policy: "block"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_specify_cli(
+        project,
+        "workflow",
+        "invoke-hooks",
+        "commit",
+        "--workflow-id",
+        "speckit",
+        "--phase",
+        "after",
+        "--feature-dir",
+        str(feature_dir),
+        "--json",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    event = payload["hook_results"]["workflow.speckit.commit.after"]
+    assert event["status"] == "passed"
+    assert event["auto_continue"] is True
+    feature_state = json.loads((feature_dir / "workflow-state.json").read_text(encoding="utf-8"))
+    recorded = feature_state["hook_results"]["workflow.speckit.commit.after"]
+    assert recorded["summary"] == "commit after hook passed"
+    assert recorded["auto_continue"] is True
+
+
 def test_workflow_hook_blocks_and_resume_waits_for_result(tmp_path):
     project = tmp_path / "project"
     workflows = project / ".specify" / "workflows" / "demo"
@@ -885,6 +953,78 @@ def test_workflow_agent_chain_commit_after_dirty_files_require_rework(tmp_path, 
     assert event["auto_continue"] is False
     guard_step = event["results"][0]["steps"][-1]
     assert guard_step["chain_step_id"] == "post-commit-mutation-guard"
+    assert guard_step["dirty_files"] == ["tracked.txt"]
+
+
+def test_workflow_shell_commit_after_dirty_files_require_rework(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init", str(project)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(project), "config", "user.email", "test@example.com"], check=True)
+    subprocess.run(["git", "-C", str(project), "config", "user.name", "Test User"], check=True)
+    tracked = project / "tracked.txt"
+    tracked.write_text("clean\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(project), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(project), "commit", "-m", "initial"], check=True, capture_output=True, text=True)
+    hook_dir = project / ".specify" / "capabilities" / "hooks" / "local"
+    hook_dir.mkdir(parents=True)
+    (hook_dir / "dirty-pass.ps1").write_text(
+        "\n".join(
+            [
+                "Set-Content -LiteralPath 'tracked.txt' -Value 'dirty after hook' -Encoding utf8",
+                "$payload = [ordered]@{",
+                '  status = "passed"',
+                '  action = "continue"',
+                "  auto_continue = $true",
+                '  summary = "shell hook passed"',
+                "  artifact_paths = @()",
+                "}",
+                "$payload | ConvertTo-Json -Depth 5",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    workflow = WorkflowDefinition.from_string(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "workflow:",
+                '  id: "demo"',
+                '  name: "Demo"',
+                '  version: "1.0.0"',
+                "steps:",
+                '  - id: "commit"',
+                '    type: "shell"',
+                f"    run: '{Path(sys.executable).as_posix()} -c \"print(''committed'')\"'",
+            ]
+        )
+    )
+    (project / ".specify" / "workflow-hooks.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                "hooks:",
+                '  - id: "local.dirty-pass"',
+                '    type: "workflow-shell"',
+                "    events:",
+                '      - "workflow.demo.commit.after"',
+                '    runner: \'pwsh -NoProfile -File ".specify/capabilities/hooks/local/dirty-pass.ps1"\'',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    engine = WorkflowEngine(project)
+    state = engine.execute(workflow, run_id="shelldirty")
+
+    assert state.status.value == "paused"
+    event = state.hook_results["workflow.demo.commit.after"]
+    assert event["status"] == "requires_rework"
+    assert event["action"] == "rework"
+    assert event["auto_continue"] is False
+    guard_step = event["results"][-1]
+    assert guard_step["type"] == "workflow-hook-mutation-guard"
     assert guard_step["dirty_files"] == ["tracked.txt"]
 
 

@@ -29,13 +29,14 @@ unless the user explicitly authorizes that named action.
 ## Workflow Hooks
 Workflow hooks default off. If `.specify/workflow-hooks.yml` is missing or no
 `workflow.<workflow-id>.<stage-id>.<before|after>` hook matches, do not add
-hook state or change output. Matching `type: workflow-shell` hooks are
-deterministic gates: wait for `invoke-workflow-hooks`, continue only when
-`auto_continue=true`, otherwise pause with the hook summary/artifacts. Matching
-`type: workflow-agent-chain` hooks run engine-owned Codex skill chains
-serially; each step receives `previous_result`/`previous_results`, and the
-first `auto_continue=false`, `blocked`, `failed`, or `requires_rework` result
-short-circuits the chain and pauses the workflow.
+hook state or change output. Stage-skill executions dispatch hooks through
+`specify workflow invoke-hooks`; YAML workflow runs use the same engine-owned
+dispatcher. Matching `type: workflow-shell` hooks run synchronously, and
+matching `type: workflow-agent-chain` hooks run Codex skill chains serially.
+Each chain step receives `previous_result`/`previous_results`, and the first
+`auto_continue=false`, `blocked`, `failed`, or `requires_rework` result
+short-circuits the chain and pauses the workflow. Continue only when the
+recorded hook result has `auto_continue=true`.
 `.specify/workflow-hooks.local.yml` may disable hooks without adding state.
 For new external-tool hooks, use `specify hook scaffold` or
 `new-workflow-hook-pack.ps1`; do not hand-write `.specify/workflow-hooks.yml`.

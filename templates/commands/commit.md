@@ -148,7 +148,13 @@ confirmation.
      PowerShell process because host encoding can corrupt template headings.
      If validation fails, amend the commit message before reporting success.
    - Record commit hashes in the response and `progress.md` when useful.
-10. 不 push, do not create remote tracking, do not merge branches, and do not
+10. After the commit hash and post-commit message validation are complete, run
+    the unified workflow hook dispatcher for `workflow.speckit.commit.after`:
+    `specify workflow invoke-hooks commit --workflow-id speckit --phase after --feature-dir <feature-dir> --json`.
+    Continue only when the recorded hook result has `auto_continue=true`.
+    `requires_rework` returns to implementation and must not be hidden by an
+    amend or cleanup inside this stage.
+11. 不 push, do not create remote tracking, do not merge branches, and do not
     delete branches in this stage.
 
 ## Quality Rules
