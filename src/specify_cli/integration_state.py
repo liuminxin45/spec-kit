@@ -109,6 +109,27 @@ def default_integration_key(state: dict[str, Any]) -> str | None:
     return clean_integration_key(key)
 
 
+def try_read_integration_json(project_root: Path) -> tuple[dict[str, Any] | None, str | None]:
+    """Read and normalize ``.specify/integration.json`` without raising.
+
+    Returns ``(state, None)`` on success, ``(None, error)`` when the file is
+    missing or malformed. Workflow defaults use this non-throwing path so a
+    bad project metadata file does not crash unrelated workflow validation.
+    """
+    path = project_root / INTEGRATION_JSON
+    if not path.is_file():
+        return None, f"{INTEGRATION_JSON} not found"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return None, str(exc)
+    except json.JSONDecodeError as exc:
+        return None, f"Invalid JSON in {INTEGRATION_JSON}: {exc}"
+    if not isinstance(data, dict):
+        return None, f"{INTEGRATION_JSON} must contain a JSON object"
+    return normalize_integration_state(data), None
+
+
 def installed_integration_keys(state: dict[str, Any]) -> list[str]:
     """Return installed integration keys from normalized state."""
     return dedupe_integration_keys(state.get("installed_integrations", []))

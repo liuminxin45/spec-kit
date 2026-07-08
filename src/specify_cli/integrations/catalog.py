@@ -416,6 +416,12 @@ class IntegrationCatalog(CatalogStackBase):
                         f"'priority' must be an integer, got "
                         f"{raw_priority!r}."
                     ) from None
+                if normalized_priority in existing_priorities:
+                    raise IntegrationValidationError(
+                        f"Invalid catalog entry at index {idx} in {config_path}: "
+                        f"duplicate priority {normalized_priority}. Catalog "
+                        "priorities must be unique."
+                    )
                 existing_priorities.append(normalized_priority)
             else:
                 # Match `_load_catalog_config()`'s defaulting rule so the new

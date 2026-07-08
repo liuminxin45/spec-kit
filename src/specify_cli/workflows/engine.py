@@ -10,17 +10,26 @@ The engine is the orchestrator that:
 
 from __future__ import annotations
 
+import dataclasses
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
+import threading
 import uuid
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from ..integration_state import (
+    default_integration_key,
+    try_read_integration_json,
+)
 from .base import RunStatus, StepContext, StepResult, StepStatus
 
 
@@ -49,9 +58,10 @@ class WorkflowDefinition:
         if not isinstance(self.default_options, dict):
             self.default_options = {}
 
-        # Requirements (declared but not yet enforced at runtime;
-        # enforcement is a planned enhancement)
-        self.requires: dict[str, Any] = data.get("requires", {})
+        # Advisory pre-conditions (spec-kit version / integrations a workflow
+        # expects). Validated by ``validate_workflow`` (recognized keys only)
+        # but not enforced as a runtime security boundary.
+        self.requires: Any = data.get("requires", {})
 
         # Inputs
         self.inputs: dict[str, Any] = data.get("inputs", {})
@@ -84,6 +94,8 @@ class WorkflowDefinition:
 # ID format: lowercase alphanumeric with hyphens
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
 
+_RECOGNIZED_REQUIRES_KEYS = frozenset({"speckit_version", "integrations"})
+
 # Valid step types (matching STEP_REGISTRY keys)
 def _get_valid_step_types() -> set[str]:
     """Return valid step types from the registry, with a built-in fallback."""
@@ -91,7 +103,7 @@ def _get_valid_step_types() -> set[str]:
     if STEP_REGISTRY:
         return set(STEP_REGISTRY.keys())
     return {
-        "command", "shell", "prompt", "gate", "if",
+        "command", "shell", "prompt", "gate", "if", "init",
         "switch", "while", "do-while", "fan-out", "fan-in",
     }
 
@@ -143,6 +155,43 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
                 errors.append(
                     f"Input {input_name!r} has invalid type {input_type!r}. "
                     f"Must be 'string', 'number', or 'boolean'."
+                )
+
+            if "default" in input_def:
+                default_value = input_def["default"]
+                is_auto_integration = (
+                    input_name == "integration" and default_value == "auto"
+                )
+                validation_input_def: dict[str, Any] = input_def
+                if is_auto_integration and "enum" in input_def:
+                    validation_input_def = {
+                        key: value
+                        for key, value in input_def.items()
+                        if key != "enum"
+                    }
+                try:
+                    WorkflowEngine._coerce_input(
+                        input_name, default_value, validation_input_def
+                    )
+                except ValueError as exc:
+                    errors.append(
+                        f"Input {input_name!r} has invalid default: {exc}"
+                    )
+
+    # -- Requires ---------------------------------------------------------
+    if not isinstance(definition.requires, dict):
+        errors.append("'requires' must be a mapping (or omitted).")
+    else:
+        for key in definition.requires:
+            if key == "permissions":
+                errors.append(
+                    "'requires.permissions' is not a recognized or enforced "
+                    "capability gate; use a 'gate' step for sensitive steps."
+                )
+            elif key not in _RECOGNIZED_REQUIRES_KEYS:
+                errors.append(
+                    f"Unknown 'requires' key {key!r}. Recognized keys: "
+                    f"{', '.join(sorted(_RECOGNIZED_REQUIRES_KEYS))}."
                 )
 
     # -- Steps ------------------------------------------------------------
@@ -200,6 +249,35 @@ def _validate_steps(
             step_errors = step_impl.validate(step_config)
             errors.extend(step_errors)
 
+        if "continue_on_error" in step_config:
+            coe = step_config["continue_on_error"]
+            if not isinstance(coe, bool):
+                errors.append(
+                    f"Step {step_id!r}: 'continue_on_error' must be a "
+                    f"boolean, got {type(coe).__name__}."
+                )
+
+        if step_type == "fan-in":
+            wait_for = step_config.get("wait_for")
+            if isinstance(wait_for, list):
+                for wid in wait_for:
+                    if not isinstance(wid, str):
+                        errors.append(
+                            f"Fan-in step {step_id!r}: 'wait_for' entries "
+                            f"must be step-id strings, got {type(wid).__name__} "
+                            f"({wid!r})."
+                        )
+                    elif wid == step_id:
+                        errors.append(
+                            f"Fan-in step {step_id!r}: 'wait_for' references "
+                            "itself; a fan-in cannot wait for its own results."
+                        )
+                    elif wid not in seen_ids:
+                        errors.append(
+                            f"Fan-in step {step_id!r}: 'wait_for' references "
+                            f"unknown or not-yet-declared step id {wid!r}."
+                        )
+
         # Recursively validate nested steps
         for nested_key in ("then", "else", "steps"):
             nested = step_config.get(nested_key)
@@ -233,22 +311,34 @@ def _validate_steps(
 class RunState:
     """Manages workflow run state for persistence and resume."""
 
+    _RUN_ID_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+
+    @classmethod
+    def _validate_run_id(cls, run_id: str) -> None:
+        """Raise ``ValueError`` if ``run_id`` is not a safe path component."""
+        if not isinstance(run_id, str) or not cls._RUN_ID_PATTERN.match(run_id):
+            raise ValueError(
+                f"Invalid run_id {run_id!r}: must be alphanumeric with "
+                "hyphens/underscores only (and must start with an alphanumeric "
+                "character)."
+            )
+
     def __init__(
         self,
         run_id: str | None = None,
         workflow_id: str = "",
         project_root: Path | None = None,
     ) -> None:
-        self.run_id = run_id or str(uuid.uuid4())[:8]
-        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]*$', self.run_id):
-            msg = f"Invalid run_id {self.run_id!r}: must be alphanumeric with hyphens/underscores only."
-            raise ValueError(msg)
+        self.run_id = str(uuid.uuid4())[:8] if run_id is None else run_id
+        self._validate_run_id(self.run_id)
         self.workflow_id = workflow_id
         self.project_root = project_root or Path(".")
         self.status = RunStatus.CREATED
         self.current_step_index = 0
         self.current_step_id: str | None = None
         self.step_results: dict[str, dict[str, Any]] = {}
+        self._lock = threading.Lock()
+        self._log_lock = threading.Lock()
         self.hook_results: dict[str, Any] = {}
         self.pending_hook: dict[str, Any] | None = None
         self.inputs: dict[str, Any] = {}
@@ -260,36 +350,62 @@ class RunState:
     def runs_dir(self) -> Path:
         return self.project_root / ".specify" / "workflows" / "runs" / self.run_id
 
+    def record_step_result(self, step_id: str, data: dict[str, Any]) -> None:
+        """Record one step's result under the run lock."""
+        with self._lock:
+            self.step_results[step_id] = data
+
+    def set_step_output(self, step_id: str, output: Any) -> None:
+        """Replace an already-recorded step's ``output`` under the run lock."""
+        with self._lock:
+            if step_id in self.step_results:
+                self.step_results[step_id]["output"] = output
+
     def save(self) -> None:
         """Persist current state to disk."""
-        self.updated_at = datetime.now(timezone.utc).isoformat()
         runs_dir = self.runs_dir
         runs_dir.mkdir(parents=True, exist_ok=True)
 
-        state_data = {
-            "run_id": self.run_id,
-            "workflow_id": self.workflow_id,
-            "status": self.status.value,
-            "current_step_index": self.current_step_index,
-            "current_step_id": self.current_step_id,
-            "step_results": self.step_results,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-        }
-        if self.hook_results:
-            state_data["hook_results"] = self.hook_results
-        if self.pending_hook is not None:
-            state_data["pending_hook"] = self.pending_hook
-        with open(runs_dir / "state.json", "w", encoding="utf-8") as f:
-            json.dump(state_data, f, indent=2)
+        with self._lock:
+            self.updated_at = datetime.now(timezone.utc).isoformat()
+            state_data = {
+                "run_id": self.run_id,
+                "workflow_id": self.workflow_id,
+                "status": self.status.value,
+                "current_step_index": self.current_step_index,
+                "current_step_id": self.current_step_id,
+                "step_results": self.step_results,
+                "created_at": self.created_at,
+                "updated_at": self.updated_at,
+            }
+            if self.hook_results:
+                state_data["hook_results"] = self.hook_results
+            if self.pending_hook is not None:
+                state_data["pending_hook"] = self.pending_hook
+            self._atomic_write_json(runs_dir / "state.json", state_data)
+            self._atomic_write_json(runs_dir / "inputs.json", {"inputs": self.inputs})
 
-        inputs_data = {"inputs": self.inputs}
-        with open(runs_dir / "inputs.json", "w", encoding="utf-8") as f:
-            json.dump(inputs_data, f, indent=2)
+    @staticmethod
+    def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
+        """Write *data* as indented JSON to *path* atomically."""
+        fd, tmp = tempfile.mkstemp(
+            dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
     @classmethod
     def load(cls, run_id: str, project_root: Path) -> RunState:
         """Load a run state from disk."""
+        cls._validate_run_id(run_id)
         runs_dir = project_root / ".specify" / "workflows" / "runs" / run_id
         state_path = runs_dir / "state.json"
         if not state_path.exists():
@@ -324,12 +440,60 @@ class RunState:
     def append_log(self, entry: dict[str, Any]) -> None:
         """Append a log entry to the run log."""
         entry["timestamp"] = datetime.now(timezone.utc).isoformat()
-        self.log_entries.append(entry)
-
         runs_dir = self.runs_dir
         runs_dir.mkdir(parents=True, exist_ok=True)
-        with open(runs_dir / "log.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry) + "\n")
+        with self._log_lock:
+            self.log_entries.append(entry)
+            with open(runs_dir / "log.jsonl", "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry) + "\n")
+
+
+@dataclasses.dataclass
+class _FanOutItemResult:
+    """Completed isolated fan-out item execution."""
+
+    output: Any
+    status: RunStatus | None
+    current_step_id: str | None
+    step_results: dict[str, dict[str, Any]]
+    log_entries: list[dict[str, Any]]
+
+
+class _FanOutItemState:
+    """Item-local run state used to keep parallel fan-out workers isolated."""
+
+    def __init__(
+        self,
+        parent: RunState,
+        step_results: dict[str, dict[str, Any]],
+    ) -> None:
+        self.run_id = parent.run_id
+        self.workflow_id = parent.workflow_id
+        self.project_root = parent.project_root
+        self.status = RunStatus.RUNNING
+        self.current_step_index = parent.current_step_index
+        self.current_step_id: str | None = None
+        self.step_results = step_results
+        self.inputs = parent.inputs
+        self.hook_results: dict[str, Any] = {}
+        self.pending_hook: dict[str, Any] | None = None
+        self.log_entries: list[dict[str, Any]] = []
+        self._lock = threading.Lock()
+
+    def record_step_result(self, step_id: str, data: dict[str, Any]) -> None:
+        with self._lock:
+            self.step_results[step_id] = data
+
+    def set_step_output(self, step_id: str, output: Any) -> None:
+        with self._lock:
+            if step_id in self.step_results:
+                self.step_results[step_id]["output"] = output
+
+    def save(self) -> None:
+        """Fan-out item state is merged into the parent run explicitly."""
+
+    def append_log(self, entry: dict[str, Any]) -> None:
+        self.log_entries.append(dict(entry))
 
 
 # -- Workflow Engine ------------------------------------------------------
@@ -341,6 +505,7 @@ class WorkflowEngine:
     def __init__(self, project_root: Path | None = None) -> None:
         self.project_root = project_root or Path(".")
         self.on_step_start: Any = None  # Callable[[str, str], None] | None
+        self._callback_lock = threading.Lock()
 
     def load_workflow(self, source: str | Path) -> WorkflowDefinition:
         """Load a workflow from an installed ID or a local YAML path.
@@ -363,10 +528,10 @@ class WorkflowEngine:
         ValueError:
             If the workflow YAML is invalid.
         """
-        path = Path(source)
+        path = Path(source).expanduser()
 
         # Try as a direct file path first
-        if path.suffix in (".yml", ".yaml") and path.exists():
+        if path.suffix.lower() in (".yml", ".yaml") and path.is_file():
             return WorkflowDefinition.from_yaml(path)
 
         # Try as an installed workflow ID
@@ -606,6 +771,15 @@ class WorkflowEngine:
         state.save()
         return state
 
+    @staticmethod
+    def _record_result(
+        context: StepContext, state: RunState, step_id: str, data: dict[str, Any]
+    ) -> None:
+        """Record a step result into both live context and persistent state."""
+        if context.steps is not state.step_results:
+            context.steps[step_id] = data
+        state.record_step_result(step_id, data)
+
     def _execute_steps(
         self,
         steps: list[dict[str, Any]],
@@ -656,7 +830,8 @@ class WorkflowEngine:
             # otherwise stay silent (library-safe default).
             label = step_config.get("command", "") or step_type
             if self.on_step_start is not None:
-                self.on_step_start(step_id, label)
+                with self._callback_lock:
+                    self.on_step_start(step_id, label)
 
             step_impl = registry.get(step_type)
             if not step_impl:
@@ -675,6 +850,7 @@ class WorkflowEngine:
 
             # Record step results — prefer resolved values from step output
             step_data = {
+                "type": step_type,
                 "integration": result.output.get("integration")
                 or step_config.get("integration")
                 or context.default_integration,
@@ -688,8 +864,7 @@ class WorkflowEngine:
                 "output": result.output,
                 "status": result.status.value,
             }
-            context.steps[step_id] = step_data
-            state.step_results[step_id] = step_data
+            self._record_result(context, state, step_id, step_data)
 
             state.append_log(
                 {
@@ -707,7 +882,8 @@ class WorkflowEngine:
 
             # Handle failures
             if result.status == StepStatus.FAILED:
-                # Gate abort (output.aborted) maps to ABORTED status
+                # Gate aborts are operator decisions; continue_on_error does
+                # not override them.
                 if result.output.get("aborted"):
                     state.status = RunStatus.ABORTED
                     state.append_log(
@@ -716,15 +892,28 @@ class WorkflowEngine:
                             "step_id": step_id,
                         }
                     )
-                else:
-                    state.status = RunStatus.FAILED
+                    state.save()
+                    return
+
+                if step_config.get("continue_on_error") is True:
                     state.append_log(
                         {
-                            "event": "step_failed",
+                            "event": "step_continue_on_error",
                             "step_id": step_id,
                             "error": result.error,
                         }
                     )
+                    state.save()
+                    continue
+
+                state.status = RunStatus.FAILED
+                state.append_log(
+                    {
+                        "event": "step_failed",
+                        "step_id": step_id,
+                        "error": result.error,
+                    }
+                )
                 state.save()
                 return
 
@@ -757,55 +946,43 @@ class WorkflowEngine:
                     for _loop_iter in range(max_iters - 1):
                         if not evaluate_condition(condition, context):
                             break
-                        # Namespace nested step IDs per iteration
-                        iter_steps = []
-                        for ns in result.next_steps:
+                        # Namespace each nested step ID per iteration and
+                        # alias it back so later body steps see latest values.
+                        for ns_idx, ns in enumerate(result.next_steps):
                             ns_copy = dict(ns)
-                            if "id" in ns_copy:
-                                ns_copy["id"] = f"{step_id}:{ns_copy['id']}:{_loop_iter + 1}"
-                            iter_steps.append(ns_copy)
-                        self._execute_steps(
-                            iter_steps, context, state, registry,
-                            step_offset=-1,
-                        )
-                        if state.status in (
-                            RunStatus.PAUSED,
-                            RunStatus.FAILED,
-                            RunStatus.ABORTED,
-                        ):
-                            return
+                            orig = ns_copy.get("id")
+                            base_id = orig or f"step-{ns_idx}"
+                            ns_copy["id"] = f"{step_id}:{base_id}:{_loop_iter + 1}"
+                            self._execute_steps(
+                                [ns_copy], context, state, registry,
+                                step_offset=-1,
+                            )
+                            if state.status in (
+                                RunStatus.PAUSED,
+                                RunStatus.FAILED,
+                                RunStatus.ABORTED,
+                            ):
+                                return
+                            if orig and ns_copy["id"] in context.steps:
+                                self._record_result(
+                                    context, state, orig,
+                                    context.steps[ns_copy["id"]],
+                                )
 
             # Fan-out: execute nested step template per item with unique IDs
             if step_type == "fan-out":
                 items = result.output.get("items", [])
                 template = result.output.get("step_template", {})
                 if template and items:
-                    fan_out_results = []
-                    for item_idx, item_val in enumerate(result.output["items"]):
-                        context.item = item_val
-                        # Per-item ID: parentId:templateId:index
-                        item_step = dict(template)
-                        base_id = item_step.get("id", "item")
-                        item_step["id"] = f"{step_id}:{base_id}:{item_idx}"
-                        self._execute_steps(
-                            [item_step], context, state, registry,
-                            step_offset=-1,
-                        )
-                        # Collect per-item result for fan-in
-                        item_result = context.steps.get(item_step["id"], {})
-                        fan_out_results.append(item_result.get("output", {}))
-                        if state.status in (
-                            RunStatus.PAUSED,
-                            RunStatus.FAILED,
-                            RunStatus.ABORTED,
-                        ):
-                            break
+                    fan_out_results = self._run_fan_out(
+                        items, template, step_id, context, state, registry,
+                        result.output.get("max_concurrency", 1),
+                    )
                     context.item = None
                     # Preserve original output and add collected results
                     fan_out_output = dict(result.output)
                     fan_out_output["results"] = fan_out_results
-                    context.steps[step_id]["output"] = fan_out_output
-                    state.step_results[step_id]["output"] = fan_out_output
+                    state.set_step_output(step_id, fan_out_output)
                     if state.status in (
                         RunStatus.PAUSED,
                         RunStatus.FAILED,
@@ -815,8 +992,7 @@ class WorkflowEngine:
                 else:
                     # Empty items or no template — normalize output
                     result.output["results"] = []
-                    context.steps[step_id]["output"] = result.output
-                    state.step_results[step_id]["output"] = result.output
+                    state.set_step_output(step_id, result.output)
 
             if is_top_level_step:
                 after_event = self._workflow_hook_event_name(
@@ -834,6 +1010,138 @@ class WorkflowEngine:
                     pause_step_index=state.current_step_index + 1,
                 ):
                     return
+
+    def _run_fan_out(
+        self,
+        items: list[Any],
+        template: dict[str, Any],
+        step_id: str,
+        context: StepContext,
+        state: RunState,
+        registry: dict[str, Any],
+        max_concurrency: Any,
+    ) -> list[Any]:
+        """Run a fan-out template once per item; return outputs in item order."""
+        if not items:
+            return []
+
+        halting = (RunStatus.PAUSED, RunStatus.FAILED, RunStatus.ABORTED)
+        try:
+            workers = max(1, int(max_concurrency))
+        except (TypeError, ValueError):
+            workers = 1
+        workers = min(workers, len(items))
+
+        base_id = template.get("id", "item")
+        base_steps = dict(context.steps)
+        base_step_ids = set(base_steps)
+
+        def item_id(idx: int) -> str:
+            return f"{step_id}:{base_id}:{idx}"
+
+        def run_item(idx: int, item_ctx: StepContext, item_state: Any) -> Any:
+            item_step = dict(template)
+            item_step["id"] = item_id(idx)
+            self._execute_steps(
+                [item_step], item_ctx, item_state, registry, step_offset=-1,
+            )
+            return item_ctx.steps.get(item_step["id"], {}).get("output", {})
+
+        def halt_status_from_record(rec: dict[str, Any] | None) -> RunStatus | None:
+            if rec is None:
+                return None
+            status = rec.get("status")
+            if status == StepStatus.PAUSED.value:
+                return RunStatus.PAUSED
+            if status == StepStatus.FAILED.value:
+                out = rec.get("output") or {}
+                if out.get("aborted"):
+                    return RunStatus.ABORTED
+                if template.get("continue_on_error") is not True:
+                    return RunStatus.FAILED
+            return None
+
+        if workers <= 1:
+            results: list[Any] = []
+            for item_idx, item_val in enumerate(items):
+                context.item = item_val
+                results.append(run_item(item_idx, context, state))
+                if state.status in halting:
+                    break
+            return results
+
+        n = len(items)
+        slots: list[Any] = [None] * n
+
+        def run_isolated(idx: int) -> _FanOutItemResult:
+            item_steps = dict(base_steps)
+            item_context = dataclasses.replace(
+                context,
+                item=items[idx],
+                steps=item_steps,
+            )
+            item_state = _FanOutItemState(state, item_steps)
+            output = run_item(idx, item_context, item_state)
+            rec = item_steps.get(item_id(idx))
+            halt_status = halt_status_from_record(rec)
+            if halt_status is None and item_state.status in halting:
+                halt_status = item_state.status
+            return _FanOutItemResult(
+                output=output,
+                status=halt_status,
+                current_step_id=item_state.current_step_id,
+                step_results={
+                    key: value
+                    for key, value in item_steps.items()
+                    if key not in base_step_ids
+                },
+                log_entries=item_state.log_entries,
+            )
+
+        def merge_item_result(item_result: _FanOutItemResult) -> None:
+            for entry in item_result.log_entries:
+                state.append_log(entry)
+            for child_step_id, child_step_data in item_result.step_results.items():
+                self._record_result(context, state, child_step_id, child_step_data)
+
+        halt: tuple[int, RunStatus, str | None] | None = None
+        collected = 0
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures: dict[int, Future[_FanOutItemResult]] = {}
+            next_submit = 0
+            for idx in range(n):
+                while (
+                    next_submit < n
+                    and len(futures) < workers
+                    and state.status not in halting
+                ):
+                    futures[next_submit] = pool.submit(run_isolated, next_submit)
+                    next_submit += 1
+
+                fut = futures.pop(idx, None)
+                if fut is None:
+                    break
+                try:
+                    item_result = fut.result()
+                except Exception:
+                    for other in futures.values():
+                        other.cancel()
+                    raise
+                slots[idx] = item_result.output
+                merge_item_result(item_result)
+                collected = idx + 1
+                if item_result.status is not None:
+                    halt = (idx, item_result.status, item_result.current_step_id)
+                    for other in futures.values():
+                        other.cancel()
+                    break
+
+        if halt is not None:
+            halted_at, halted_status, halted_step_id = halt
+            state.status = halted_status
+            state.current_step_id = halted_step_id or item_id(halted_at)
+            return slots[: halted_at + 1]
+        return slots[:collected]
 
     def _dispatch_step_hooks(
         self,
@@ -2239,15 +2547,39 @@ class WorkflowEngine:
             if not isinstance(input_def, dict):
                 continue
             if name in provided:
-                resolved[name] = self._coerce_input(
-                    name, provided[name], input_def
-                )
+                value = self._resolve_default(name, provided[name])
             elif "default" in input_def:
-                resolved[name] = input_def["default"]
+                value = self._resolve_default(name, input_def["default"])
             elif input_def.get("required", False):
                 msg = f"Required input {name!r} not provided."
                 raise ValueError(msg)
+            else:
+                continue
+
+            coerce_input_def = input_def
+            if name == "integration" and value == "auto" and "enum" in input_def:
+                coerce_input_def = {
+                    key: val
+                    for key, val in input_def.items()
+                    if key != "enum"
+                }
+            resolved[name] = self._coerce_input(name, value, coerce_input_def)
         return resolved
+
+    def _resolve_default(self, name: str, default: Any) -> Any:
+        """Resolve special default sentinels against project state."""
+        if name == "integration" and default == "auto":
+            resolved = self._load_project_integration()
+            if resolved is not None:
+                return resolved
+        return default
+
+    def _load_project_integration(self) -> str | None:
+        """Read the default integration key from ``.specify/integration.json``."""
+        state, error = try_read_integration_json(self.project_root)
+        if state is None or error is not None:
+            return None
+        return default_integration_key(state)
 
     @staticmethod
     def _coerce_input(
@@ -2258,11 +2590,14 @@ class WorkflowEngine:
         enum_values = input_def.get("enum")
 
         if input_type == "number":
+            if isinstance(value, bool):
+                msg = f"Input {name!r} expected a number, got {value!r}."
+                raise ValueError(msg)
             try:
                 value = float(value)
                 if value == int(value):
                     value = int(value)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, OverflowError):
                 msg = f"Input {name!r} expected a number, got {value!r}."
                 raise ValueError(msg) from None
         elif input_type == "boolean":
@@ -2274,6 +2609,13 @@ class WorkflowEngine:
                 else:
                     msg = f"Input {name!r} expected a boolean, got {value!r}."
                     raise ValueError(msg)
+            elif not isinstance(value, bool):
+                msg = f"Input {name!r} expected a boolean, got {value!r}."
+                raise ValueError(msg)
+        elif input_type == "string":
+            if not isinstance(value, str):
+                msg = f"Input {name!r} expected a string, got {value!r}."
+                raise ValueError(msg)
 
         if enum_values is not None and value not in enum_values:
             msg = (

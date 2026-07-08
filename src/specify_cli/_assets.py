@@ -10,6 +10,9 @@ import re
 from pathlib import Path
 
 
+UPSTREAM_BASELINE = "github/spec-kit@v0.12.5"
+
+
 def _locate_core_pack() -> Path | None:
     """Return the filesystem path to the bundled core_pack directory, or None.
 

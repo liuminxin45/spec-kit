@@ -271,6 +271,7 @@ def test_automation_assets_are_packaged_and_declared():
     assert '"templates/workflow-state-template.json" = "specify_cli/core_pack/templates/workflow-state-template.json"' in pyproject
     assert '"templates/implementation-summary-template.md" = "specify_cli/core_pack/templates/implementation-summary-template.md"' in pyproject
     assert '"templates/workpack-template.md" = "specify_cli/core_pack/templates/workpack-template.md"' in pyproject
+    assert '"scripts/python" = "specify_cli/core_pack/scripts/python"' in pyproject
 
     config = yaml.safe_load(read_text("config/automation-rules.yml"))
     assert config["policy"]["automation_scope"] == "hard-facts-only"
@@ -355,7 +356,7 @@ def test_gate_packs_are_selectable_and_context_budgeted():
     assert all(item["path"].startswith("ai/workflows/gates/") for item in selected["facts"]["selected"])
     assert "omitted_due_to_limit" in selected["facts"]
 
-    repo = REPO_ROOT.parent
+    repo = REPO_ROOT
     budget = run_ps("validate-context-budget", "-RepoRoot", str(repo))
     assert_standard_shape(budget, "validate-context-budget")
     assert budget["status"] in {"ok", "warning"}
@@ -2294,7 +2295,8 @@ def test_all_automation_scripts_exist_in_powershell():
     for tool in AUTOMATION_TOOLS:
         assert (REPO_ROOT / "scripts" / "powershell" / f"{tool}.ps1").exists()
     script_dirs = sorted(path.name for path in (REPO_ROOT / "scripts").iterdir() if path.is_dir())
-    assert script_dirs == ["powershell"]
+    assert script_dirs == ["powershell", "python"]
+    assert (REPO_ROOT / "scripts" / "python" / "check_prerequisites.py").exists()
 
 
 def test_spec_kit_core_version_scripts_use_pyproject_as_source(tmp_path):

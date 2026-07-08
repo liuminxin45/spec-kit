@@ -99,6 +99,11 @@ def shared_scripts_source(
     return repo_root / "scripts"
 
 
+def should_skip_shared_script_file(path: Path) -> bool:
+    """Return True for generated files that must not be installed as scripts."""
+    return "__pycache__" in path.parts or path.suffix == ".pyc"
+
+
 def shared_checklist_rules_source(
     *,
     core_pack: Path | None,
@@ -429,8 +434,8 @@ def install_shared_infra(
     """
     from .integrations.manifest import _sha256
 
-    if script_type != "ps":
-        raise ValueError("Spec Kit shared scripts are PowerShell-only; use script_type='ps'.")
+    if script_type not in {"ps", "py"}:
+        raise ValueError("Spec Kit shared scripts support script_type='ps' or script_type='py'.")
 
     manifest = load_speckit_manifest(project_path, version=version, console=console)
     prior_hashes = dict(manifest.files)
@@ -504,12 +509,16 @@ def install_shared_infra(
     if scripts_src.is_dir():
         dest_scripts = project_path / ".specify" / "scripts"
         if _ensure_or_bucket_dir(dest_scripts):
-            variant_src = scripts_src / "powershell"
-            if variant_src.is_dir():
-                dest_variant = dest_scripts / "powershell"
+            for variant in ("powershell", "python"):
+                variant_src = scripts_src / variant
+                if not variant_src.is_dir():
+                    continue
+                dest_variant = dest_scripts / variant
                 if _ensure_or_bucket_dir(dest_variant):
                     for src_path in variant_src.rglob("*"):
                         if not src_path.is_file():
+                            continue
+                        if should_skip_shared_script_file(src_path):
                             continue
 
                         rel_path = src_path.relative_to(variant_src)
