@@ -140,11 +140,16 @@ Required for UI/service/SDK or real-device state migrations; otherwise `N/A`.
 
 Required only for visible UI/UX/copy/style changes; otherwise `N/A`. For parity
 or layout repair, cite selected gates plus runtime DOM/computed-style/box facts.
+UI parity or host-embedded UI work must cover dynamic states, host validation,
+scrollbar, clipping, compression, and runtime DOM / computed style / box metrics.
 
 | Visible Change | Evidence Source | Target Selector/Component | Status |
 |----------------|-----------------|---------------------------|--------|
 |  |  |  |  |
-
+### UI Element Traversal Inventory / 0px Alignment Matrix
+Required for UI parity or 0px-level visual repair; otherwise `N/A`; track baseline anchors and batch patch strategy.
+| Element / State | Baseline Anchors | Runtime Selector | Box Metrics | Batch Patch Strategy |
+|-----------------|------------------|------------------|-------------|----------------------|
 ## Quality Vision Link
 
 Required for UI/UX/copy/parity work; otherwise `N/A`.

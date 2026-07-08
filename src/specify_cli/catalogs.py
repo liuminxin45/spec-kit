@@ -78,7 +78,7 @@ class CatalogStackBase:
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
                 "HTTP is only allowed for localhost."
             )
-        if not parsed.netloc:
+        if not parsed.hostname:
             raise cls._error("Catalog URL must be a valid URL with a host.")
 
     def _load_catalog_config(self, config_path: Path) -> list[CatalogEntry] | None:
@@ -116,6 +116,7 @@ class CatalogStackBase:
 
         entries: list[CatalogEntry] = []
         skipped: list[int] = []
+        seen_priorities: dict[int, int] = {}
         for idx, item in enumerate(catalogs_data):
             if not isinstance(item, dict):
                 raise self._validation_error(
@@ -148,6 +149,13 @@ class CatalogStackBase:
                     f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
                     f"expected integer, got {raw_priority!r}"
                 )
+            if priority in seen_priorities:
+                raise self._validation_error(
+                    f"Invalid catalog config {config_path}: duplicate priority "
+                    f"{priority} at indices {seen_priorities[priority]} and {idx}. "
+                    "Catalog priorities must be unique."
+                )
+            seen_priorities[priority] = idx
 
             raw_install = item.get("install_allowed", False)
             if isinstance(raw_install, str):

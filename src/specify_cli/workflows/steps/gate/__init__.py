@@ -51,7 +51,7 @@ class GateStep(StepBase):
         choice = self._prompt(message, options)
         output["choice"] = choice
 
-        if choice in ("reject", "abort"):
+        if choice.lower() in ("reject", "abort"):
             if on_reject == "abort":
                 output["aborted"] = True
                 return StepResult(
@@ -111,7 +111,11 @@ class GateStep(StepBase):
                 f"Gate step {config.get('id', '?')!r}: 'on_reject' must be "
                 f"'abort', 'skip', or 'retry'."
             )
-        if on_reject in ("abort", "retry") and isinstance(options, list):
+        if (
+            on_reject in ("abort", "retry")
+            and isinstance(options, list)
+            and all(isinstance(o, str) for o in options)
+        ):
             reject_choices = {"reject", "abort"}
             if not any(o.lower() in reject_choices for o in options):
                 errors.append(

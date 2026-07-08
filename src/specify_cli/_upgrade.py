@@ -14,6 +14,7 @@ import yaml
 
 from .integrations.base import IntegrationBase
 from .integrations.manifest import IntegrationManifest, _sha256
+from ._assets import UPSTREAM_BASELINE
 from ._project_status import build_project_status, current_project_version
 from .shared_infra import (
     RUNTIME_TEMPLATE_FILES,
@@ -22,6 +23,7 @@ from .shared_infra import (
     shared_checklist_rules_source,
     shared_scripts_source,
     shared_templates_source,
+    should_skip_shared_script_file,
 )
 
 
@@ -96,6 +98,7 @@ def write_spec_kit_lock(
         "spec_kit": {
             "package": "specify-cli",
             "version": version,
+            "upstream_baseline": UPSTREAM_BASELINE,
             "source": source,
             "installed_at": installed_at,
             "updated_at": _now(),
@@ -166,12 +169,17 @@ def _collect_shared_assets(
     assets: dict[str, bytes] = {}
 
     scripts_src = shared_scripts_source(core_pack=core_pack, repo_root=repo_root)
-    variant_src = scripts_src / "powershell"
-    if variant_src.is_dir():
-        for src in variant_src.rglob("*"):
-            if src.is_file() and not src.name.startswith("."):
-                rel = (Path(".specify/scripts/powershell") / src.relative_to(variant_src)).as_posix()
-                assets[rel] = src.read_bytes()
+    for variant in ("powershell", "python"):
+        variant_src = scripts_src / variant
+        if variant_src.is_dir():
+            for src in variant_src.rglob("*"):
+                if (
+                    src.is_file()
+                    and not src.name.startswith(".")
+                    and not should_skip_shared_script_file(src)
+                ):
+                    rel = (Path(".specify/scripts") / variant / src.relative_to(variant_src)).as_posix()
+                    assets[rel] = src.read_bytes()
 
     templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)
     if templates_src.is_dir():

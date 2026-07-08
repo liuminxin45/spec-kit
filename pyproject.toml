@@ -1,6 +1,6 @@
 [project]
 name = "specify-cli"
-version = "0.9.4"
+version = "0.10.1"
 description = "Codex-only Specify CLI for Spec Kit AI delivery workflows."
 requires-python = ">=3.11"
 dependencies = [
@@ -51,6 +51,7 @@ packages = ["src/specify_cli"]
 "templates/ai" = "specify_cli/core_pack/templates/ai"
 "templates/subskills" = "specify_cli/core_pack/subskills"
 "scripts/powershell" = "specify_cli/core_pack/scripts/powershell"
+"scripts/python" = "specify_cli/core_pack/scripts/python"
 "checklist-rules" = "specify_cli/core_pack/checklist-rules"
 "config" = "specify_cli/core_pack/config"
 # Bundled workflows (auto-installed during `specify init`)

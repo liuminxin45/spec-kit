@@ -37,6 +37,32 @@ def test_shared_infra_installs_checklist_rules_and_validator(tmp_path):
     assert ".specify/scripts/powershell/validate-checklist.ps1" in manifest_text
 
 
+def test_shared_infra_skips_generated_python_bytecode(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    project = tmp_path / "project"
+    project.mkdir()
+    core_pack = tmp_path / "core_pack"
+    python_scripts = core_pack / "scripts" / "python"
+    pycache = python_scripts / "__pycache__"
+    pycache.mkdir(parents=True)
+    (python_scripts / "check_prerequisites.py").write_text("# script\n", encoding="utf-8")
+    (pycache / "check_prerequisites.cpython-313.pyc").write_bytes(b"bytecode")
+
+    install_shared_infra(
+        project,
+        "ps",
+        version="test",
+        core_pack=core_pack,
+        repo_root=repo_root,
+        console=NullConsole(),
+    )
+
+    installed_python = project / ".specify" / "scripts" / "python"
+    assert (installed_python / "check_prerequisites.py").is_file()
+    assert not list(installed_python.rglob("*.pyc"))
+    assert not any(path.name == "__pycache__" for path in installed_python.rglob("*"))
+
+
 def test_checklist_validator_counts_only_checkbox_prefix_ids(tmp_path):
     repo_root = Path(__file__).resolve().parents[1]
     feature_dir = tmp_path / "specs" / "001-demo"
