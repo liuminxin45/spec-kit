@@ -1,217 +1,65 @@
 # Spec Kit Task Routing
-This compact routing guide is not a full manual. Load it with `AGENTS.md`, `.specify/workspace.yml`, and `.specify/memory/repository-map.md`.
+Load with `AGENTS.md`, `.specify/workspace.yml`, `.specify/memory/repository-map.md`, and current `.specify/feature.json` only.
+
 ## Default Rule
-Start light; upgrade only when evidence, risk, or scope requires it. Do not route by matching user text keywords alone.
-## Internal Skill Loading
-Codex natively discovers only `.agents/skills/speckit-specify/SKILL.md`. For later stages or reusable capabilities, read `ai/workflows/skill-routing.yml` first, then load only the selected `.agents/spec-kit/skills/<skill>/SKILL.md`. Do not pre-load the internal skill directory.
-## Stage Continuation
-Auto-continue is a stage contract, not report wording. Prefer
-`resolve-next-stage` when available; consume its `current_stage`, `next_stage`,
-`can_continue`, `blockers`, `required_human_action`, `commands_to_run`, and
-`missing_artifacts` JSON before deciding whether to continue. When the current
-stage is complete and the next stage is structurally known, execute the next
-required stage in the same agent turn without asking the user to type the next command:
-invoke the next command/skill when available, or load the selected internal
-skill from `skill-routing.yml` and perform its steps inline. Stop only for
-human acceptance, human clarification, owner decision, high-risk operation
-confirmation, missing host/device/permission/tooling, build failure, validation
-failure, unresolved blocker, unclosed source/runtime delivery chain, or explicit
-user pause. If stopping, do not claim automatic entry; record `blockers` and
-`next_required_human_action`. A plain completion summary or "自动进入"/
-"continue to" promise without execution is non-compliant.
-## New Workflow Start
-Before `speckit-intake` starts a new task or overwrites active feature state,
-run `preflight-new-workflow`. Dirty worktrees, non-base branches, unfinished
-`.specify/feature.json` state, and unresolved workflow runs block the new
-workflow. The agent may explain suggested actions, but must not stash, clean,
-switch branches, delete specs, archive state, or overwrite `.specify/feature.json`
-unless the user explicitly authorizes that named action.
-## Workflow Hooks
-Workflow hooks default off. If `.specify/workflow-hooks.yml` is missing or no
-`workflow.<workflow-id>.<stage-id>.<before|after>` hook matches, do not add
-hook state or change output. Stage-skill executions dispatch hooks through
-`specify workflow invoke-hooks`; YAML workflow runs use the same engine-owned
-dispatcher. Matching `type: workflow-shell` hooks run synchronously, and
-matching `type: workflow-agent-chain` hooks run Codex skill chains serially.
-Each chain step receives `previous_result`/`previous_results`, and the first
-`auto_continue=false`, `blocked`, `failed`, or `requires_rework` result
-short-circuits the chain and pauses the workflow. Continue only when the
-recorded hook result has `auto_continue=true`.
-`.specify/workflow-hooks.local.yml` may disable hooks without adding state.
-For new external-tool hooks, use `specify hook scaffold` or
-`new-workflow-hook-pack.ps1`; do not hand-write `.specify/workflow-hooks.yml`.
-## Implementation Summary
-For implementation profiles, read `implementation-summary.md` first when asking
-what actually shipped. It is created during `implement`, verified during
-`converge`, linked from acceptance, and required before commit. Keep it a
-compact index: final solution, changed code/config/scripts/docs/tests,
-mechanism changes, plan/spec deltas, omitted work, validation/acceptance
-summary, residual risks, follow-ups, and evidence links.
-## Root-Fix Decision Gate
-For bugfix work, `plan.md`, `workpack.md`, or `micro-fix.md` must compare Root
-fix, Mitigation, Compatibility fallback, and Containment when applicable before
-implementation. A root fix eliminates the failure mechanism or class under
-reasonable scale growth. Mitigation reduces probability/impact, containment
-limits impact temporarily, and compatibility fallback preserves old behavior,
-interfaces, data, rollout, or rollback paths; those must not be called root
-fix. Cleanup, release, reset, retry, fallback, and quantity/scope limits need
-explicit proof before they count as root fix. Non-root-fix decisions keep
-residual risk and follow-up root-fix route in `implementation-summary.md`.
-## Final Response Guard
-Before any final response after human acceptance, commit, post-commit
-self-check, or rubric work, run `inspect-workflow-closure` for the active
-`FEATURE_DIR`. If it returns `blocked`, execute `facts.next_required_stage`
-instead of reporting completion. `local_only`, `push_remote: false`, and
-`complete_by_cherry_picking_to_base: false` only affect branch completion and
-push behavior; they do not skip retrospective, workflow-observer,
-post-commit-self-check, or rubric-score.
-## Stage Progress Displays
-When the user asks for Spec Kit progress, current stage, or next stage, show a
-stage progress table with `阶段`, `状态`, and one-sentence `阶段目标`; the visible
-columns are `阶段`, `状态`, and `阶段目标`. Use these objectives:
+Start lean. Prefer source reading, code edits, and validation over process documents. Upgrade only when evidence, risk, or scope requires it; do not route by keyword matching alone.
 
-| Stage | Objective |
-|-------|-----------|
-| `speckit-new-workflow-preflight` | Block unsafe new workflow starts before intake mutates active feature state. |
-| `speckit-intake` | Classify request risk/profile and write current feature routing state. |
-| `speckit-specify` | Capture scope, acceptance criteria, affected repositories, and known risks. |
-| `speckit-clarify` | Resolve or record only blocking high-impact ambiguities before planning. |
-| `speckit-plan` | Create the smallest executable implementation and validation plan. |
-| `speckit-tasks` | Break full-sdd or broad plans into ordered implementation tasks. |
-| `speckit-analyze` | Check spec/plan/task consistency, blockers, and implementation readiness. |
-| `speckit-checklist` | Validate implementation-readiness gates before source changes. |
-| `speckit-implement` | Apply source changes and collect required AI-owned validation evidence. |
-| `speckit-converge` | Reconcile promised scope with delivered code/test/runtime evidence before acceptance. |
-| `speckit-validation` | Record validation evidence for validation-only work. |
-| `speckit-fact-layer` | Collect runtime, source, log, DOM, CSS, or CDP facts before risky fixes. |
-| `speckit-knowledge-bootstrap` | Generate workspace-local knowledge drafts or apply portable knowledge packs without coupling templates to project facts. |
-| `speckit-acceptance` | Produce user acceptance steps after AI validation is complete. |
-| `speckit-simplify` | Do behavior-preserving cleanup after accepted functionality. |
-| `speckit-test-hardening` | Add focused regression protection when it reduces real risk. |
-| `speckit-retrospective` | Record workflow evidence and improvement candidates before commit. |
-| `speckit-workflow-observer` | Observe the workflow from a bounded packet and identify Spec Kit process defects. |
-| `speckit-promote-lessons` | Promote only human-approved process improvements. |
-| `speckit-promote-knowledge` | Promote only human-approved project knowledge candidates into ai/knowledge. |
-| `speckit-commit` | Automatically stage and commit validated source scope with validated message format. |
-| `speckit-post-commit-self-check` | Run exactly one automated post-commit workflow and evidence self-check. |
-| `speckit-rubric-score` | Output final Rubric scoring only after post-commit self-check and enforce score gates. |
-| `speckit-complete-branch` | Preflight branch completion, then cherry-pick local spec commits back to the recorded entry branch only after explicit human approval. |
 ## Profiles
-- `micro-fix`: small, evidenced, low-blast-radius source change.
-- `standard-bugfix-lite`: compact low/medium-risk bugfix in `workpack.md` with root cause, one slice, validation, and acceptance-rubric summary.
-- `standard-bugfix`: compact fix with `spec.md` + `plan.md`; slices may skip `tasks.md`.
-- `full-sdd`: public API, architecture, broad migration, cross-repo, real device semantics, or large UI/service/runtime boundary work.
-- `blocked-investigation`: source behavior, runtime evidence, root cause, or validation condition is missing.
-- `validation-only`: no product-code change; write validation evidence only.
+- `micro-fix`: 1-3 files, single repo, evidenced internal fix. Use no `spec.md`, `plan.md`, or `tasks.md` by default.
+- `standard-bugfix-lite`: default bugfix path. Use `workpack.md`, `implementation-summary.md`, and `validation.md`.
+- `standard-bugfix`: use `plan.md` with compact Implementation Slices when behavior or compatibility needs a durable decision map. Skip `tasks.md` unless slices are too broad.
+- `full-sdd`: use `spec.md -> plan.md -> tasks.md` for public API, architecture, migration, cross-repo, identity/permission/status, real-device, or broad UI/service/runtime boundary work.
+- `blocked-investigation`: root cause, source behavior, runtime facts, or validation condition is missing. Collect `fact-pack.md` or `investigation.md`; do not patch by guessing.
+- `validation-only`: no product-code change; write `validation.md`.
 
-Auxiliary labels such as `ui-parity`, `public-api`, and `cross-repo` are risk
-flags, not separate default workflows.
+## Default Path
+`preflight -> intake -> smallest planning artifact -> implement -> validation.md + implementation-summary.md -> optional acceptance.md -> human acceptance`
+
+`retrospective`, `workflow-observer`, `promote-*`, `commit`, `post-commit-self-check`, `rubric-score`, and `complete-branch` are opt-in. They are not required for normal delivery closure.
+
+## Stage Continuation
+Prefer `resolve-next-stage` when available and consume `current_stage`, `next_stage`, `can_continue`, `blockers`, `required_human_action`, `commands_to_run`, and `missing_artifacts`. Auto-continue only along required default stages. Stop for human acceptance, clarification, owner decision, high-risk confirmation, unavailable host/device/permission/tooling, build or validation failure, unresolved blocker, source/runtime delivery-chain gap, explicit pause, or any opt-in governance/branch mutation stage.
+
+## New Workflow Start
+Before intake writes feature state, run `preflight-new-workflow`. Dirty worktrees, non-base branches, unfinished `.specify/feature.json`, and unresolved workflow runs block a new workflow. Do not stash, clean, switch branches, delete specs, archive state, or overwrite `.specify/feature.json` unless the user authorizes that named action.
+
+## Artifact Rules
+- `workpack.md`: default bugfix planning artifact; include root cause, Root-Fix Decision Gate, one bounded slice, write scope, forbidden scope, and validation.
+- `implementation-summary.md`: final actual implementation index; read this first when asking what shipped.
+- `validation.md`: concrete validation commands/results/evidence. Do not leave validation only in chat.
+- `progress.md`, `review.md`, `convergence.md`, `acceptance-checklist.md`, `workflow-record.md`, `improvement-candidates.md`, `knowledge-candidates.md`, `workflow-observation.md`, and `rubric-score.md` are not default artifacts.
+- `fact-pack.md` and `evidence.md` are created only when raw facts would bloat `validation.md` or runtime evidence is needed.
+
 ## Hard Upgrade Gates
-- Public API, service/runtime/UI boundary, cross-repo, identity, permission, connection,
-  acquisition, or real-device behavior: do not use `micro-fix`.
-- `full-sdd` must pass `tasks -> analyze -> checklist` before implementation; preflight blocks when `tasks.md`, `analysis.md`, or `checklists/implementation-readiness.md` is missing.
-- `standard-bugfix-lite` may skip independent `spec.md`, `plan.md`, `tasks.md`, `analysis.md`, and `checklist` only when `workpack.md` contains root cause, one bounded implementation slice, validation, and acceptance-rubric summary. Upgrade it when high-risk gates, public API, identity/permission/status semantics, cross-repo work, real-device behavior, or missing evidence appears.
-- `standard-bugfix` may skip `tasks.md` only when `plan.md` has complete `Implementation Slices`; it still runs `analyze` before implementation. Run `checklist` too for high-risk, UI/runtime, cross-repo, service/runtime boundary, or non-trivial validation-readiness work.
-- Repeated same-class failure, unchanged symptom, unclear runtime state, or
-  missing DOM/console/computed style/box metrics/service/runtime log evidence:
-  load `speckit-fact-layer` through `skill-routing.yml` before another patch.
-- Initializing, replacing, or mounting `ai/knowledge`: load
-  `speckit-knowledge-bootstrap` through `skill-routing.yml`; generated guides
-  and installed pack guides route context only until source evidence or human
-  review promotes them.
-- Missing root cause or validation condition: route to `blocked-investigation` through `skill-routing.yml`.
-- Missing Root-Fix Decision Gate on bugfix work: block implementation or return
-  to plan/analyze. If the selected fix is mitigation, containment, or
-  compatibility fallback, keep the label explicit and carry residual risk plus
-  follow-up root-fix route through convergence and closure.
-- During `clarify` and `plan`, load the `test-plan` capability from
-  `skill-routing.yml` when changed behavior needs API, E2E/interface,
-  regression, fixture, smoke, UI, or device test planning. If the plan is
-  obvious, record it and continue; if choices affect contracts, devices,
-  fixtures, cost, or accepted gaps, stop for human review. Use
-  `ai/knowledge/build/validation-capabilities.yml` first when selected; run
-  `inspect-validation-capabilities` to refresh missing or stale repository
-  facts. If E2E is unsupported, mark E2E `N/A` with a reason while keeping the
-  API test plan required.
-- During clarification, use A/B/C choices when clear: recommended choice first, impact/tradeoff per option, free-form only when needed.
-- During `clarify` and `plan`, load `quality-vision` for UI/UX/copy/parity work and require a baseline screenshot/design/Qt source or owner-approved `N/A`.
-- During `plan`, load `acceptance-rubric` after test/quality choices and make
-  `acceptance-rubric.md` the judge contract for AI self-acceptance. Human-facing
-  review artifacts should be Chinese-first; AI-only raw facts may stay English.
-- Gate details are selected, not embedded. For plan/implement/validation work,
-  run `select-gates` when risk flags, capability tags, affected repositories,
-  or the `AI Context Contract` point to host CDP, frontend runtime sync, native
-  bridge, Qt parity, or real-device evidence. Read only returned
-  `ai/workflows/gates/*` packs.
-- Optional desktop host/plugin validation uses selected gate packs such as
-  `host-cdp`, `frontend-runtime-sync`, `native-bridge`, and `plugin-package`;
-  these are not default context for generic repositories. Host-embedded UI validation uses the `host-cdp` gate. Before declaring CDP
-  blocked, run `ensure-host-cdp`, then
-  `inspect-host-cdp-target` or `/json/list`; record selected
-  `id/title/url/webSocketDebuggerUrl`. Product UI evidence rejects Plugin Workbench,
-  `base-win.html`, `devtools://`, blank, and unrelated targets.
-  Default CDP is `http://127.0.0.1:9222`; common targets include
-  `app-main-window`. Save key-path CDP screenshots under
-  `FEATURE_DIR/cdp-screenshots/` with `capture-cdp-screenshot`, and tell the
-  human that screenshot directory when CDP validation ends.
-- Frontend plugin UI changes use `frontend-runtime-sync`: source edit -> frontend build -> direct runtime replacement -> real host CDP verification through the selected real host/Electron runtime, then final `.plugin` package/build evidence before commit/complete-branch.
-- Native bridge/proto changes use `native-bridge`: `sync-native-runtime-artifacts`, host restart, duplicate proto checks, and `validate-rpc-proto-bundle` before human acceptance, then final `.plugin` package/build evidence before commit/complete-branch.
-- All plugin types, including frontend, native, JS, and integrated plugin
-  changes, use the shared `.plugin` build/package system as the final delivery
-  validation gate. Repository-local build/export/runtime replacement is
-  prerequisite or fallback validation evidence, not final plugin delivery.
-- Qt-to-frontend UI parity uses `qt-parity`: read `qt-source-behavior-map.md`
-  before broad source search and require a Source Behavior Execution Map when
-  UI/service/SDK or real-device state semantics cross boundaries. Placeholder map
-  files are not evidence; record new facts in the active feature first, and
-  promote stable team knowledge only through retrospective/promote-lessons with
-  explicit human approval.
-- After code changes, load `ai-self-acceptance`: judge `acceptance-rubric.md`
-  with build/test/CDP/browser/log/runtime evidence. PASS continues to
-  `speckit-converge`; FAIL loops to implement; BLOCKED requires a true external
-  dependency. `speckit-converge` must close promised-vs-delivered gaps before
-  human acceptance.
-- Source/runtime artifact mismatch: fix repository source before acceptance or commit.
-- Missing `implementation-summary.md`: return to `speckit.implement` or
-  `speckit.converge`; do not ask for human acceptance or commit without a final
-  actual implementation index.
-- After human acceptance, run `inspect-workflow-closure`; if it reports
-  `speckit.retrospective`, `speckit.workflow-observer`, `speckit.commit`,
-  `speckit.post-commit-self-check`, or `speckit.rubric-score`, continue that
-  stage immediately. Branch completion policy is not a closure exemption.
-- During workflow observer, run `collect-workflow-observer-packet` and read only
-  the packet, `workflow.yml`, `task-routing.md`, and packet-named missing
-  artifacts. Do not load source trees, old specs, or the full knowledge base by
-  default.
-- `knowledge-candidates.md` is candidate-only. `pending` and `rejected` entries
-  never update `ai/knowledge`; `approved` entries use
-  `specify knowledge promote-candidates`, then `validate-knowledge-index`, and
-  optional `delta-overlay` repack.
-- After `speckit-commit`, run exactly one `speckit-post-commit-self-check`.
-  If the self-check makes deterministic fixes, amend the commit once, then
-  continue without repeating self-check.
-- Final Rubric scoring is only emitted after the one post-commit self-check.
-  `validate-rubric-score` must pass before `speckit-complete-branch`: hard
-  gates PASS, total score >=90, L1-L5 scores present, every dimension below 80
-  has a blocker or owner/user accepted-gap evidence, evidence paths and
-  deduction reasons are listed, and the complete-branch allow/deny conclusion
-  is explicit.
-- If `.specify/feature.json` says `delivery_profile`, `risk_level`, or `risk_flags`, use those structured fields for gates instead of the user's last natural-language phrase such as "进入下一阶段".
+- Public API, service/runtime/UI boundary, cross-repo, identity, permission, connection, acquisition, real-device, architecture, or migration work: do not use `micro-fix`.
+- `full-sdd` must pass `tasks -> analyze -> checklist` before implementation.
+- `standard-bugfix-lite` may skip `spec.md`, `plan.md`, `tasks.md`, `analysis.md`, and checklist when `workpack.md` is complete.
+- Missing root cause, validation condition, or second same-class failure without new facts routes to `blocked-investigation` or `speckit-fact-layer`.
+- Bugfix work must record Root-Fix Decision Gate before implementation. Mitigation, containment, cleanup, release, reset, retry, fallback, and limits are not root fix unless evidence proves the failure mechanism is eliminated.
 
-## Context Budget
-- Always read repository-map before scanning source.
-- Treat `.specify/feature.json` as current-feature state, not global truth. For `spec-kit`, shared workflow/governance, or unrelated repository tasks, do not apply stale feature risk flags or load `specs/<feature>/*` artifacts unless the user explicitly resumes that feature.
-- Do not load `ai/knowledge/*`, `ai/tools/*`, `ai/workflows/gates/*`, old specs,
-  roadmap/design docs, templates, or internal skills unless the current route
-  requires them.
-- When repository-map is too small, run `select-knowledge` or read `ai/knowledge/index.yml` first. Select by repos, risk flags, capability tags, stage, or explicit task terms; read only returned guides. This layer is deterministic and does not require full-text/BM25 search.
-- When workflow gate details are needed, run `select-gates` or read `ai/workflows/gates/index.yml` first. Read only returned gate packs; keep command templates as stage contracts, not manuals.
-- For `analyze` and `checklist`, read the `artifact_sections` listed in
-  `.specify/templates/layer-manifest.yml` first. Expand to full files only when
-  the section pass exposes a blocker, ambiguity, missing traceability, or an
-  artifact explicitly needed by the stage.
-- For `implement`, read `plan.md` `AI Context Contract` before broad artifact reading. It is the minimal manifest for decision-critical facts, exact source/command inputs, selected guides, and context to avoid; expand only if missing, contradicted, or marked incomplete.
-- Prefer scripts for hard facts: log discovery, DevTools target detection, source/runtime consistency, changed-file classification, and validation command suggestions.
-- After changing `spec-kit` templates or shared infra, run `validate-generated-context`, `validate-knowledge-index`, and `validate-context-budget` before trusting generated context, knowledge routing, skill routing, or command/gate compactness.
+## Optional Capabilities
+- Use `skill-routing.yml` first, then load only the selected `.agents/spec-kit/skills/<skill>/SKILL.md`.
+- Use `select-gates` before loading host CDP, frontend runtime sync, native bridge, plugin package, Qt parity, or real-device gate packs.
+- Use `select-knowledge` or `ai/knowledge/index.yml` before reading knowledge guides; do not use full-text/BM25 search to load knowledge by default.
+- Load `speckit-test-plan`, `quality-vision`, `acceptance-rubric`, and `ai-self-acceptance` only when the changed behavior requires them.
+
+## Workflow Hooks
+Workflow hooks are optional and default off. Load `.specify/workflow-hooks.yml` only when present. Dispatch selected hooks with `specify workflow invoke-hooks`; `workflow-agent-chain` hooks run serially and may continue only when `auto_continue=true`.
+
+## Drift Checks
+After Spec Kit template or shared-context changes, run `validate-generated-context`, `validate-knowledge-index`, and `validate-context-budget` before relying on regenerated defaults.
+
+## Delivery Rules
+- Always read repository-map before broad source scanning.
+- Treat `.specify/feature.json` as current-feature state, not global truth; do not apply stale feature risk flags to unrelated tasks.
+- Do not load `ai/knowledge/*`, `ai/tools/*`, `ai/workflows/gates/*`, old specs, roadmap/design docs, templates, or internal skills unless selected.
+- For implement, read `workpack.md` or `plan.md` `AI Context Contract` before broad artifact reading.
+- Product/plugin fixes must target repository source, not installed runtime plugin directories or built artifacts.
+- Source/runtime artifact mismatch must be fixed in source before acceptance or commit.
+- Push, remote tracking, branch completion, and destructive operations require explicit human approval.
+
+## Final Response Guard
+Run `inspect-workflow-closure` before final response only when feature state indicates accepted implementation, commit, strict self-check, or rubric work. If it reports a default-stage blocker, execute or report that blocker. Opt-in governance artifacts are not required unless the selected path requested them.
+
 ## Output Contract
-When reporting routing, include selected profile, affected repositories from repository-map, next command, internal skill path when loaded, stage progress table with `阶段`/`状态`/`阶段目标` when asked for progress, and facts/blockers/unknowns/ignored hints.
+When reporting routing, include selected profile, affected repositories, next default stage, selected internal skill when loaded, and concrete blockers/unknowns.

@@ -1,5 +1,5 @@
 ---
-description: Execute approved implementation slices while preserving scope and evidence.
+description: Execute approved implementation slices while preserving source scope and validation evidence.
 scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json -IncludeTasks
   preflight_ps: scripts/powershell/validate-feature-artifacts.ps1 -Json -Stage implement -FeatureDir <feature-dir>
@@ -21,155 +21,102 @@ $ARGUMENTS
 ## Context Contract
 
 Default context is `AGENTS.md`, `.specify/workspace.yml`, `.specify/memory/repository-map.md`, `.specify/feature.json` when present, and `ai/workflows/task-routing.md`.
+Load only the active `workpack.md`, `plan.md`, or `tasks.md` needed for this implementation. Load knowledge, tools, gate packs, old specs, and design-history docs only when selected by script facts.
 Load `ai/knowledge/*`, `ai/tools/*`, `ai/templates/*`, old `specs/*`, or design-history docs only when this command explicitly needs them.
 Scripts provide `facts`, `blockers`, `unknowns`, and `hints`; LLM owns semantic routing, root-cause judgment, validation sufficiency, and tradeoff decisions.
-Keep this command stage-specific. Do not duplicate long-term governance prose here.
 
 ## Stage Continuation Rule
 
-Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md`; if this stage cannot execute the next required stage, report `blockers` and `next_required_human_action`.
+Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md`; if this stage cannot continue, report `blockers` and `next_required_human_action`.
 
 ## Purpose
 
-Implement the active capability as a slice loop:
+Implement the active change with the smallest durable artifact set:
 
-1. Read the approved slice.
-2. Patch only its allowed source scope.
-3. Run the selected validation and gate packs.
-4. Record evidence in `progress.md`.
-5. Write the final actual implementation index in `implementation-summary.md`.
-6. Continue only when validation passes and no stop condition is met.
+1. Read the selected execution artifact: `workpack.md`, `plan.md` slices, or `tasks.md`.
+2. Patch only the allowed repository source scope.
+3. Run required validation and selected gate evidence.
+4. Update `validation.md` with concrete command/result/evidence.
+5. Update `implementation-summary.md` as the final actual implementation index.
 
-This stage does not perform user acceptance, simplification, optional test-hardening, commit, branch completion, branch deletion, push, or remote tracking setup.
+This stage does not create `progress.md` by default and does not perform user acceptance, retrospective, commit, branch completion, push, or remote tracking setup.
 
 ## Required Inputs
 
-- `FEATURE_DIR/spec.md`
-- `FEATURE_DIR/plan.md`
-- `FEATURE_DIR/tasks.md` when present
-- `FEATURE_DIR/progress.md` when present, otherwise create it before the first slice update
-- `FEATURE_DIR/implementation-summary.md` when present, otherwise create it from `.specify/templates/implementation-summary-template.md` before reporting implementation complete
-- `.specify/feature.json` routing fields when present
-- `.specify/memory/constitution.md` when present
+- `FEATURE_DIR/workpack.md` for `micro-fix` and `standard-bugfix-lite`, or
+- `FEATURE_DIR/plan.md` for `standard-bugfix`, or
+- `FEATURE_DIR/tasks.md` plus `plan.md` for `full-sdd`.
+- `.specify/feature.json` routing fields when present.
+- `.specify/memory/constitution.md` when present.
 
-Optional artifacts such as `research.md`, `data-model.md`, `contracts/`, `quickstart.md`, `checklists/`, `review.md`, and `lessons.md` are loaded only when the active slice or selected gate needs them.
+Optional artifacts such as `acceptance-rubric.md`, `quality-vision.md`, `fact-pack.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md`, and `checklists/` are loaded only when the active slice or selected gate needs them.
 
 ## Execution Steps
 
-1. Run the prerequisite script and parse `FEATURE_DIR` and `AVAILABLE_DOCS`.
-2. Run `validate-feature-artifacts` with stage `implement`.
-   - Let the tool infer `delivery_profile`, `risk_level`, and `risk_flags` from `.specify/feature.json`.
-   - Stop and return to the named prior stage when required artifacts or sections are missing, including `analysis.md` and `checklists/implementation-readiness.md` for gates that require them.
-   - `full-sdd` and high-risk UI/runtime/cross-repo work require analyze/checklist evidence before implementation.
-3. Read `## AI Context Contract` in `plan.md` before broad artifact reading.
-   - Treat it as the minimal context manifest for decision-critical facts, source/command inputs, selected knowledge guides, selected gate packs, and context to avoid.
-   - If the contract is missing, contradicted, or marks required facts as missing, return to `speckit.plan` or fact-layer.
-4. Run `select-gates` for stage `implement`.
-   - Read only selected `ai/workflows/gates/*` packs.
-   - Use selected packs as mandatory evidence gates for their trigger condition.
-   - If no gate is selected, continue with this command contract and active artifacts only.
-5. Run `select-knowledge` only when repository-map, active artifacts, and selected gate packs still lack repository/domain/build/validation context.
-   - Read only returned `ai/knowledge/*` guide paths.
-   - Do not load the whole knowledge tree and do not use full-text/BM25 search.
-6. Check `Implementation Slices`.
-   - Use `tasks.md` when present.
-   - For `standard-bugfix`, use complete slices embedded in `plan.md` when `tasks.md` is absent.
-   - Each slice must name target, allowed write scope, forbidden scope, validation command or manual check, progress update expectation, and stop conditions.
-   - `micro-fix` may use `micro-fix.md` or `progress.md` only when it names changed files, validation, stop conditions, and evidence.
-7. Execute one slice at a time.
+1. Run the prerequisite script and `validate-feature-artifacts -Stage implement`.
+   - `full-sdd` and high-risk gates may require `analysis.md` and `checklists/implementation-readiness.md`.
+   - Lean bugfix profiles should be satisfied by `workpack.md` plus `workflow-state.json`.
+2. Run `select-gates` for stage `implement`; read only selected gate packs.
+3. Run `select-knowledge` only when repository-map, active artifacts, and selected gates still lack required repository/domain/build/validation context.
+4. Resolve executable slices:
+   - `workpack.md` `Change Slice` for lean bugfixes.
+   - `plan.md` `Implementation Slices` for standard-bugfix.
+   - `tasks.md` for full-sdd.
+   Each slice must name target, allowed write scope, forbidden scope, validation, and stop condition.
+5. Execute one slice at a time.
    - Read nearby code before editing.
    - Preserve user or teammate changes.
-   - Modify only allowed source files; never patch runtime/build/export output as the durable fix.
-   - Use bounded search from repository-map, affected repositories, known directories, and named symbols/files.
-   - Run documented validation plus selected gate evidence.
-   - Update `progress.md` with current slice, changed files, validation result, selected gates, remaining risk, and next slice.
-   - Update `implementation-summary.md` with the actual solution chosen, final
-     fix type, whether the failure mechanism was eliminated, remaining failure
-     path, changed files grouped by code/config/scripts/docs/tests, mechanism
-     changes, plan/spec deltas, not-implemented items, validation/acceptance
-     evidence links, residual risks, compatibility impact, follow-up root-fix
-     route, and follow-ups. Keep it an index and summary; link evidence instead
-     of copying logs or full validation output.
-8. Respect selected gate packs.
-   - `host-cdp`: run `ensure-host-cdp`, confirm `http://127.0.0.1:9222`, inspect `/json/list`, record `webSocketDebuggerUrl`, select `app-main-window` or another valid product target, reject `Plugin Workbench`, `base-win.html`, `devtools://`, and complete the CDP host recovery ladder before manual acceptance. Use the Workbench target only for `plugin-host` DevTools / Workbench itself. Isolated plugin preview is fallback evidence, not primary host evidence.
-   - `frontend-runtime-sync`: source edit -> frontend build -> direct runtime replacement -> real host CDP verification; record source-to-runtime mapping, host-served runtime plugin directory, removed stale runtime files, and final `.plugin` package evidence before commit/complete-branch.
-   - `plugin-package`: for frontend, native, JS, or integrated plugin work, use `inspect-plugin-build-plan` to find the shared package command and `validate-plugin-package` to verify the final `.plugin` artifact. Local build/export/runtime replacement is not the final plugin delivery gate.
-   - `native-bridge`: build/export native source, use `sync-native-runtime-artifacts`, restart host, and run `validate-rpc-proto-bundle` when bridge/proto fields change.
-   - `qt-parity`: read `qt-source-behavior-map.md`, record source behavior, and require a Source Behavior Execution Map for cross-layer migration.
-   - `real-device`: keep service/runtime/device smoke AI-owned until a concrete device, host, permission, or automation blocker is proven.
-   - UI parity/layout anchors: dynamic states, scrollbar, clipping, compression, runtime DOM / computed style / box metrics, 0px-level visual repair, simulating core clicks, and best-effort AI self-validation. If the first CSS/layout patch fails, stop guessing CSS and collect facts.
-9. Add or update focused regression protection when feasible, then rerun affected tests.
-   - If a unit/regression test is not feasible, record the narrowest substitute evidence and why.
-10. After any source change or completed slice, load `speckit-ai-self-acceptance`
-    through `ai/workflows/skill-routing.yml`.
-    - Judge `acceptance-rubric.md` with build/test/CDP/browser/log/runtime
-      evidence required by the plan and selected gates.
-    - Write `validation.md` AI Self-Acceptance status: `PASS`, `FAIL`, or
-      `BLOCKED`.
-    - `PASS` may continue to `speckit.converge`; `FAIL` loops back to this
-      stage or fact-layer; `BLOCKED` requires concrete external blocker evidence.
-11. Stop and route back when validation fails, the original symptom persists, scope expands, source behavior is missing, root cause evidence fails, or a user/owner decision is required.
+   - Modify repository source, never runtime/build/export output as the durable fix.
+   - Use bounded `rg`/`rg --files` searches from affected repositories and known paths.
+   - Run documented validation and selected gate evidence.
+6. Update `validation.md`.
+   - Record command/tool, result, evidence path, and interpretation.
+   - Use `evidence.md` or `fact-pack.md` only when raw output would bloat `validation.md`.
+7. Update `implementation-summary.md`.
+   - Final solution.
+   - Final fix type and whether the failure mechanism was eliminated.
+   - Changed code/config/scripts/docs/tests.
+   - Mechanism changes and plan/spec/workpack deltas.
+   - Not implemented, residual risks, compatibility impact, follow-ups, and evidence links.
+8. If `acceptance-rubric.md` exists, load `speckit-ai-self-acceptance` through `skill-routing.yml` and record `PASS`, `FAIL`, or `BLOCKED` in `validation.md`.
+   - `FAIL` loops back to implement or fact-layer.
+   - `BLOCKED` needs a true external blocker.
+9. Stop and route back when validation fails, the original symptom persists, scope expands, source behavior is missing, root cause evidence fails, or a user/owner decision is required.
+
+## Selected Gate Discipline
+
+- `host-cdp`: use `ensure-host-cdp`, inspect the real product target, reject wrong targets, and save key screenshots when visual evidence matters.
+- `frontend-runtime-sync`: source edit -> frontend build -> direct runtime replacement -> real host CDP verification; final package evidence is required before release/branch completion, not before every lean delivery.
+- `plugin-package`: use shared `.plugin` package validation for frontend/native/JS/integrated plugin release paths.
+- `native-bridge`: build/export native source, sync explicit runtime artifacts when validating locally, restart host, and validate RPC proto bundle fields when bridge/proto changes.
+- `qt-parity` and `real-device`: collect source behavior or device/runtime facts before patching behavior across boundaries.
 
 ## Implementation Discipline
 
 - Do not invent SDK, device, permission, or status data.
 - Do not make global fallback/status/permission changes from a virtual/simulated bug unless the guard is explicit and proven.
-- Respect repository ownership from `.specify/memory/repository-map.md`; shared
-  runtime facts, bridge/adaptor code, and UI composition must stay in their
-  documented owning repositories.
-- Cross-boundary device identity is UUID decimal string only; do not expose SDK handles, native ids, or parallel frontend ids above their owning layer.
-- Generated artifacts and built artifacts such as `dist/`, `build/`, `export/`, `plugin-out/`, app-data, and host-served frontend runtime are validation/deployment artifacts unless a repository explicitly says otherwise.
-- Product/plugin changes must not target installed runtime plugin directories as the durable fix.
-- Do not commit or rely on `app-data/plugins/**` or `frontend/plugins/**` runtime artifacts. If patched for emergency diagnosis, port the artifact patch to repository source before acceptance; runtime artifacts a durable fix location or commit target is non-compliant.
-- If a required repository from `.specify/workspace.yml` is missing, run
-  `inspect-workspace-repositories` and block instead of scanning sibling
-  repositories to guess an implementation owner.
-- Keep encoding/localization conversions at documented boundaries.
-- Maintain `review.md` and feature-local `lessons.md` when human navigation or pitfall records change.
-- Confirm Root Cause Evidence before bugfix edits when applicable, and use bounded search with `rg`; do not scan the whole `workspace_root` or spawn an explorer for simple lookup.
-- Confirm Root-Fix Decision Gate before bugfix edits. Do not implement a
-  cleanup/release/reset/retry/fallback/limit-only approach as root fix unless
-  the plan proves it eliminates the failure mechanism.
-- UI evidence sources include Qt UI/source/delegate/QSS/resource, product design/mockup/export, tooltip, visible copy, and owner/user decision. Do not substitute a text button for an icon+tooltip; stop for clarify or blocked investigation when evidence is missing.
+- Respect repository ownership from `.specify/memory/repository-map.md`.
+- Cross-boundary device identity is UUID decimal string only; do not expose SDK handles, native ids, virtual ids, or parallel frontend ids above their owner layer.
+- Do not commit or rely on installed runtime plugin directories, `dist/`, `build/`, `export/`, `plugin-out/`, app-data, or host-served runtime artifacts as the durable fix.
+- If a required repository from `.specify/workspace.yml` is missing, run `inspect-workspace-repositories` and block instead of guessing.
+- Confirm Root-Fix Decision Gate before bugfix edits.
+- For a second same-class failure or UI/CSS/layout guessing, collect fact-layer evidence before another patch.
 
-## Fact Layer Gate
+## Completion Gate
 
-- Before a second same-class fix, run `speckit.fact-layer` and create or update `fact-pack.md`.
-- For UI/CSS/layout failures, collect runtime DOM, console, computed style, box metrics, scroll owner, overflow, flex/grid grow/shrink, clipping, compression, and visible bounds with chrome-devtools or equivalent before the next patch.
-- For device, SDK, service, plugin, connection, acquisition, permission, or
-  status issues, inspect the latest logs documented in the repository map,
-  selected gate packs, or selected knowledge guides.
-
-## Implementation completion gate
-
-- Do not report `/speckit-implement 完成` and do not continue to
-     `speckit.converge` while AI-owned validation is still pending.
-- A report that lists "宿主运行时验证待执行", "CDP 验证待执行", or "需启动真实宿主"
-  as normal residual risk is non-compliant when the selected gates make that
-  validation AI-owned.
-- When AI changed code, completion requires explicit AI acceptance `PASS` in `validation.md` or an evidence-backed blocker.
-- Completion also requires the `speckit-ai-self-acceptance` skill result to be
-  reflected in `validation.md`; missing rubric judgment is incomplete work.
-- Completion requires `implementation-summary.md` to exist, link from
-  `workflow-state.json` `implementation_summary.artifact`, and record
-  `implementation_summary.status = completed`.
-- Human acceptance is after AI-owned technical validation. It is not a substitute for fixable CDP/browser/device/build/runtime validation.
-- UI self-validation is advisory rather than a hard gate only when lower-level automated tests fully cover behavior and host rendering/event/runtime state is irrelevant.
-- If validation fails or the symptom persists, keep the loop inside this stage: collect facts, patch repository source, rebuild, sync runtime output when relevant, and rerun validation until it passes or a real blocker is recorded.
+- Completion requires `validation.md` evidence and `implementation-summary.md`.
+- `workflow-state.json` should record `implementation_summary.status = completed` and link `implementation-summary.md`.
+- Human acceptance is after AI-owned validation; it is not a substitute for fixable build/browser/CDP/device/runtime validation.
 
 ## Output
 
 Report in Chinese:
 
-- Tasks completed.
 - Files changed.
 - Validation run and result.
-- Test cases added or updated, plus rerun result.
 - Selected gate packs and evidence.
-- `progress.md` slice status and remaining risk.
+- `validation.md` path.
 - `implementation-summary.md` path and final actual change summary.
-- `review.md` / `lessons.md` updates when relevant.
-- Confirmation that no commit, branch cherry-pick/delete, push, or remote tracking action was performed.
 - Remaining gaps or blocked tasks.
-- Required next stage: `speckit.converge` / `$speckit-converge`.
-- Human review prompt: do not ask for root cause correctness or test sufficiency; report a blocker instead when those remain uncertain.
+- Confirmation that no commit, branch cherry-pick/delete, push, or remote tracking action was performed.
+- Required next stage: human acceptance or explicit opt-in governance/commit stage.

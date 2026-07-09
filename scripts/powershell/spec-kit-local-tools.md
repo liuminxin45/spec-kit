@@ -98,16 +98,19 @@ from `.agents/spec-kit/skills` through `ai/workflows/skill-routing.yml`.
 Executable profile routing for `specify workflow run speckit` is:
 
 ```text
-micro-fix/auto: intake -> specify -> plan -> implement -> acceptance
-              -> human-acceptance gate -> retrospective -> workflow-observer
-              -> commit -> post-commit-self-check -> rubric-score -> complete-branch
-standard-bugfix-lite: intake -> specify -> plan(workpack.md) -> implement -> ...
-standard-bugfix: intake -> specify -> plan -> analyze -> implement -> ...
+micro-fix/auto: intake -> plan(workpack.md) -> implement -> acceptance
+              -> human-acceptance gate
+standard-bugfix-lite: intake -> plan(workpack.md) -> implement -> acceptance
+standard-bugfix: intake -> specify -> plan -> implement -> acceptance
 full-sdd: intake -> specify -> plan -> tasks -> analyze -> checklist
-          -> implement -> ...
+          -> implement -> acceptance
 validation-only: intake -> specify -> plan -> validation
 blocked-investigation: intake -> specify -> plan -> fact-layer
 ```
+
+Retrospective, workflow-observer, commit, post-commit self-check, rubric-score,
+and complete-branch are opt-in stages. They are not part of normal lean
+delivery closure.
 
 Initialize while keeping the installed command linked to this source tree:
 
@@ -148,10 +151,11 @@ Team policy:
 - A Spec is complete after all affected repositories cherry-pick the local Spec
   branch commits back to the entry branch recorded at spec branch creation while
   keeping the local Spec branch.
-- Cherry-pick completion preflight is automated after commit, one post-commit
-  self-check, and Rubric gates pass. The branch-state mutation itself requires
-  explicit human approval and `-ConfirmCompletion`; it keeps the local Spec
-  branch and does not push.
+- Cherry-pick completion is opt-in after validation, human acceptance, and a
+  local commit. The branch-state mutation itself requires explicit human
+  approval and `-ConfirmCompletion`; it keeps the local Spec branch and does
+  not push. Strict release paths may additionally run post-commit self-check
+  and Rubric gates.
 - Push is outside the default workflow. Prefer PR-first; exceptional direct
   pushes require explicit human approval and `preflight-push`.
 - GitHub issue generation is not installed.

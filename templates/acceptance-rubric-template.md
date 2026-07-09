@@ -15,10 +15,11 @@
 - `workflow_score`、`ai_acceptance_score`、`ui_ux_score` 必须引用具体验证证据，
   例如测试、构建、API/E2E 计划、CDP 截图、日志、运行时事实、
   `.plugin` 包或验收记录。
-- 最终 Rubric 评分只在一轮 post-commit self-check 之后输出；plan /
-  implement / acceptance 阶段只维护准则定义、证据入口和 hard gates。
-- 总分低于 90、任一 hard gate 失败、任一维度低于 80 且无 blocker 或
-  owner/user accepted gap 证据时，禁止 complete-branch。
+- 最终 Rubric 评分只在 strict/release、rubric-score 或 complete-branch
+  被显式选择时输出；plan / implement / acceptance 阶段只维护准则定义、
+  证据入口和 hard gates。
+- strict/release 总分低于 90、任一 hard gate 失败、任一维度低于 80 且无
+  blocker 或 owner/user accepted gap 证据时，禁止 complete-branch。
 
 ## Root-Fix Decision Gate Rules
 
@@ -60,7 +61,8 @@ rubric must verify:
 
 ## 实际流程评分审计（Actual Workflow Rubric Audit）
 
-> Only fill after `speckit-post-commit-self-check` completes. If self-check
+> Only fill when strict/release scoring, `speckit-rubric-score`, or
+> `speckit-complete-branch` was explicitly selected. If a selected self-check
 > amended the commit, score the final amended state without running another
 > self-check.
 
@@ -71,7 +73,7 @@ rubric must verify:
 | L3 工作流阶段合规 | 0.25 |  |  |  |
 | L4 交付与仓库状态 | 0.10 |  |  |  |
 | L5 上下文与自动化治理 | 0.10 |  |  |  |
-| Hard gates | hard gate | PASS / FAIL / BLOCKED |  | AI Self-Acceptance, retrospective, API/E2E, `.plugin`, CDP/runtime, commit message, self-check |
+| Hard gates | hard gate | PASS / FAIL / BLOCKED |  | AI Self-Acceptance, selected API/E2E, `.plugin`, CDP/runtime, optional commit message, optional self-check |
 
 - Overall Weighted Score / 总加权分:
 - AI acceptance decision / AI 验收结论:

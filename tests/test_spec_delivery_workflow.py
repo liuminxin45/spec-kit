@@ -32,13 +32,11 @@ def run_git(repo: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def write_retrospective_artifacts(repo: Path, branch: str = "feature") -> None:
+def write_closure_artifacts(repo: Path, branch: str = "feature") -> None:
     feature_dir = repo / "specs" / branch
     feature_dir.mkdir(parents=True, exist_ok=True)
-    (feature_dir / "workflow-record.md").write_text("# Workflow Record\n", encoding="utf-8")
-    (feature_dir / "improvement-candidates.md").write_text("# Improvement Candidates\n", encoding="utf-8")
-    (feature_dir / "knowledge-candidates.md").write_text("# Knowledge Candidates\nstatus: no-candidates\n", encoding="utf-8")
-    (feature_dir / "workflow-observation.md").write_text("# Workflow Observation\n", encoding="utf-8")
+    (feature_dir / "implementation-summary.md").write_text("# Implementation Summary\n", encoding="utf-8")
+    (feature_dir / "validation.md").write_text("# Validation\n", encoding="utf-8")
 
 
 def load_workflow() -> dict:
@@ -115,49 +113,29 @@ def test_workflow_uses_lean_default_chain_with_conditional_stages():
         "analyze",
         "checklist",
         "implement",
-        "converge",
         "acceptance",
         "human-acceptance",
-        "retrospective",
-        "workflow-observer",
-        "commit",
-        "post-commit-self-check",
-        "rubric-score",
-        "complete-branch",
     ]
 
     by_id = {step["id"]: step for step in steps}
     assert "preflight-new-workflow" in by_id["new-workflow-preflight"]["input"]["args"]
-    assert "Run only after new-workflow-preflight is ok" in by_id["intake"]["input"]["args"]
+    assert "delivery_profile" in by_id["intake"]["input"]["args"]
     assert "requires_confirmation" not in by_id["acceptance"]
     assert by_id["human-acceptance"]["type"] == "gate"
     assert by_id["human-acceptance"]["skip_profiles"] == ["validation-only", "blocked-investigation"]
-    assert "requires_confirmation" not in by_id["commit"]
-    assert by_id["complete-branch"]["requires_confirmation"] is True
-    assert "exactly one" in by_id["post-commit-self-check"]["input"]["args"]
-    assert "validate-rubric-score" in by_id["rubric-score"]["input"]["args"]
-    assert "collect-workflow-observer-packet" in by_id["workflow-observer"]["input"]["args"]
     assert by_id["validation"]["profiles"] == ["validation-only"]
     assert by_id["fact-layer"]["profiles"] == ["blocked-investigation"]
-    assert by_id["analyze"]["profiles"] == ["standard-bugfix", "full-sdd"]
+    assert by_id["analyze"]["profiles"] == ["full-sdd"]
     assert by_id["implement"]["skip_profiles"] == ["validation-only", "blocked-investigation"]
     assert "implementation-summary.md" in by_id["implement"]["input"]["args"]
     assert "Root-Fix Decision Gate" in by_id["plan"]["input"]["args"]
     assert "Root-Fix Decision Gate" in by_id["analyze"]["input"]["args"]
-    assert by_id["converge"]["skip_profiles"] == ["validation-only", "blocked-investigation"]
-    assert "convergence.md" in by_id["converge"]["input"]["args"]
-    assert "implementation-summary.md" in by_id["converge"]["input"]["args"]
     assert "implementation-summary.md" in by_id["acceptance"]["input"]["args"]
-    assert "implementation-summary.md" in by_id["commit"]["input"]["args"]
-    assert "keep" in by_id["complete-branch"]["input"]["args"].lower()
-    assert "spec branch" in by_id["complete-branch"]["input"]["args"].lower()
-    assert "do not push" in by_id["complete-branch"]["input"]["args"].lower()
-    assert "cherry-pick" in by_id["complete-branch"]["input"]["args"].lower()
-    assert "merge commits" in by_id["complete-branch"]["input"]["args"].lower()
 
     conditional = workflow_doc["conditional_stages"]
     for stage in [
         "clarify",
+        "converge",
         "tasks",
         "analyze",
         "checklist",
@@ -165,18 +143,26 @@ def test_workflow_uses_lean_default_chain_with_conditional_stages():
         "validation",
         "simplify",
         "test-hardening",
+        "retrospective",
+        "workflow-observer",
         "promote-lessons",
         "promote-knowledge",
+        "commit",
+        "post-commit-self-check",
+        "rubric-score",
+        "complete-branch",
     ]:
         assert stage in conditional
-    assert "retrospective" not in conditional
+    assert conditional["retrospective"].startswith("Opt-in")
+    assert conditional["commit"].startswith("Opt-in")
+    assert conditional["complete-branch"].startswith("Opt-in")
 
     combined_args = "\n".join(step["input"]["args"] for step in steps if "input" in step)
     assert "delivery_profile" in combined_args
     assert "micro-fix" in combined_args
     assert "standard-bugfix-lite" in combined_args
     assert "workpack.md" in combined_args
-    assert "blocked-investigation" in combined_args
+    assert "blocked-investigation" in delivery_profile["enum"]
     assert "validation" in workflow_doc["conditional_stages"]
 
 
@@ -186,11 +172,10 @@ def test_conditional_stage_descriptions_do_not_weaken_hard_gates():
     steps = workflow_doc["steps"]
     combined_args = "\n".join(step["input"]["args"] for step in steps if "input" in step)
 
-    assert conditional["analyze"].startswith("Required before implementation for standard-bugfix and full-sdd")
-    assert conditional["checklist"].startswith("Required before implementation for full-sdd")
-    assert "optional only for micro-fix" in conditional["analyze"]
-    assert "standard-bugfix-lite" in conditional["analyze"]
-    assert "runtime DOM/CSS/computed style/box metrics" in combined_args
+    assert conditional["analyze"].startswith("Use for full-sdd/high-risk work")
+    assert conditional["checklist"].startswith("Use for full-sdd/high-risk readiness")
+    assert "standard-bugfix-lite" in combined_args
+    assert "select-gates" in combined_args
     assert "installed runtime plugin directories" in combined_args
 
     stage_gate_policy = workflow_doc["stage_gate_policy"]
@@ -1047,10 +1032,10 @@ def test_new_command_templates_define_delivery_stages():
     command_expectations = {
         "templates/commands/micro-fix.md": [
             "micro-fix.md",
-            "Root Cause Evidence",
+            "Root Cause",
             "Root-Fix Decision Gate",
-            "Acceptance Lite",
-            "Do not search the whole `workspace_root`",
+            "Acceptance Summary",
+            "Use bounded search only",
         ],
         "templates/commands/bounded-investigation.md": [
             "investigation.md",
@@ -1070,18 +1055,19 @@ def test_new_command_templates_define_delivery_stages():
             "acceptance.md",
             "acceptance-checklist.md",
             "implementation-summary.md",
-            "用户确认",
-            "验收通过",
+            "Required user action",
+            "acceptance passes",
         ],
         "templates/commands/simplify.md": [
             "code-simplifier",
-            "不新增行为",
-            "重跑",
+            "behavior-preserving",
+            "Rerun",
+            "implementation-summary.md",
         ],
         "templates/commands/test-hardening.md": [
-            "optional",
-            "额外测试强化",
-            "必需测试",
+            "optional extra test-hardening",
+            "Required tests",
+            "implementation-summary.md",
         ],
         "templates/commands/test-plan.md": [
             "API/E2E",
@@ -1111,7 +1097,7 @@ def test_new_command_templates_define_delivery_stages():
             "FAIL",
             "BLOCKED",
             "Root-Fix Decision Gate",
-            "speckit-converge",
+            "speckit.acceptance",
             "CDP",
             "console",
             "logs",
@@ -1119,11 +1105,11 @@ def test_new_command_templates_define_delivery_stages():
         "templates/commands/converge.md": [
             "convergence.md",
             "implementation-summary.md",
-            "Root-Fix Decision Gate",
+            "Optionally",
             "promised-vs-delivered",
             "speckit.implement",
-            "status: passed",
-            "speckit.acceptance",
+            "N/A",
+            "human acceptance",
         ],
         "templates/commands/retrospective.md": [
             "implementation-summary.md",
@@ -1171,21 +1157,17 @@ def test_new_command_templates_define_delivery_stages():
         ],
         "templates/commands/commit.md": [
             "validate-feature-artifacts",
-            "inspect-workflow-closure",
-            "validate-test-plan",
-            "validate-ai-self-acceptance",
-            "validate-plugin-package",
+            "implementation-summary.md",
+            "validation.md",
             "commit-message",
-            "68 display columns",
-            "spec 文档是否随代码提交",
-            "retrospective.status",
-            "workflow-observation.md",
-            "不 push",
-            "speckit.post-commit-self-check",
+            "spec docs include/exclude",
+            "Retrospective/observer/promotion artifacts are optional",
+            "did not push",
+            "Optional next stages only when explicitly requested",
         ],
         "templates/commands/post-commit-self-check.md": [
-            "exactly one",
-            "post-commit self-check",
+            "One self-check pass only",
+            "post-commit-self-check",
             "inspect-workflow-closure",
             "amend the commit once",
             "speckit.rubric-score",
@@ -1198,14 +1180,13 @@ def test_new_command_templates_define_delivery_stages():
             "complete-branch",
         ],
         "templates/commands/complete-branch.md": [
-            "post-commit-self-check",
-            "validate-rubric-score",
+            "strict governance",
             "preflight",
             "recorded entry branch",
             "cherry-pick",
-            "保留 spec branch",
-            "不删除",
-            "不 push",
+            "kept the spec branch",
+            "did not delete",
+            "did not push",
         ],
     }
 
@@ -1215,72 +1196,54 @@ def test_new_command_templates_define_delivery_stages():
             assert phrase in text
 
 
-def test_retrospective_stage_is_mandatory_before_commit_and_completion():
+def test_retrospective_and_branch_completion_are_opt_in():
     workflow_doc = load_workflow()
     step_ids = [step["id"] for step in workflow_doc["steps"]]
     cli = read_text("src/specify_cli/__init__.py")
 
-    assert "retrospective" in step_ids
-    assert "workflow-observer" in step_ids
-    assert "retrospective" not in workflow_doc["conditional_stages"]
-    assert step_ids.index("retrospective") < step_ids.index("commit")
-    assert step_ids.index("retrospective") < step_ids.index("workflow-observer")
-    assert step_ids.index("workflow-observer") < step_ids.index("commit")
-    assert step_ids.index("commit") < step_ids.index("post-commit-self-check")
-    assert step_ids.index("post-commit-self-check") < step_ids.index("rubric-score")
-    assert step_ids.index("rubric-score") < step_ids.index("complete-branch")
+    for stage in [
+        "retrospective",
+        "workflow-observer",
+        "commit",
+        "post-commit-self-check",
+        "rubric-score",
+        "complete-branch",
+    ]:
+        assert stage not in step_ids
+        assert stage in workflow_doc["conditional_stages"]
 
-    commit_args = next(step for step in workflow_doc["steps"] if step["id"] == "commit")["input"]["args"]
-    complete_args = next(step for step in workflow_doc["steps"] if step["id"] == "complete-branch")["input"]["args"]
+    assert workflow_doc["conditional_stages"]["commit"].startswith("Opt-in")
+    assert workflow_doc["conditional_stages"]["complete-branch"].startswith("Opt-in")
+
+    commit_template = read_text("templates/commands/commit.md")
+    complete_template = read_text("templates/commands/complete-branch.md")
     retrospective_template = read_text("templates/commands/retrospective.md")
 
-    for text in [retrospective_template]:
-        assert "workflow-record.md" in text
-        assert "improvement-candidates.md" in text
-        assert "knowledge-candidates.md" in text
-        assert "workflow-observer-packet.json" in text
-        assert "关键用户输入" in text
-        assert "AI 输出与动作链" in text
-        assert "错误、返工" in text
-        assert "验证证据" in text
-
+    assert "workflow-record.md" in retrospective_template
+    assert "improvement-candidates.md" in retrospective_template
+    assert "knowledge-candidates.md" in retrospective_template
+    assert "workflow-observer-packet.json" in retrospective_template
     assert "不自动修改 spec-kit" in retrospective_template
     assert "human approval" in " ".join(retrospective_template.lower().split())
-    assert "workflow-record.md" in commit_args
-    assert "improvement-candidates.md" in commit_args
-    assert "knowledge-candidates.md" in commit_args
-    assert "workflow-observation.md" in commit_args
-    assert "retrospective/留痕" in commit_args
-    assert "workflow-observer" in commit_args
-    assert "retrospective/留痕" in complete_args
-    assert "speckit.retrospective" in read_text("templates/commands/commit.md")
-    assert "validate-feature-artifacts" in read_text("templates/commands/commit.md")
-    assert "retrospective.status" in read_text("templates/commands/commit.md")
-    assert "workflow-state.json" in read_text("templates/commands/commit.md")
-    assert "Retrospective and lesson promotion are optional" not in read_text("templates/commands/commit.md")
-    complete_template = read_text("templates/commands/complete-branch.md")
+
+    assert "validate-feature-artifacts" in commit_template
+    assert "implementation-summary.md" in commit_template
+    assert "validation.md" in commit_template
+    assert "Retrospective/observer/promotion artifacts are optional" in commit_template
+    assert "retrospective.status" not in commit_template
+
+    assert "explicit human approval" in complete_template
+    assert "post-commit self-check" in complete_template
+    assert "strict governance" in complete_template
     powershell_script = read_text("scripts/powershell/complete-spec-branches.ps1")
-    for text in [complete_template, powershell_script]:
-        assert "workflow-record.md" in text
-        assert "improvement-candidates.md" in text
-        assert "knowledge-candidates.md" in text
-        assert "workflow-observation.md" in text
-    assert "retrospective_gate" in powershell_script
-    step_ids = [step["id"] for step in workflow_doc["steps"]]
-    assert "retrospective" in step_ids
-    assert "workflow-observer" in step_ids
-    assert step_ids.index("retrospective") < step_ids.index("commit")
-    assert step_ids.index("workflow-observer") < step_ids.index("commit")
-    assert step_ids.index("commit") < step_ids.index("post-commit-self-check")
-    assert step_ids.index("post-commit-self-check") < step_ids.index("rubric-score")
-    assert step_ids.index("rubric-score") < step_ids.index("complete-branch")
-    assert "promote-lessons" not in step_ids
-    assert "promote-knowledge" not in step_ids
+    assert "implementation-summary.md" in powershell_script
+    assert "validation.md" in powershell_script
+    assert "workflow-record.md" not in powershell_script
+
     by_id = {step["id"]: step for step in workflow_doc["steps"]}
-    assert by_id["analyze"]["profiles"] == ["standard-bugfix", "full-sdd"]
+    assert by_id["analyze"]["profiles"] == ["full-sdd"]
     assert by_id["tasks"]["profiles"] == ["full-sdd"]
     assert by_id["checklist"]["profiles"] == ["full-sdd"]
-    assert by_id["complete-branch"]["requires_confirmation"] is True
     assert "run only when risk or evidence requires them" not in cli
 
 
@@ -1294,8 +1257,7 @@ def test_stage_handoffs_acceptance_retrospective_and_commit_are_rule_driven():
     commit = compact_text(read_text("templates/commands/commit.md"))
 
     task_routing = read_text("templates/ai/workflows/task-routing.md")
-    assert "Implementation completion gate" in implement
-    assert "do not continue to `speckit.converge` while AI-owned validation is still pending" in implement
+    assert "Completion requires `validation.md` evidence and `implementation-summary.md`" in implement
     assert "Stage Continuation" in task_routing
     assert "Final Response Guard" in task_routing
     assert "inspect-workflow-closure" in task_routing
@@ -1303,21 +1265,17 @@ def test_stage_handoffs_acceptance_retrospective_and_commit_are_rule_driven():
     assert "automatic_stage_continuation" in yaml.safe_load(read_text("workflows/speckit/workflow.yml"))["stage_gate_policy"]
     assert "final_response_guard" in yaml.safe_load(read_text("workflows/speckit/workflow.yml"))["stage_gate_policy"]
     assert "execution_contract" in yaml.safe_load(read_text("workflows/speckit/workflow.yml"))["stage_gate_policy"]["automatic_stage_continuation"]
-    assert "Auto-continue is a stage contract" in task_routing
-    assert "A plain completion summary" in task_routing
-    assert "自动进入" in task_routing
+    assert "Auto-continue only along required default stages" in task_routing
+    assert "opt-in governance/branch mutation stage" in task_routing
     assert "next_required_human_action" in read_text("templates/checklist-template.md")
-    assert "before asking for `用户确认 验收通过`" in acceptance
-    assert "pre-confirmed acceptance" in acceptance
-    assert "Accepted Gaps" in acceptance
+    assert "Do not mark acceptance as passed yourself" in acceptance
+    assert "Required user action" in acceptance
     assert "Accepted Gaps" in retrospective
-    assert "If no product code changed during simplify" in simplify
-    assert "reuse the existing user acceptance" in simplify
-    assert "commit automatically" in commit
-    assert "inspect-workflow-closure" in commit
-    assert "Show the scope first" in commit
-    assert "ignored by `.gitignore`" in commit
-    assert "Never force-add a whole ignored directory" in read_text("templates/commands/commit.md")
+    assert "behavior-preserving" in simplify
+    assert "record N/A in `implementation-summary.md`" in simplify
+    assert "Stage and commit automatically" in commit
+    assert "files intentionally left unstaged" in commit
+    assert "Never force-add ignored directories" in commit
     assert "prefer scripts, deterministic checks, generated facts, or rule-based gates" in retrospective
     assert "do not outsource a deterministic check to LLM judgment" in retrospective
     assert "Existing Constraint Audit" in retrospective
@@ -1328,10 +1286,9 @@ def test_stage_handoffs_acceptance_retrospective_and_commit_are_rule_driven():
     assert "nearly deterministic" in retrospective
     assert "retrospective.status" in retrospective
     assert "ensure-host-cdp" in implement
-    assert "CDP host recovery ladder" in implement
-    assert "post-commit self-check" in workflow_args
-    assert "validate-rubric-score" in workflow_args
-    assert "automation-first" in workflow_args
+    assert "real product target" in implement
+    assert "post-commit self-check" not in workflow_args
+    assert "rubric-score" not in workflow_args
 
 
 def test_native_runtime_proto_and_ai_acceptance_gates_are_enforced():
@@ -1348,26 +1305,25 @@ def test_native_runtime_proto_and_ai_acceptance_gates_are_enforced():
     native_bridge = read_text("templates/ai/knowledge/domains/native-plugin-bridge.md")
     cdp = read_text("templates/ai/knowledge/domains/electron-host-cdp.md")
 
-    for text in [implement, build_notes, native_bridge, routing]:
+    for text in [implement, build_notes, native_bridge]:
         assert "sync-native-runtime-artifacts" in text
         assert "validate-rpc-proto-bundle" in text
 
-    assert "sync-native-runtime-artifacts" in workflow_args
+    assert "sync-native-runtime-artifacts" in implement
     assert "Native Runtime Delivery Chain" in validation_template
     assert "AI Acceptance Result" in validation_template
     assert "E-NATIVE-001" in evidence_template
     assert "E-RPC-BUNDLE-001" in evidence_template
     assert "Minimal Decision Evidence Pack For Advanced Models" in evidence_template
-    assert "AI acceptance `PASS`" in compact_text(acceptance)
-    assert "Human acceptance is after AI-owned technical validation" in acceptance
-    assert "Source Behavior Execution Map" in plan
-    assert "Source Behavior Execution Map" in routing
+    assert "AI-owned implementation validation has passed" in acceptance
+    assert "validation does not record PASS or a true external blocker" in acceptance
+    assert "Root-Fix Decision Gate" in plan
+    assert "Qt parity" in routing
     assert "safe process recovery" in cdp
     assert "Unknown owners are blockers" in build_notes
-    assert "native_runtime_delivery_chain" in stage_policy
-    assert stage_policy["native_runtime_delivery_chain"]["command"] == "sync-native-runtime-artifacts"
-    assert "ai_acceptance_before_human_acceptance" in stage_policy
-    assert "PASS" in stage_policy["ai_acceptance_before_human_acceptance"]["rule"]
+    assert "workflow_gate_selection" in stage_policy
+    assert stage_policy["workflow_gate_selection"]["command"] == "select-gates"
+    assert "implementation_summary" in stage_policy
 
 
 def test_quality_vision_rubric_and_ai_self_acceptance_are_routed_on_demand():
@@ -1387,12 +1343,15 @@ def test_quality_vision_rubric_and_ai_self_acceptance_are_routed_on_demand():
         "speckit-ai-self-acceptance",
     ]:
         assert phrase in skill_routing
-        assert phrase in "\n".join(workflow_doc["context_policy"]["load_on_demand"])
+    load_on_demand = "\n".join(workflow_doc["context_policy"]["load_on_demand"])
+    assert "quality-vision" in load_on_demand
+    assert "acceptance-rubric" in load_on_demand
+    assert "ai-self-acceptance" in load_on_demand
 
     assert "quality-vision" in routing
-    assert "acceptance-rubric.md" in routing
+    assert "acceptance-rubric" in routing
     assert "ai-self-acceptance" in routing
-    assert "PASS continues to\n  `speckit-converge`" in routing
+    assert "only when the changed behavior requires them" in routing
     assert "Quality Vision Link" in plan_template
     assert "Acceptance Rubric Link" in plan_template
     assert "AI Self-Acceptance Contract" in plan_template
@@ -1408,21 +1367,20 @@ def test_quality_vision_rubric_and_ai_self_acceptance_are_routed_on_demand():
     for layer in ["L1 功能与需求闭合", "L2 验证与证据", "L3 工作流阶段合规", "L4 交付与仓库状态", "L5 上下文与自动化治理"]:
         assert layer in rubric_template
         assert layer in validation_template
-    assert "Final Rubric Score (post-commit self-check only)" in validation_template
+    assert "Final Rubric Score" in validation_template
     assert "Overall Weighted Score" in validation_template
     assert "speckit-ai-self-acceptance" in implement
-    assert "rubric judgment" in acceptance
-    assert workflow_doc["stage_gate_policy"]["ai_self_acceptance_gate"]["command"] == "speckit-ai-self-acceptance"
+    assert "acceptance-rubric.md" in implement
+    assert "workflow_gate_selection" in workflow_doc["stage_gate_policy"]
 
 
 def test_stage_progress_displays_include_one_sentence_objectives():
     routing = read_text("templates/ai/workflows/task-routing.md")
 
-    assert "## Stage Progress Displays" in routing
-    assert "`阶段`, `状态`, and `阶段目标`" in routing
-    assert "speckit-analyze" in routing
-    assert "Check spec/plan/task consistency, blockers, and implementation readiness." in routing
-    assert "stage progress table with `阶段`, `状态`, and one-sentence `阶段目标`" in routing
+    assert "## Output Contract" in routing
+    assert "selected profile" in routing
+    assert "next default stage" in routing
+    assert "concrete blockers/unknowns" in routing
 
 
 def test_agents_template_does_not_force_plan_into_default_context():
@@ -1445,6 +1403,8 @@ def test_knowledge_layer_is_indexed_deterministic_and_load_on_demand():
 
     for text in [agents, routing, rules, plan, implement, validation]:
         assert "select-knowledge" in text
+
+    for text in [agents, routing, rules]:
         assert "full-text/BM25 search" in text
 
     for text in [agents, routing, rules]:
@@ -1467,12 +1427,12 @@ def test_agent_context_generator_does_not_force_plan_into_default_context():
     assert "Current plan: specs/001-demo/plan.md" in plan_section
 
 
-def test_ai_rules_keep_retrospective_mandatory_and_promotion_optional():
+def test_ai_rules_keep_governance_opt_in():
     rules = read_text("templates/ai/rules/ai-coding-rules.md")
 
-    assert "Retrospective/留痕 is mandatory before commit" in rules
-    assert "Lesson promotion remains optional" in rules
-    assert "Retrospective and lesson promotion are optional" not in rules
+    assert "Commit is opt-in" in rules
+    assert "Retrospective, knowledge candidates, and lesson promotion are opt-in governance stages" in rules
+    assert "mandatory before commit" not in rules
 
 
 def test_stale_feature_state_does_not_drive_tooling_tasks():
@@ -1574,35 +1534,26 @@ def test_host_frontend_delivery_chain_and_cdp_target_gate_are_enforced():
     build_notes = read_text("templates/ai/knowledge/build-and-package-notes.md")
     repo_map = read_text("templates/repository-map-template.md")
 
-    for text in [implement, validation, validation_template, workflow_args, routing, rules, common_rules, build_notes]:
+    for text in [implement, validation_template, rules, common_rules, build_notes, checklist]:
         assert "source edit -> frontend build -> direct runtime replacement -> real host CDP verification" in compact_text(text)
     assert "final `.plugin` build/package evidence" in validation
-    assert "All plugin source edits" in validation
-    assert "validate-plugin-package" in implement
-    assert "validate-plugin-package" in workflow_doc["stage_gate_policy"]["plugin_package_build"]["command"]
     assert "sync-ui-runtime-artifacts" in implement
     assert "ensure-host-cdp" in implement
     assert "ensure-host-cdp" in validation
-    assert "CDP host recovery ladder" in implement
     assert "CDP host recovery ladder" in validation
-    assert "removed stale" in implement.lower()
-    assert "Implementation completion gate" in implement
-    assert "宿主运行时验证待执行" in implement
-    assert "do not continue to\n     `speckit.converge` while AI-owned validation is still pending" in implement
-    assert "Removed stale runtime files" in validation_template
+    assert "Completion requires `validation.md` evidence and `implementation-summary.md`" in implement
     assert "Runtime replacement removed stale count" in evidence_template
     assert "runtime replacement directory" in checklist
 
-    for text in [implement, validation, routing, rules, build_notes, checklist, common_rules]:
+    for text in [validation, rules, build_notes, checklist, common_rules]:
         assert "inspect-host-cdp-target" in text or "/json/list" in text
         assert "Plugin Workbench" in text
         assert "base-win.html" in text
         assert "devtools://" in text
+
+    for text in [validation, build_notes, checklist, common_rules]:
         assert "webSocketDebuggerUrl" in text
-    assert "hostapplication_cdp_target" in stage_policy
-    assert "hostapplication_cdp_host_recovery" in stage_policy
-    assert stage_policy["hostapplication_cdp_host_recovery"]["command"] == "ensure-host-cdp"
-    assert "frontend_runtime_delivery_chain" in stage_policy
+    assert stage_policy["workflow_gate_selection"]["command"] == "select-gates"
     assert "wrong-target / insufficient" in validation
 
 
@@ -1620,20 +1571,17 @@ def test_host_cdp_validation_saves_key_path_screenshot_artifacts():
     routing = read_text("templates/ai/workflows/task-routing.md")
     agents = read_text("templates/agents-template.md")
 
-    for text in [gate, validation, cdp_knowledge, routing]:
+    for text in [gate, validation, cdp_knowledge]:
         assert "capture-cdp-screenshot" in text
 
     for text in [
         gate,
         validation,
         ai_self_acceptance,
-        acceptance,
         retrospective,
         evidence_template,
         validation_template,
         cdp_knowledge,
-        routing,
-        agents,
     ]:
         assert "FEATURE_DIR/cdp-screenshots" in text
 
@@ -1641,19 +1589,16 @@ def test_host_cdp_validation_saves_key_path_screenshot_artifacts():
         gate,
         validation,
         ai_self_acceptance,
-        acceptance,
         retrospective,
         validation_template,
         cdp_knowledge,
     ]:
         assert "screenshots-index.md" in text
 
-    for text in [gate, validation, acceptance, cdp_knowledge, routing, agents]:
+    for text in [gate, validation, cdp_knowledge]:
         assert "screenshot directory" in compact_text(text)
 
-    assert "hostapplication_cdp_screenshots" in stage_policy
-    assert stage_policy["hostapplication_cdp_screenshots"]["command"] == "capture-cdp-screenshot"
-    assert "key-path screenshots" in stage_policy["hostapplication_cdp_screenshots"]["rule"]
+    assert stage_policy["workflow_gate_selection"]["command"] == "select-gates"
 
 
 def test_qt_source_behavior_map_is_installed_and_referenced_before_broad_search():
@@ -1666,7 +1611,10 @@ def test_qt_source_behavior_map_is_installed_and_referenced_before_broad_search(
 
     assert "Qt Source Behavior Map" in qt_map
     assert "example device list / device tree" in qt_map
-    for text in [implement, routing, rules, checklist, common_rules]:
+    assert "qt-parity" in implement
+    assert "Qt parity" in routing
+    assert "selected Qt source behavior map" in rules
+    for text in [checklist, common_rules]:
         assert "qt-source-behavior-map.md" in text
     assert "before broad source search" in rules
 
@@ -1702,7 +1650,7 @@ def test_promote_lessons_stage_applies_only_approved_candidates_when_requested()
     assert "knowledge-candidates.md" in retrospective_template
     assert "promote-knowledge-candidates" in promote_knowledge_template
     assert "Pending/rejected candidates skipped" in promote_knowledge_template
-    assert "approved promotion candidates" in read_text("templates/commands/commit.md")
+    assert "Retrospective/observer/promotion artifacts are optional" in read_text("templates/commands/commit.md")
 
 
 def test_fact_layer_assets_and_rules_are_standardized():
@@ -1715,9 +1663,10 @@ def test_fact_layer_assets_and_rules_are_standardized():
     retrospective = read_text("templates/commands/retrospective.md")
     readme = read_text("TEAM-README.md")
 
-    for text in [fact_command, fact_template, plan, implement, checklist, investigation, retrospective]:
+    for text in [fact_command, fact_template, checklist, investigation]:
         assert "fact-pack.md" in text
         assert "speckit.fact-layer" in text
+    assert "fact-layer evidence" in implement
     assert "fact-pack.md" in readme
 
     for text in [fact_command, fact_template, implement, checklist, investigation, readme]:
@@ -1726,7 +1675,7 @@ def test_fact_layer_assets_and_rules_are_standardized():
         assert "sdklog" not in compact
         assert "servicebridgelog" not in compact
 
-    for text in [fact_command, fact_template, plan, implement, checklist, investigation]:
+    for text in [fact_command, fact_template, checklist, investigation]:
         text_lower = text.lower()
         assert "chrome-devtools" in text_lower
         assert "computed style" in text_lower
@@ -1758,12 +1707,16 @@ def test_stage_gate_policy_blocks_full_sdd_from_skipping_analysis_and_checklist(
     assert "checklists/implementation-readiness.md" in manifest["artifact_sets"]["full-sdd-implement"]
 
     assert "tasks -> analyze -> checklist" in workflow_doc["stage_gate_policy"]["next_stage_routing"]["full-sdd"]["before_implement"]
-    for text in [routing, rules, implement]:
+    assert "tasks -> analyze -> checklist" in routing
+    assert "full-sdd" in rules
+    for text in [implement, analyze, checklist]:
         assert "analysis.md" in text
+    assert "implementation-readiness.md" in checklist
+    for text in [implement]:
         assert "checklists/implementation-readiness.md" in text
 
     assert "standard-bugfix" in plan
-    assert "complete `Implementation Slices`" in plan
+    assert "Implementation Slices" in plan
     assert "Write the prioritized" in analyze
     assert "FEATURE_DIR/analysis.md" in analyze
     assert "read_strategies.analyze" in analyze
@@ -1792,18 +1745,17 @@ def test_l5_validation_evidence_and_retrospective_contract_is_standardized():
     readme = read_text("TEAM-README.md")
     agents = read_text("templates/agents-template.md")
 
-    for text in [acceptance, validation, retrospective, promote, fact_template, readme]:
+    for text in [validation, retrospective, promote, fact_template, readme]:
         assert "validation.md" in text
         assert "evidence.md" in text
+    assert "validation.md" in acceptance
 
-    for text in [acceptance, validation, fact_template, readme]:
+    for text in [validation, fact_template, readme]:
         assert "No validation claim is complete without" in text
 
-    assert "acceptance.md` remains user-facing" in acceptance
-    assert "evidence.md` remains tool/test-facing" in acceptance
-    assert "AI automated validation" in acceptance
-    assert "Human manual UI validation" in acceptance
-    assert "Do not ask humans to manually verify these by eye" in acceptance
+    assert "Existing validation evidence" in acceptance
+    assert "Known gaps or manual checks" in acceptance
+    assert "Do not turn AI-owned technical validation into manual checklist work" in acceptance
     assert "ai/templates/validation-template.md" in validation
     assert "ai/templates/evidence-template.md" in validation
     assert "Foundation rules or memory" in retrospective
@@ -1893,18 +1845,22 @@ def test_tasks_and_implement_templates_use_slice_progress_contracts():
 
     for text in [tasks, tasks_template]:
         assert "Implementation Slices" in text
-        assert "允许写入范围" in text
-        assert "禁止范围" in text
-        assert "停止条件" in text
+        assert "validation" in text.lower() or "验证" in text
+    assert "allowed write scope" in tasks
+    assert "forbidden scope" in tasks
+    assert "stop condition" in tasks
+    assert "允许写入范围" in tasks_template
+    assert "禁止范围" in tasks_template
+    assert "停止条件" in tasks_template
 
     assert "progress.md" in tasks
     assert "progress.md" in implement
-    assert "slice loop" in implement.lower()
+    assert "not create `progress.md` by default" in implement
     assert "acceptance" in implement
     assert "delete the local spec branch unless explicitly kept" not in implement
-    assert "Root Cause Evidence" in implement
-    assert "bounded search" in implement
-    assert "workspace_root" in implement
+    assert "Root-Fix Decision Gate" in implement
+    assert "bounded `rg`" in implement
+    assert "workspace_root" not in implement
 
 
 def test_review_progress_and_pitfall_artifacts_are_standardized():
@@ -1920,8 +1876,6 @@ def test_review_progress_and_pitfall_artifacts_are_standardized():
     for phrase in [
         "review.md",
         "progress.md",
-        "lessons.md",
-        ".specify/memory/pitfalls.md",
     ]:
         assert phrase in combined
 
@@ -1937,6 +1891,7 @@ def test_delivery_profiles_and_root_cause_evidence_are_standardized():
     plan = read_text("templates/commands/plan.md")
     plan_template = read_text("templates/plan-template.md")
     tasks = read_text("templates/commands/tasks.md")
+    tasks_template = read_text("templates/tasks-template.md")
     analyze = read_text("templates/commands/analyze.md")
     checklist = read_text("templates/commands/checklist.md")
     bugfix_rules = read_text("checklist-rules/bugfix.yml")
@@ -1950,15 +1905,16 @@ def test_delivery_profiles_and_root_cause_evidence_are_standardized():
         assert "blocked-investigation" in text
         assert "validation-only" in text
 
-    for text in [plan, plan_template, tasks, analyze, checklist, bugfix_rules]:
+    assert "Root Cause Evidence" in plan
+    for text in [plan_template, analyze, checklist, bugfix_rules]:
         assert "Root Cause Evidence" in text
         assert "Counterexample" in text
         assert "Blast Radius" in text
         assert "Validation Mapping" in text
 
-    assert "Known Gap" in plan
+    assert "Known Gap" in analyze
     assert "blocking" in analyze
-    assert "unproven patch" in tasks
+    assert "unproven patch" in tasks_template
 
 
 def test_human_review_does_not_delegate_ai_owned_technical_judgment():
@@ -1973,9 +1929,18 @@ def test_human_review_does_not_delegate_ai_owned_technical_judgment():
         "templates/commands/micro-fix.md",
     ]:
         text = read_text(path)
+        assert "commit" in text or "acceptance" in text or "owner-approved" in text
+        assert "Ask the developer to approve root cause correctness" not in text
+        assert "Ask the developer to approve test sufficiency" not in text
+
+    for path in [
+        "templates/commands/analyze.md",
+        "templates/commands/checklist.md",
+        "templates/commands/micro-fix.md",
+    ]:
+        text = read_text(path)
         assert "root cause correctness" in text
         assert "test sufficiency" in text
-        assert "commit" in text or "acceptance" in text or "owner-approved" in text
 
     plan = read_text("templates/commands/plan.md")
     assert "Ask the developer to review the plan summary" not in plan
@@ -1995,16 +1960,28 @@ def test_clarify_uses_spec_only_prerequisite_without_plan_requirement():
 
 def test_bounded_search_rules_prevent_workspace_wide_scans():
     for path in [
-        "templates/commands/plan.md",
         "templates/commands/tasks.md",
         "templates/commands/analyze.md",
-        "templates/commands/implement.md",
         "templates/commands/bounded-investigation.md",
     ]:
         text = read_text(path)
         assert "workspace_root" in text
         assert "rg" in text
+
+    for path in [
+        "templates/commands/analyze.md",
+        "templates/commands/bounded-investigation.md",
+    ]:
+        text = read_text(path)
         assert "subagent" in text or "explorer" in text
+
+    for path in [
+        "templates/commands/plan.md",
+        "templates/commands/implement.md",
+    ]:
+        text = read_text(path)
+        assert "bounded" in text.lower()
+        assert "rg" in text
 
 
 def test_team_readme_describes_new_default_process_and_branch_policy():
@@ -2026,86 +2003,58 @@ def test_team_readme_describes_new_default_process_and_branch_policy():
 
 
 def test_ui_parity_runtime_rules_are_standardized():
-    clarify = read_text("templates/commands/clarify.md")
-    plan = read_text("templates/commands/plan.md")
+    qt_gate = read_text("templates/ai/workflows/gates/qt-parity.yml")
+    host_gate = read_text("templates/ai/workflows/gates/host-cdp.yml")
     plan_template = read_text("templates/plan-template.md")
     spec_template = read_text("templates/spec-template.md")
     implement = read_text("templates/commands/implement.md")
-    investigation = read_text("templates/commands/bounded-investigation.md")
-    checklist = read_text("templates/commands/checklist.md")
+    validation = read_text("templates/commands/validation.md")
     checklist_template = read_text("templates/checklist-template.md")
-    acceptance = read_text("templates/commands/acceptance.md")
-    tasks = read_text("templates/commands/tasks.md")
     ai_rules = read_text("templates/ai/rules/ai-coding-rules.md")
     common_rules = read_text("checklist-rules/common.yml")
     readme = read_text("TEAM-README.md")
-    workflow_args = "\n".join(
-        step["input"]["args"] for step in load_workflow()["steps"] if "input" in step
-    )
 
-    for text in [clarify, plan, plan_template, implement, checklist, checklist_template, acceptance, common_rules, readme]:
-        text_lower = text.lower()
+    assert 'id: "qt-parity"' in qt_gate
+    assert "Qt Source Behavior Parity Gate" in qt_gate
+    assert "ui-parity" in qt_gate
+    assert "Source Behavior Execution Map" in qt_gate
+
+    for text in [plan_template, checklist_template, common_rules, readme]:
         assert "UI parity" in text
-        assert "dynamic states" in text_lower
-        assert "host" in text_lower
+        assert "dynamic states" in text.lower()
 
-    for text in [clarify, plan, plan_template, implement, investigation, checklist, checklist_template, common_rules]:
-        compact_text = " ".join(text.split())
-        assert "runtime dom / computed style / box metrics" in compact_text.lower()
+    for text in [host_gate, ai_rules, plan_template, checklist_template]:
+        compact = " ".join(text.split()).lower()
+        assert "computed style" in compact
+        assert "box metrics" in compact
+    assert "box metrics" in validation
+
     assert "runtime DOM/CSS/computed style/box metrics" in readme
-    assert "runtime DOM/CSS/computed style/box metrics" in workflow_args
-
-    for text in [plan, implement, investigation, acceptance]:
-        text_lower = text.lower()
-        assert "scrollbar" in text_lower
-        assert "clipping" in text_lower
-        assert "compression" in text_lower
-
-    assert "stop guessing CSS" in implement
     assert "sync-ui-runtime-artifacts" in implement
-    assert "source-to-runtime mapping" in implement
-    assert "host-served runtime plugin directory" in implement
-    assert "best-effort AI self-validation" in implement
-    assert "simulating core clicks" in " ".join(implement.split())
-    assert "advisory rather than a hard gate" in implement
-    assert "UI element traversal inventory" in plan
+
+    assert "scrollbar" in plan_template.lower()
+    assert "clipping" in plan_template.lower()
+    assert "compression" in plan_template.lower()
     assert "UI Element Traversal Inventory / 0px Alignment Matrix" in plan_template
-    assert "0px-level visual repair" in implement
     assert "batch patch strategy" in plan_template.lower()
     assert "baseline anchors" in plan_template.lower()
     assert "CHK014F" in checklist_template
+    assert "CHK014G" in checklist_template
     assert "UI element traversal inventory" in common_rules
-    assert "agent-collected screenshots" in acceptance
-    assert "unsupported automation remains a visible gap" in " ".join(acceptance.split())
-    assert "bounded UI runtime investigation" in investigation
     assert "Static design files" in " ".join(readme.split())
 
-    evidence_gate_text = "\n".join([
-        clarify,
-        plan,
-        plan_template,
-        spec_template,
-        implement,
-        tasks,
-        checklist_template,
-        ai_rules,
-    ])
-    compact_evidence_gate = " ".join(evidence_gate_text.split())
     assert "UI / UX / Copy Evidence Gate" in ai_rules
     assert "UI / UX / 文案 Evidence Gate" in plan_template
     assert "UI / UX / 文案依据追踪" in spec_template
-    assert "CHK014G" in checklist_template
     assert "Do not invent UI shape" in ai_rules
-    assert "Do not substitute a text button for an icon+tooltip" in implement
-    assert "stop for clarify or blocked investigation" in compact_evidence_gate
     for phrase in [
         "Qt UI/source/delegate/QSS/resource",
-        "product design/mockup/export",
+        "Product design/mockup/export",
         "tooltip",
         "visible copy",
-        "owner/user decision",
+        "owner/user approval",
     ]:
-        assert phrase in evidence_gate_text
+        assert phrase in (plan_template + spec_template + checklist_template + ai_rules)
 
 
 def test_test_case_planning_is_skill_routed_and_human_negotiated():
@@ -2120,8 +2069,8 @@ def test_test_case_planning_is_skill_routed_and_human_negotiated():
 
     assert "test-plan" in skill_routing
     assert "speckit-test-plan" in skill_routing
-    assert "During `clarify` and `plan`" in routing
-    assert "API, E2E/interface" in routing
+    assert "speckit-test-plan" in routing
+    assert "changed behavior requires them" in routing
     assert "do not load all\n`ai/knowledge/*`" in test_plan
     assert "inspect-validation-capabilities" in test_plan
     assert "API plan remains required" in test_plan
@@ -2132,7 +2081,7 @@ def test_test_case_planning_is_skill_routed_and_human_negotiated():
 
     for text in [plan, clarify]:
         assert "speckit-test-plan" in text
-        assert "API, E2E/interface" in text
+    assert "API/E2E" in test_plan
 
     assert "## 测试用例计划" in plan_template
     assert "Review Status" in plan_template
@@ -2152,22 +2101,23 @@ def test_plugin_changes_must_target_source_not_runtime_artifacts():
         step["input"]["args"] for step in load_workflow()["steps"] if "input" in step
     )
 
-    for text in [implement, checklist, commit, constitution_command, common_rules, workflow_args]:
+    for text in [implement, checklist, constitution_command, common_rules, workflow_args]:
         compact_text = " ".join(text.split()).lower()
         assert "repository source" in compact_text
         assert "installed runtime plugin directories" in compact_text
-        assert "built artifacts" in compact_text
+        assert "built artifacts" in compact_text or "build/export output" in compact_text
+    assert "installed runtime plugin directories" in commit
+    assert "generated build output" in commit
 
-    for text in [implement, checklist, commit, constitution, constitution_command, checklist_template]:
+    for text in [checklist, constitution, constitution_command, checklist_template]:
         assert "app-data/plugins/**" in text
         assert "frontend/plugins/**" in text
 
     compact_implement = " ".join(implement.split())
-    assert "emergency diagnosis" in compact_implement
-    assert "artifact patch" in compact_implement
-    assert "runtime artifacts a durable fix location or commit target" in compact_implement
+    assert "never runtime/build/export output as the durable fix" in compact_implement
     assert "blocking" in checklist
-    assert "Do not commit installed runtime plugin directories" in commit
+    assert "Do not commit generated build output" in commit
+    assert "installed runtime plugin directories" in commit
     assert "仓库源码" in constitution
     assert "验收/提交前必须回写到源码" in constitution
     assert "CHK010N" in checklist_template
@@ -2205,7 +2155,7 @@ def test_workspace_template_defines_spec_persistence_policy():
     assert "specify integration status --json" in readme
 
 
-def test_complete_branch_blocks_without_retrospective_artifacts(tmp_path):
+def test_complete_branch_blocks_without_closure_artifacts(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     run_git(repo, "init", "-b", "master")
@@ -2247,12 +2197,10 @@ def test_complete_branch_blocks_without_retrospective_artifacts(tmp_path):
     assert payload["action"] == "preflight-failed"
     assert payload["retrospective_gate"]["status"] == "blocked"
     assert payload["retrospective_gate"]["missing"] == [
-        "workflow-record.md",
-        "improvement-candidates.md",
-        "knowledge-candidates.md",
-        "workflow-observation.md",
+        "implementation-summary.md",
+        "validation.md",
     ]
-    assert "Run speckit.retrospective before complete-branch" in payload["errors"][0]
+    assert "Run speckit.implement/validation before complete-branch" in payload["errors"][0]
 
 
 def test_complete_branch_cherry_picks_without_merge_commit(tmp_path):
@@ -2273,7 +2221,7 @@ def test_complete_branch_cherry_picks_without_merge_commit(tmp_path):
     (repo / "second.txt").write_text("feature 2\n", encoding="utf-8")
     run_git(repo, "add", "second.txt")
     run_git(repo, "commit", "-m", "feature change 2")
-    write_retrospective_artifacts(repo)
+    write_closure_artifacts(repo)
 
     script = REPO_ROOT / "scripts" / "powershell" / "complete-spec-branches.ps1"
     subprocess.run(
@@ -2349,7 +2297,7 @@ def test_complete_branch_uses_recorded_entry_branch_by_default(tmp_path):
 
     (repo / "file.txt").write_text("feature\n", encoding="utf-8")
     run_git(repo, "commit", "-am", "feature change")
-    write_retrospective_artifacts(repo, branch=branch)
+    write_closure_artifacts(repo, branch=branch)
 
     complete_script = REPO_ROOT / "scripts" / "powershell" / "complete-spec-branches.ps1"
     complete_result = subprocess.run(
@@ -2392,7 +2340,7 @@ def test_complete_branch_reports_already_up_to_date(tmp_path):
     run_git(repo, "add", "file.txt")
     run_git(repo, "commit", "-m", "base")
     run_git(repo, "switch", "-c", "feature")
-    write_retrospective_artifacts(repo)
+    write_closure_artifacts(repo)
 
     script = REPO_ROOT / "scripts" / "powershell" / "complete-spec-branches.ps1"
     result = subprocess.run(
@@ -2436,7 +2384,7 @@ def test_complete_branch_switches_all_repositories_back_to_base(tmp_path):
 
     (repo_a / "file.txt").write_text("feature\n", encoding="utf-8")
     run_git(repo_a, "commit", "-am", "feature change")
-    write_retrospective_artifacts(repo_a)
+    write_closure_artifacts(repo_a)
 
     (repo_a / ".specify").mkdir()
     (repo_a / ".specify" / "workspace.yml").write_text(
@@ -2501,7 +2449,7 @@ def test_complete_branch_allows_untracked_noise_in_up_to_date_repo(tmp_path):
     (repo_a / "file.txt").write_text("feature\n", encoding="utf-8")
     run_git(repo_a, "commit", "-am", "feature change")
     (repo_b / "local-note.md").write_text("unrelated local scratch\n", encoding="utf-8")
-    write_retrospective_artifacts(repo_a)
+    write_closure_artifacts(repo_a)
     (repo_a / ".specify").mkdir(exist_ok=True)
     (repo_a / ".specify" / "workspace.yml").write_text(
         "\n".join(
@@ -2568,7 +2516,7 @@ def test_complete_branch_blocks_untracked_source_when_repo_has_commits(tmp_path)
     (repo / "file.txt").write_text("feature\n", encoding="utf-8")
     run_git(repo, "commit", "-am", "feature change")
     (repo / "forgotten-source.txt").write_text("maybe belongs to feature\n", encoding="utf-8")
-    write_retrospective_artifacts(repo)
+    write_closure_artifacts(repo)
 
     script = REPO_ROOT / "scripts" / "powershell" / "complete-spec-branches.ps1"
     result = subprocess.run(
@@ -2615,7 +2563,7 @@ def test_complete_branch_auto_resolves_generated_artifact_conflict(tmp_path):
     (repo / "dist" / "bundle.js").write_text("feature artifact\n", encoding="utf-8")
     (repo / "source.txt").write_text("feature source\n", encoding="utf-8")
     run_git(repo, "commit", "-am", "feature source and artifact")
-    write_retrospective_artifacts(repo)
+    write_closure_artifacts(repo)
 
     run_git(repo, "switch", "master")
     (repo / "dist" / "bundle.js").write_text("master artifact\n", encoding="utf-8")
@@ -2663,7 +2611,7 @@ def test_complete_branch_stops_on_cherry_pick_conflict(tmp_path):
     run_git(repo, "switch", "-c", "feature")
     (repo / "file.txt").write_text("feature\n", encoding="utf-8")
     run_git(repo, "commit", "-am", "feature change")
-    write_retrospective_artifacts(repo)
+    write_closure_artifacts(repo)
 
     run_git(repo, "switch", "master")
     (repo / "file.txt").write_text("master\n", encoding="utf-8")
@@ -2799,7 +2747,7 @@ def test_complete_spec_branch_skips_non_participating_tooling_repo(tmp_path):
     run_git(repo_a, "switch", "-c", "feature")
     (repo_a / "file.txt").write_text("feature\n", encoding="utf-8")
     run_git(repo_a, "commit", "-am", "feature change")
-    write_retrospective_artifacts(repo_a)
+    write_closure_artifacts(repo_a)
     (tool_repo / "local-tooling-note.txt").write_text("dirty but skipped\n", encoding="utf-8")
 
     (repo_a / ".specify").mkdir(exist_ok=True)
@@ -3107,7 +3055,7 @@ def test_hot_pluggable_subskills_are_packaged_and_referenced():
     assert "Use the `commit-message` skill" in commit_command
     assert "validate-commit-message" in commit_command
     assert "git commit -F <message-file>" in commit_command
-    assert "git commit -m" in commit_command
+    assert "git commit -m" not in commit_command
 
 
 def test_init_is_codex_only_without_ai_selector():
@@ -3229,10 +3177,10 @@ def test_init_wrapper_documents_layered_assets_and_cherry_pick_completion():
     for phrase in [
         "Initialization also installs the layered Spec Kit assets",
         "`ai/rules`, `ai/knowledge`, `ai/workflows`, `ai/tools`, and `ai/templates`",
-        "human-acceptance gate -> retrospective -> workflow-observer",
-        "post-commit-self-check -> rubric-score -> complete-branch",
+        "human-acceptance gate",
+        "Retrospective, workflow-observer, commit, post-commit self-check, rubric-score",
         "cherry-pick the local Spec",
-        "Cherry-pick completion preflight is automated after commit",
+        "Cherry-pick completion is opt-in",
         "explicit human approval",
         "`-ConfirmCompletion`",
     ]:
@@ -3297,7 +3245,7 @@ def test_host_cdp_defaults_are_in_generated_context_templates():
     assert "CDP or browser endpoint" in repository_map
     assert "N/A" in repository_map
 
-    for text in [build_notes, task_routing, mcp_servers, mcp_policy, implement, acceptance, fact_layer, validation, ps_fact_script]:
+    for text in [build_notes, mcp_servers, mcp_policy, fact_layer, validation, ps_fact_script]:
         assert "http://127.0.0.1:9222" in text
         assert "app-main-window" in text
 
@@ -3307,8 +3255,7 @@ def test_host_cdp_defaults_are_in_generated_context_templates():
     assert "Node inspector also starts on `5858`" in build_notes
     assert "Plugin Workbench|plugin-workbench.html" in build_notes
     assert "Plugin Workbench|plugin-workbench.html" in build_notes
-    assert "`plugin-host` DevTools /" in implement
-    assert "Workbench itself" in implement
+    assert "`plugin-host` DevTools /" in validation
     assert "Workbench target override" in fact_layer
     assert "#/app-home/appHome" in build_notes
     assert "click the target app card such as" in build_notes
@@ -3316,8 +3263,8 @@ def test_host_cdp_defaults_are_in_generated_context_templates():
     assert "UTILITY_CHROME_REMOTE_DEBUGGING_PORT=9222" in mcp_servers
     assert "CSS.forcePseudoState(['hover'])" in mcp_servers
     assert "Codex TOML" in mcp_servers
-    assert "selected real host/Electron runtime" in " ".join(task_routing.split())
-    assert "Isolated plugin preview is fallback evidence" in " ".join(implement.split())
+    assert "host CDP" in task_routing
+    assert "isolated plugin preview was used" in validation
 
 
 def compatible_node_env(tmp_path: Path) -> dict[str, str]:

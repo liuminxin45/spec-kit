@@ -24,12 +24,14 @@ Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md
 ## Purpose
 
 Turn the request into a capability specification in `specs/<feature>/spec.md`
-and persist the active local spec branch / feature path in
-`.specify/feature.json`.
+only for profiles that need a durable behavior contract, and persist the active
+local spec branch / feature path in `.specify/feature.json`.
 
-Also create or update `review.md` as a human navigation page for the feature.
-`review.md` is additive only; it must not replace `spec.md`, `plan.md`,
-`tasks.md`, or other AI-readable workflow artifacts.
+Do not create `review.md` by default. Create it only when the user asks for a
+human navigation page or the feature has enough generated artifacts that a
+separate index reduces review cost. `review.md` is additive only; it must not
+replace `spec.md`, `plan.md`, `tasks.md`, or other AI-readable workflow
+artifacts.
 
 Use `.specify/memory/repository-map.md` as the fixed Workspace Repository Map.
 It is the authoritative Repository / Path / Role / Capability table for this
@@ -47,7 +49,7 @@ routing decisions.
 ## Layered Artifact Contract
 
 - This command creates the L1 artifact set from `templates/layer-manifest.yml`.
-- Required L1 outputs are `spec.md`, `review.md`, and `workflow-state.json`.
+- Required L1 outputs are `spec.md` and `workflow-state.json`.
 - `spec.md` must include the `L1 Artifact Contract` section from
   `.specify/templates/spec-template.md`.
 - `.specify/feature.json` and `workflow-state.json` hold structured workflow
@@ -128,7 +130,7 @@ device integration, migration, or tooling work.
      existing API names, source paths, or source behavior references.
 
 3. Create or update `spec.md` using `.specify/templates/spec-template.md`.
-4. Create or update `review.md`.
+4. Create or update `review.md` only when explicitly useful.
    - Summarize the feature goal, risk level if known, affected repositories,
      highest-signal review points, validation entry, and current next stage.
    - Link or name `spec.md`.
@@ -136,7 +138,7 @@ device integration, migration, or tooling work.
      default_base_branch, and the affected rows from
      `.specify/memory/repository-map.md`.
    - State that complete AI execution still requires reading full
-     `spec.md`/`plan.md`/`tasks.md`.
+     `spec.md`/`plan.md`/`tasks.md` when those artifacts exist.
 
 5. Specify only observable behavior and engineering constraints.
    - Do not prescribe implementation details unless they are compatibility or
@@ -248,12 +250,13 @@ device integration, migration, or tooling work.
 - Do not infer repository roles by scanning repository files. Use
   `.specify/memory/repository-map.md` as the source of truth. If it is stale or
   incomplete, stop and ask the user to update that fixed map.
-- The spec branch is the workflow identity; final completion happens only after
-  acceptance, simplify, optional test-hardening, retrospective/留痕, optional
-  workflow-observer, optional promote-lessons/promote-knowledge, commit, one
-  post-commit self-check, final Rubric score, and complete-branch.
-- Commit and branch-state completion are automated only after their hard gates
-  pass; they still do not push or create remote tracking.
+- The spec branch is the workflow identity. Default delivery closure happens
+  after implementation validation, `implementation-summary.md`, and human
+  acceptance. Simplify, test-hardening, retrospective/留痕, workflow-observer,
+  promote-lessons/promote-knowledge, commit, post-commit self-check, final
+  Rubric score, and complete-branch are opt-in or strict/release stages.
+- Commit and branch-state completion are opt-in and still do not push or create
+  remote tracking.
 - Branch completion cherry-picks back to the recorded entry branch captured at
   spec branch creation and keeps the local spec branch by default. Do not push
   or create remote tracking.
@@ -268,7 +271,7 @@ Report in Chinese:
   default_base_branch, and repository_map path.
 - Affected repository map rows from `.specify/memory/repository-map.md`.
 - Spec path.
-- Review path.
+- Review path, when created.
 - Checklist path.
 - Key assumptions.
 - Clarifications still needed.

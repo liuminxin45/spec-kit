@@ -11,9 +11,16 @@ policy:
 
 artifact_sets:
   default:
-    - "spec.md"
+    - "workpack.md"
+    - "workflow-state.json"
   specify:
     - "spec.md"
+    - "workflow-state.json"
+  micro-fix-plan:
+    - "workpack.md"
+    - "workflow-state.json"
+  micro-fix-implement:
+    - "workpack.md"
     - "workflow-state.json"
   plan:
     - "spec.md"
@@ -39,19 +46,17 @@ artifact_sets:
     - "plan.md"
     - "workflow-state.json"
   implement:
-    - "spec.md"
+    - "workpack.md"
+    - "workflow-state.json"
+  standard-bugfix-implement:
     - "plan.md"
     - "workflow-state.json"
   converge:
-    - "spec.md"
-    - "plan.md"
-    - "progress.md"
     - "implementation-summary.md"
     - "validation.md"
     - "workflow-state.json"
   acceptance:
     - "implementation-summary.md"
-    - "convergence.md"
     - "validation.md"
     - "workflow-state.json"
   full-sdd-implement:
@@ -63,42 +68,23 @@ artifact_sets:
     - "workflow-state.json"
   validation:
     - "validation.md"
-    - "acceptance.md"
   validation-only:
     - "validation.md"
   commit:
-    - "spec.md"
-    - "plan.md"
     - "implementation-summary.md"
     - "validation.md"
-    - "acceptance.md"
     - "workflow-state.json"
-    - "workflow-record.md"
-    - "improvement-candidates.md"
-    - "knowledge-candidates.md"
-    - "workflow-observation.md"
   standard-bugfix-lite-commit:
-    - "workpack.md"
     - "implementation-summary.md"
     - "validation.md"
-    - "acceptance.md"
     - "workflow-state.json"
-    - "workflow-record.md"
-    - "improvement-candidates.md"
-    - "knowledge-candidates.md"
-    - "workflow-observation.md"
   full-sdd-commit:
     - "spec.md"
     - "plan.md"
     - "tasks.md"
     - "implementation-summary.md"
     - "validation.md"
-    - "acceptance.md"
     - "workflow-state.json"
-    - "workflow-record.md"
-    - "improvement-candidates.md"
-    - "knowledge-candidates.md"
-    - "workflow-observation.md"
   retrospective:
     - "acceptance.md"
     - "workflow-record.md"
@@ -314,14 +300,13 @@ layers:
       - "scripts/powershell/validate-implementation-slices.ps1"
       - "scripts/powershell/validate-generated-context.ps1"
     generated_assets:
+      - "specs/<feature>/workpack.md"
+      - "specs/<feature>/workflow-state.json"
       - "specs/<feature>/spec.md"
       - "specs/<feature>/plan.md"
-      - "specs/<feature>/workpack.md"
+      - "specs/<feature>/tasks.md"
       - "specs/<feature>/quality-vision.md"
       - "specs/<feature>/acceptance-rubric.md"
-      - "specs/<feature>/tasks.md"
-      - "specs/<feature>/progress.md"
-      - "specs/<feature>/workflow-state.json"
       - "specs/<feature>/investigation.md"
     protected_current_behavior:
       - "Plugin code changes must modify repository source files, not only runtime/build artifacts."
@@ -393,7 +378,7 @@ layers:
     lifecycle: "mixed"
     responsibility:
       - "Hold validation, acceptance, runtime facts, and delivery evidence."
-      - "Use fact-pack/evidence only when the task needs them; use retrospective during delivery closure."
+      - "Use fact-pack/evidence only when the task needs them; use retrospective only as an opt-in governance stage."
       - "Keep no-push, no-merge-commit branch completion behavior."
     source_assets:
       - "templates/fact-pack-template.md"
@@ -412,10 +397,10 @@ layers:
     generated_assets:
       - "specs/<feature>/validation.md"
       - "specs/<feature>/acceptance.md"
-      - "specs/<feature>/acceptance-checklist.md"
       - "specs/<feature>/implementation-summary.md"
       - "specs/<feature>/fact-pack.md"
       - "specs/<feature>/evidence.md"
+      - "specs/<feature>/acceptance-checklist.md"
       - "specs/<feature>/workflow-record.md"
       - "specs/<feature>/improvement-candidates.md"
       - "specs/<feature>/knowledge-candidates.md"
@@ -424,6 +409,6 @@ layers:
       - "specs/<feature>/knowledge-promotion-report.md"
       - "specs/<feature>/promotion-report.md"
     protected_current_behavior:
-      - "Default closure is validation.md plus acceptance.md."
+      - "Default closure is implementation-summary.md plus validation.md; acceptance.md is optional user-facing evidence."
       - "fact-pack.md and evidence.md are optional runtime/tool-heavy evidence."
       - "complete-branch uses cherry-pick, not merge commits; spec branches are kept by default."

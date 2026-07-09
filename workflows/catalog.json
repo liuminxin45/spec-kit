@@ -5,10 +5,10 @@
   "workflows": {
     "speckit": {
       "id": "speckit",
-      "name": "Spec Kit AI Delivery Workflow",
-      "description": "Runs a risk-aware Spec Kit loop through planning, implementation, AI self-acceptance, human acceptance gates, retrospective trace, and optional local completion",
+      "name": "Spec Kit Lean Delivery Workflow",
+      "description": "Runs a compact Codex delivery loop by default; SDD, governance, commit, and branch-completion stages are opt-in",
       "author": "Spec Kit Team",
-      "version": "1.4.0",
+      "version": "3.0.0",
       "url": "project-local:workflows/speckit/workflow.yml",
       "tags": ["sdd", "spec-kit", "codex", "full-cycle"]
     }

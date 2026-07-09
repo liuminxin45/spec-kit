@@ -57,6 +57,17 @@ function Is-CompleteStatus {
     return ($Status -in @("completed", "complete", "passed", "approved", "done", "ok"))
 }
 
+function Is-RequestedStatus {
+    param([string]$Status)
+    return ($Status -in @("requested", "selected", "required", "in_progress", "active", "running"))
+}
+
+function Test-AcceptancePrepared {
+    param($State)
+    if (Is-CompleteStatus (Get-Status $State "acceptance")) { return $true }
+    return (Has-Artifact "acceptance.md")
+}
+
 function Test-AcceptancePassed {
     param($State)
     if (Is-CompleteStatus (Get-Status $State "acceptance")) { return $true }
@@ -94,34 +105,53 @@ function Get-ClosureDecision {
     $commitDone = (Is-CompleteStatus (Get-Status $State "commit")) -or (Has-Artifact "commit-message.txt")
     $postDone = (Is-CompleteStatus (Get-Status $State "post_commit_self_check")) -or (Has-Artifact "post-commit-self-check.md")
     $rubricDone = (Is-CompleteStatus (Get-Status $State "rubric_score")) -or (Has-Artifact "rubric-score.md")
+    $commitRequested = Is-RequestedStatus (Get-Status $State "commit")
+    $postRequested = (Is-RequestedStatus (Get-Status $State "post_commit_self_check")) -or (Is-RequestedStatus (Get-Status $State "post-commit-self-check"))
+    $rubricRequested = (Is-RequestedStatus (Get-Status $State "rubric_score")) -or (Is-RequestedStatus (Get-Status $State "rubric-score"))
+    $completeRequested = (Is-RequestedStatus (Get-Status $State "complete-branch")) -or (Is-RequestedStatus (Get-Status $State "complete_branch"))
 
-    if (-not ($accepted -or $commitDone -or $postDone -or $rubricDone)) { return $null }
+    if (-not ($accepted -or $commitDone -or $postDone -or $rubricDone -or $commitRequested -or $postRequested -or $rubricRequested -or $completeRequested)) {
+        return $null
+    }
+
+    if (-not (Has-Artifact "validation.md")) {
+        return Set-Decision "implement" "speckit.implement" @("validation.md")
+    }
     if (-not (Has-Artifact "implementation-summary.md")) {
-        return Set-Decision "acceptance" "speckit.converge" @("implementation-summary.md")
+        return Set-Decision "implement" "speckit.implement" @("implementation-summary.md")
     }
-    if (-not (Is-CompleteStatus (Get-Status $State "retrospective"))) {
-        return Set-Decision "acceptance" "speckit.retrospective" @("workflow-record.md", "improvement-candidates.md", "knowledge-candidates.md")
+
+    if (($commitRequested -or $completeRequested) -and -not $accepted) {
+        return Set-Decision "acceptance" "human-acceptance" @() @() "Approve human acceptance before opt-in commit or branch completion."
     }
-    if (-not (Has-Artifact "workflow-observation.md")) {
-        return Set-Decision "retrospective" "speckit.workflow-observer" @("workflow-observation.md")
+    if ($commitRequested -and -not $commitDone) {
+        return Set-Decision "human-acceptance" "speckit.commit"
     }
-    if (-not $commitDone) {
-        return Set-Decision "workflow-observer" "speckit.commit"
+
+    if (($postRequested -or $rubricRequested) -and -not $commitDone) {
+        return Set-Decision "human-acceptance" "speckit.commit"
     }
-    if (-not $postDone) {
+    if ($postRequested -and -not $postDone) {
         return Set-Decision "commit" "speckit.post-commit-self-check" @("post-commit-self-check.md")
     }
-    if (-not $rubricDone) {
+    if (($rubricRequested -or $postDone) -and -not $rubricDone) {
         return Set-Decision "post-commit-self-check" "speckit.rubric-score" @("rubric-score.md")
     }
 
-    $gates = Get-Prop $State "human_gates"
-    $completeGate = Get-Prop $gates "complete-branch"
-    $completeApproved = Is-CompleteStatus ([string](Get-Prop $completeGate "status"))
-    if (-not $completeApproved) {
-        return Set-Decision "rubric-score" "speckit.complete-branch" @() @() "Approve local branch completion/cherry-pick before running complete-branch."
+    if ($completeRequested) {
+        if (-not $commitDone) {
+            return Set-Decision "human-acceptance" "speckit.commit"
+        }
+        $gates = Get-Prop $State "human_gates"
+        $completeGate = Get-Prop $gates "complete-branch"
+        $completeApproved = Is-CompleteStatus ([string](Get-Prop $completeGate "status"))
+        if (-not $completeApproved) {
+            return Set-Decision "commit" "speckit.complete-branch" @() @() "Approve local branch completion/cherry-pick before running complete-branch."
+        }
+        return Set-Decision "commit" "speckit.complete-branch"
     }
-    return Set-Decision "rubric-score" "speckit.complete-branch"
+
+    return Set-Decision "human-acceptance" ""
 }
 
 $featureJsonPath = Join-Path $RepoRoot ".specify/feature.json"
@@ -179,18 +209,16 @@ if ([string]::IsNullOrWhiteSpace($FeatureDir) -or -not (Test-Path -LiteralPath $
             $decision = Set-Decision "fact-layer" ""
         }
     } elseif ($profile -eq "micro-fix") {
-        if (-not ((Has-Artifact "micro-fix.md") -or (Has-Artifact "progress.md"))) {
-            $decision = Set-Decision "specify" "speckit.micro-fix" @("micro-fix.md or progress.md")
+        if (-not (Has-Artifact "workpack.md")) {
+            $decision = Set-Decision "intake" "speckit.plan" @("workpack.md")
         } elseif (-not (Has-Artifact "validation.md")) {
-            $decision = Set-Decision "micro-fix" "speckit.implement" @("validation.md")
+            $decision = Set-Decision "plan" "speckit.implement" @("validation.md")
         } elseif (-not (Has-Artifact "implementation-summary.md")) {
             $decision = Set-Decision "implement" "speckit.implement" @("implementation-summary.md")
-        } elseif (-not (Has-Artifact "convergence.md")) {
-            $decision = Set-Decision "implement" "speckit.converge" @("convergence.md")
-        } elseif (-not (Has-Artifact "acceptance.md")) {
-            $decision = Set-Decision "converge" "speckit.acceptance" @("acceptance.md")
+        } elseif (-not (Test-AcceptancePrepared $state)) {
+            $decision = Set-Decision "implement" "speckit.acceptance"
         } else {
-            $decision = Set-Decision "acceptance" "human-acceptance" @() @() "User acceptance must be approved before closure stages."
+            $decision = Set-Decision "acceptance" "human-acceptance" @() @() "User acceptance must be approved before optional closure stages."
         }
     } elseif ($profile -eq "standard-bugfix-lite") {
         if (-not (Has-Artifact "workpack.md")) {
@@ -199,12 +227,10 @@ if ([string]::IsNullOrWhiteSpace($FeatureDir) -or -not (Test-Path -LiteralPath $
             $decision = Set-Decision "plan" "speckit.implement" @("validation.md")
         } elseif (-not (Has-Artifact "implementation-summary.md")) {
             $decision = Set-Decision "implement" "speckit.implement" @("implementation-summary.md")
-        } elseif (-not (Has-Artifact "convergence.md")) {
-            $decision = Set-Decision "implement" "speckit.converge" @("convergence.md")
-        } elseif (-not (Has-Artifact "acceptance.md")) {
-            $decision = Set-Decision "converge" "speckit.acceptance" @("acceptance.md")
+        } elseif (-not (Test-AcceptancePrepared $state)) {
+            $decision = Set-Decision "implement" "speckit.acceptance"
         } else {
-            $decision = Set-Decision "acceptance" "human-acceptance" @() @() "User acceptance must be approved before closure stages."
+            $decision = Set-Decision "acceptance" "human-acceptance" @() @() "User acceptance must be approved before optional closure stages."
         }
     } else {
         if (-not (Has-Artifact "spec.md")) {
@@ -213,21 +239,25 @@ if ([string]::IsNullOrWhiteSpace($FeatureDir) -or -not (Test-Path -LiteralPath $
             $decision = Set-Decision "specify" "speckit.plan" @("plan.md")
         } elseif ($profile -eq "full-sdd" -and -not (Has-Artifact "tasks.md")) {
             $decision = Set-Decision "plan" "speckit.tasks" @("tasks.md")
-        } elseif ($profile -in @("standard-bugfix", "full-sdd") -and -not (Has-Artifact "analysis.md")) {
+        } elseif ($profile -eq "full-sdd" -and -not (Has-Artifact "analysis.md")) {
             $decision = Set-Decision "plan" "speckit.analyze" @("analysis.md")
         } elseif (($profile -eq "full-sdd" -or $needsChecklist) -and -not (Has-Artifact "checklists/implementation-readiness.md")) {
             $decision = Set-Decision "analyze" "speckit.checklist" @("checklists/implementation-readiness.md")
         } elseif (-not (Has-Artifact "validation.md")) {
-            $currentBeforeImplement = if ($profile -eq "full-sdd" -or $needsChecklist) { "checklist" } else { "analyze" }
+            $currentBeforeImplement = if ($profile -eq "full-sdd" -or $needsChecklist) {
+                "checklist"
+            } elseif (Has-Artifact "analysis.md") {
+                "analyze"
+            } else {
+                "plan"
+            }
             $decision = Set-Decision $currentBeforeImplement "speckit.implement" @("validation.md")
         } elseif (-not (Has-Artifact "implementation-summary.md")) {
             $decision = Set-Decision "implement" "speckit.implement" @("implementation-summary.md")
-        } elseif (-not (Has-Artifact "convergence.md")) {
-            $decision = Set-Decision "implement" "speckit.converge" @("convergence.md")
-        } elseif (-not (Has-Artifact "acceptance.md")) {
-            $decision = Set-Decision "converge" "speckit.acceptance" @("acceptance.md")
+        } elseif (-not (Test-AcceptancePrepared $state)) {
+            $decision = Set-Decision "implement" "speckit.acceptance"
         } else {
-            $decision = Set-Decision "acceptance" "human-acceptance" @() @() "User acceptance must be approved before closure stages."
+            $decision = Set-Decision "acceptance" "human-acceptance" @() @() "User acceptance must be approved before optional closure stages."
         }
     }
 }

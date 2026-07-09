@@ -1,5 +1,5 @@
 ---
-description: Generate and validate the final Spec Kit Rubric score after post-commit self-check.
+description: Generate and validate an opt-in strict/release Spec Kit Rubric score.
 scripts:
   ps: scripts/powershell/validate-rubric-score.ps1 -Json -FeatureDir <feature-dir>
   closure_ps: scripts/powershell/inspect-workflow-closure.ps1 -Json -FeatureDir <feature-dir> -Stage rubric-score
@@ -15,8 +15,8 @@ $ARGUMENTS
 
 Default context is `AGENTS.md`, `.specify/workspace.yml`,
 `.specify/memory/repository-map.md`, `.specify/feature.json` when present, and
-`ai/workflows/task-routing.md`. Read the active feature evidence only after the
-single post-commit self-check is complete.
+`ai/workflows/task-routing.md`. Read active feature evidence only when the user
+selected strict/release scoring.
 Load `ai/knowledge/*`, `ai/tools/*`, `ai/templates/*`, old `specs/*`, or
 design-history docs only when this command explicitly needs them.
 Scripts provide `facts`, `blockers`, `unknowns`, and `hints`; LLM owns semantic
@@ -30,8 +30,9 @@ stage, report `blockers` and `next_required_human_action`.
 
 ## Purpose
 
-Output the final workflow Rubric score only after post-commit self-check. The
-score is a hard gate for `speckit.complete-branch`.
+Output the final workflow Rubric score for strict/release paths. The score is a
+hard gate only when `speckit.complete-branch` or strict release scoring was
+explicitly selected.
 
 ## Scoring Rules
 
@@ -41,20 +42,19 @@ Use 0-100 for every dimension and compute the weighted total:
 | --- | ---: | --- |
 | L1 功能与需求闭合 | 0.30 | Requirements, acceptance items, user confirmation, and scoped source changes are closed. |
 | L2 验证与证据 | 0.25 | Build/test/API/E2E/CDP/log/runtime/plugin package evidence is sufficient or has true blockers. |
-| L3 工作流阶段合规 | 0.25 | Stage order, mandatory artifacts, retrospective, self-check, and final Rubric timing are compliant. |
-| L4 交付与仓库状态 | 0.10 | Commit/amend state, dirty classification, message validation, and complete-branch readiness are safe. |
+| L3 工作流阶段合规 | 0.25 | Selected stage order, required lean artifacts, optional governance choices, self-check, and Rubric timing are compliant. |
+| L4 交付与仓库状态 | 0.10 | Validation/acceptance state, optional commit/amend state, dirty classification, message validation, and complete-branch readiness are safe. |
 | L5 上下文与自动化治理 | 0.10 | Minimal context, selected knowledge/skill/gates, scripts first, and no temporary guessing. |
 
 Hard gates:
 
 - `AI Self-Acceptance = PASS`.
-- `retrospective.status = completed`.
 - API/E2E plan exists, or E2E has explicit `N/A` reason.
 - Applicable plugin changes have `.plugin` build/package evidence.
 - CDP/host/runtime gates have selected target, screenshot/DOM/log evidence, or
   true blocker.
-- Commit message validation passed.
-- Post-commit self-check completed.
+- Commit message validation passed when commit is selected.
+- Post-commit self-check completed when strict release selected it.
 
 Block `complete-branch` when:
 
@@ -69,7 +69,7 @@ Block `complete-branch` when:
 
 1. Run `inspect-workflow-closure`; if it reports a stage before
    `speckit.rubric-score`, return to `facts.next_required_stage`.
-2. Confirm post-commit self-check completed.
+2. Confirm any selected strict/release prerequisite is complete.
 2. Generate `rubric-score.md`, or write the final Rubric section into
    `validation.md`, using final commit/amend state.
 3. Run `validate-rubric-score`.
