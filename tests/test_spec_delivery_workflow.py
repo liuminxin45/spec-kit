@@ -1753,6 +1753,9 @@ def test_stage_gate_policy_blocks_full_sdd_from_skipping_analysis_and_checklist(
     assert "Write the prioritized" in analyze
     assert "FEATURE_DIR/analysis.md" in analyze
     assert "read_strategies.analyze" in analyze
+    assert "speckit.implement" in analyze
+    assert "speckit.checklist" not in analyze
+    assert "$speckit-checklist" not in analyze
     assert "implementation preflight checks this file" in " ".join(checklist.split())
     assert "validate-feature-artifacts" in implement
 

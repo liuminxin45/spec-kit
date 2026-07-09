@@ -211,7 +211,7 @@ conclusion in the chat response:
 - If no issues are found, say so and list residual risk.
 - Report in Chinese.
 - If no blocking issues remain, explicitly state the required next stage:
-  `speckit.checklist` / `$speckit-checklist`.
+  `speckit.implement` / `$speckit-implement`.
 - If blocking issues remain, ask the user to confirm whether to adjust
   spec/plan/tasks before rerunning this stage.
 - Human review prompt:
@@ -223,4 +223,4 @@ conclusion in the chat response:
   - If root cause, Root-Fix Decision Gate, tests, fallback semantics, or implementation correctness are
     uncertain, report a blocking/high finding instead of asking for approval.
   - If no blocking issues remain, continue to the auto-capable
-    `speckit.checklist` / `$speckit-checklist`.
+    `speckit.implement` / `$speckit-implement`.
