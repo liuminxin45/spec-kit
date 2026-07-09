@@ -78,8 +78,8 @@ investigation scope is bounded and whether implementation is still blocked.
    prose, or a contract/UI inventory/validation mapping is ambiguous.
 3. Load only when the first pass requires it:
    - `FEATURE_DIR/intake.md` if routing fields are incomplete.
-   - `FEATURE_DIR/review.md`, `progress.md`, or `lessons.md` when a finding or
-     resume decision depends on them.
+   - `FEATURE_DIR/review.md`, `progress.md`, or `lessons.md` only when present
+     and a finding or resume decision depends on them.
    - `.specify/memory/constitution.md` for constitution compatibility issues.
    - Optional design artifacts listed in `AVAILABLE_DOCS` only when UI/design
      traceability cannot be judged from plan sections.
@@ -159,8 +159,9 @@ investigation scope is bounded and whether implementation is still blocked.
    - Unrelated cleanup or refactor tasks.
    - Missing local spec branch completion path.
    - Missing `Implementation Slices`, 允许写入范围, 禁止范围, validation command,
-     progress.md update, or 停止条件.
-   - Missing `review.md` human navigation for generated documents.
+     workflow-state/implementation-summary update, or 停止条件.
+   - Missing `review.md` human navigation only when many generated documents
+     make review materially harder.
    - Missing `lessons.md` pitfall capture when the feature exposes reusable
      project traps.
    - Premature promotion into `.specify/memory/pitfalls.md` without user

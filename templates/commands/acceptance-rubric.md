@@ -46,19 +46,20 @@ self-acceptance.
 - Layers:
   - `L1 功能与需求闭合`: requirements, acceptance items, user confirmation, and scoped source changes.
   - `L2 验证与证据`: build/test/API/E2E/CDP/log/runtime/plugin package evidence.
-  - `L3 工作流阶段合规`: stage order, mandatory artifacts, retrospective, self-check, and final Rubric timing.
-  - `L4 交付与仓库状态`: commit/amend state, dirty classification, message validation, and complete-branch readiness.
+  - `L3 工作流阶段合规`: selected stage order, required lean artifacts, optional governance choices, and AI self-acceptance timing.
+  - `L4 交付与仓库状态`: validation/acceptance state, optional commit/amend state, dirty classification, message validation, and complete-branch readiness.
   - `L5 上下文与自动化治理`: minimal context, selected knowledge/skills/gates, scripts first, and no temporary guessing.
 - Actual workflow audit scoring:
   - L1/L2/L3/L4/L5 use weights `0.30 / 0.25 / 0.25 / 0.10 / 0.10`.
   - AI acceptance closure is a hard gate: `PASS` is required before human
     acceptance unless a true external blocker is recorded.
-  - Retrospective completion, API/E2E plan, `.plugin` package evidence when
-    applicable, CDP/runtime evidence when applicable, commit-message validation,
-    and one post-commit self-check are hard gates before complete-branch.
-  - Final Rubric scores are emitted only after post-commit self-check. Scores
-    below 90 block complete-branch; any dimension below 80 requires a blocker
-    or owner/user accepted-gap evidence.
+  - API/E2E plan, `.plugin` package evidence when applicable, and CDP/runtime
+    evidence when applicable are hard gates for the selected implementation
+    surface. Retrospective, commit-message validation, and post-commit
+    self-check are hard gates only when those opt-in stages are selected.
+  - Final Rubric scores are emitted only for strict/release paths. Scores below
+    90 block strict release/complete-branch; any dimension below 80 requires a
+    blocker or owner/user accepted-gap evidence.
 
 ## Execution Steps
 

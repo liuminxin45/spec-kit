@@ -20,7 +20,7 @@ if ($Help) {
     Write-Output "Cherry-picks local spec branch commits into the entry branch captured when the spec branch was created; -BaseBranch overrides all recorded targets."
     Write-Output "Use -DeleteBranch only when the user explicitly asks to delete the local spec branch."
     Write-Output "Use -PreflightOnly to inspect every repository without cherry-picking commits."
-    Write-Output "Requires feature closure artifacts before completion: workflow-record.md, improvement-candidates.md, knowledge-candidates.md, and workflow-observation.md."
+    Write-Output "Requires default closure artifacts before completion: implementation-summary.md and validation.md."
     Write-Output "Requires -ConfirmCompletion for the branch-state mutation path; preflight remains safe without confirmation."
     exit 0
 }
@@ -275,10 +275,10 @@ function Resolve-FeatureDirectory {
     return (Join-Path (Join-Path $RepoRoot "specs") $BranchName)
 }
 
-function Test-RetrospectiveGate {
+function Test-ClosureArtifactGate {
     param([string]$RepoRoot, [string]$BranchName)
     $featureDir = Resolve-FeatureDirectory -RepoRoot $RepoRoot -BranchName $BranchName
-    $required = @("workflow-record.md", "improvement-candidates.md", "knowledge-candidates.md", "workflow-observation.md")
+    $required = @("implementation-summary.md", "validation.md")
     $missing = @()
     foreach ($fileName in $required) {
         $path = Join-Path $featureDir $fileName
@@ -342,10 +342,10 @@ if ($KeepBranch) { $shouldKeepBranch = $true }
 
 $preflight = @()
 $errors = @()
-$retrospectiveGate = Test-RetrospectiveGate -RepoRoot $repoRoot -BranchName $Branch
+$retrospectiveGate = Test-ClosureArtifactGate -RepoRoot $repoRoot -BranchName $Branch
 if ($retrospectiveGate.status -ne "ok") {
     $missingText = $retrospectiveGate.missing -join ", "
-    $errors += "Retrospective gate failed for '$Branch': missing $missingText in $($retrospectiveGate.feature_dir). Run speckit.retrospective before complete-branch."
+    $errors += "Closure artifact gate failed for '$Branch': missing $missingText in $($retrospectiveGate.feature_dir). Run speckit.implement/validation before complete-branch."
 }
 foreach ($repo in $workspace.repositories) {
     $preferredBase = if ($explicitBaseBranch) { $BaseBranch } else { Get-RecordedCompletionBranch -FeatureConfig $featureConfigForCompletion -Repo $repo -Fallback $workspace.default_base_branch }

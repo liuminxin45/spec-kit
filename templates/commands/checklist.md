@@ -133,12 +133,14 @@ Choose only items relevant to the feature:
 - Local-only spec branch coverage and absence of remote push / GitHub issue
   workflow coupling.
 - Implementation Slices completeness: target, 允许写入范围, 禁止范围, validation
-  command or manual check, progress.md update, and 停止条件.
-- `review.md` human navigation, `progress.md` resume contract, and `lessons.md`
-  feature pitfall capture.
-- Acceptance/simplify/test-hardening/retrospective/commit/complete-branch
-  closure path, including user acceptance, 留痕, and branch completion that
-  keeps the spec branch.
+  command or manual check, workflow-state/implementation-summary update, and
+  停止条件.
+- `implementation-summary.md`, `validation.md`, and `workflow-state.json`
+  resume/closure contract; `review.md`, `progress.md`, and `lessons.md` are
+  optional.
+- Default closure path: validation evidence, implementation summary, and user
+  acceptance. Simplify/test-hardening/retrospective/commit/complete-branch are
+  opt-in or strict/release paths.
 
 ## Output Rules
 
@@ -154,8 +156,9 @@ Choose only items relevant to the feature:
 - Treat missing quality baseline for UI/UX/copy/parity work as blocking unless
   `quality-vision.md` records owner-approved `N/A`.
 - Treat missing `acceptance-rubric.md`, missing Essential/Pitfall criteria, or
-  missing AI self-acceptance contract as blocking for code-changing work.
-- Treat missing Implementation Slices or missing progress.md update contract as
+  missing AI self-acceptance contract as blocking only when a selected
+  high-risk/rubric path requires them.
+- Treat missing Implementation Slices, validation command, or stop condition as
   blocking before implementation.
 - For bugfixes, treat missing Root Cause Evidence, missing counterexample or
   blast-radius review, missing Root-Fix Decision Gate, or tasks that pre-write

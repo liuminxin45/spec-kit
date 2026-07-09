@@ -19,10 +19,9 @@ the user explicitly resumes that feature.
 
 Then read only active feature files for the selected path: use
 `implementation-summary.md` first for final actual implementation facts when
-present; lightweight fix uses `progress.md` or `micro-fix.md`; standard-lite
-work uses `workpack.md` and `progress.md`; standard work uses `spec.md`,
-`plan.md`, and `progress.md`; heavy work adds `tasks.md`, `research.md`,
-`contracts/`, or `data-model.md` only when needed; runtime/debug work adds
+present; lightweight and standard-lite fixes use `workpack.md`; standard work
+uses `plan.md` with compact slices; heavy work adds `spec.md`, `tasks.md`,
+`research.md`, `contracts/`, or `data-model.md` only when needed; runtime/debug work adds
 `fact-pack.md`, latest logs, or DevTools evidence only for unclear/repeated/runtime symptoms.
 
 ## Do Not Load By Default
@@ -111,19 +110,18 @@ This avoids stale knowledge and keeps AI coding context bounded.
   workspaces.
 - Branch completion cherry-picks back to the entry branch recorded at spec
   branch creation, keeps the local spec branch by default, and does not push.
-- Commit is automated after hard gates and deterministic preflight pass. After
-  commit, run exactly one post-commit self-check, then output final Rubric
-  scoring. Complete-branch is a local branch-state mutation: preflight may run
+- Commit is opt-in after validation and user acceptance. It does not require
+  retrospective or workflow-observer artifacts. Post-commit self-check and
+  Rubric scoring are strict/release-mode opt-in stages.
+- Complete-branch is a local branch-state mutation: preflight may run
   automatically, but cherry-pick requires explicit human approval and
-  `-ConfirmCompletion`; never run it unless `validate-rubric-score` passes.
+  `-ConfirmCompletion`.
 - Push is outside the default workflow. Prefer PR-first; any exceptional push
   requires explicit human approval and `preflight-push`.
-- Before any final response after human acceptance, commit, post-commit
-  self-check, or rubric work, run `inspect-workflow-closure`. If it reports a
-  `next_required_stage`, execute that stage instead of reporting completion.
-  Branch policy such as `local_only`, `push_remote: false`, or
-  `complete_by_cherry_picking_to_base: false` does not skip retrospective,
-  workflow-observer, post-commit self-check, or rubric-score.
+- Before final response after human acceptance, commit, strict self-check, or
+  rubric work, run `inspect-workflow-closure`. If it reports a default-stage
+  blocker, execute or report that blocker. Opt-in governance artifacts are not
+  required unless the selected path requested them.
 - Retrospective creates `knowledge-candidates.md` only as pending project
   knowledge candidates. Only human-approved candidates may be promoted into
   `ai/knowledge` with `promote-knowledge-candidates`, followed by
@@ -133,11 +131,11 @@ This avoids stale knowledge and keeps AI coding context bounded.
 
 ## Workflow Weight
 
-- `micro-fix`: minimal note/progress, code change, validation, acceptance.
+- `micro-fix`: `workpack.md`, code change, validation, acceptance.
 - `standard-bugfix-lite`: compact low/medium-risk bugfix in `workpack.md`,
   with root cause, one implementation slice, validation, and acceptance summary.
-- `standard-bugfix`: `spec.md` + `plan.md`; `plan.md` may contain executable
-  slices and replace a separate `tasks.md`.
+- `standard-bugfix`: `plan.md` may contain executable slices and replace a
+  separate `tasks.md`.
 - `full-sdd`: add `tasks.md` and extra design artifacts only for broad,
   cross-repo, public API, architecture, migration, or real-device semantics.
 - `blocked-investigation`: collect facts first; do not patch by guessing.

@@ -21,11 +21,11 @@ Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md
 
 ## Purpose
 
-Run the mandatory AI self-acceptance loop after code changes. This is a
-judgeable gate: collect evidence, score `acceptance-rubric.md`, write
-`validation.md`, and return `PASS`, `FAIL`, or `BLOCKED`. Convergence may start
-only after `PASS` or a true external blocker; human acceptance starts after
-convergence closes promised-vs-delivered gaps.
+Run the AI self-acceptance loop after code changes when `acceptance-rubric.md`
+exists or a selected high-risk gate requires it. This is a judgeable gate:
+collect evidence, score `acceptance-rubric.md`, write `validation.md`, and
+return `PASS`, `FAIL`, or `BLOCKED`. Human acceptance starts after required
+validation and implementation-summary closure are complete.
 
 ## Required Inputs
 
@@ -33,7 +33,8 @@ convergence closes promised-vs-delivered gaps.
 - `acceptance-rubric.md`
 - `quality-vision.md` for UI/UX work
 - selected gate packs from `select-gates`
-- `progress.md`, `validation.md`, `evidence.md`, and `fact-pack.md` when present
+- `validation.md`, `implementation-summary.md`, `evidence.md`, and
+  `fact-pack.md` when present
 
 ## Evidence Menu
 
@@ -71,13 +72,14 @@ surface:
    owner decision, or unavailable tool after recovery attempts.
 8. Write `validation.md` `AI Self-Acceptance` / `AI Acceptance Result` with the
    rubric row results, blockers, evidence links, and next action.
-9. Do not output final Rubric scores here. Record criteria coverage and
-   triggered pitfalls only; final L1-L5 Rubric scoring is emitted by
-   `speckit.rubric-score` after the one post-commit self-check.
+9. Do not output final strict/release Rubric scores here. Record criteria
+   coverage and triggered pitfalls only; `speckit.rubric-score` is an opt-in
+   strict/release stage.
 
 ## Loop Contract
 
-- `PASS`: continue to `speckit-converge`.
+- `PASS`: continue to `speckit.acceptance` after `implementation-summary.md`
+  and `validation.md` are current.
 - `FAIL`: return to `speckit-implement` or `speckit-fact-layer`; patch source,
   rebuild/sync when relevant, and rerun this skill.
 - `BLOCKED`: stop with concrete blocker evidence and `next_required_human_action`.
@@ -90,7 +92,7 @@ Report in Chinese:
 - Rubric failures or triggered pitfalls.
 - Evidence collected, including CDP target, screenshot directory, and logs when
   used.
-- Rubric criteria coverage and explicit note that final scoring is deferred
-  until post-commit self-check.
+- Rubric criteria coverage and explicit note that final strict/release scoring
+  is opt-in.
 - Next workflow stage.
 - `next_required_human_action` only for true blockers or human acceptance after convergence.

@@ -56,9 +56,8 @@
 
 ## Evidence Links
 
-- [progress.md](progress.md)
 - [validation.md](validation.md)
-- [convergence.md](convergence.md)
-- [acceptance.md](acceptance.md)
+- [acceptance.md](acceptance.md) when present
 - [fact-pack.md](fact-pack.md) when present
 - [evidence.md](evidence.md) when present
+- [convergence.md](convergence.md) when strict/full-sdd reconciliation was used

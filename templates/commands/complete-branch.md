@@ -2,8 +2,6 @@
 description: Preflight and complete local Spec branches by cherry-picking to the recorded entry branch while keeping the Spec branch.
 scripts:
   ps: scripts/powershell/complete-spec-branches.ps1 -Json -PreflightOnly
-  self_check_ps: scripts/powershell/post-commit-self-check.ps1 -Json -FeatureDir <feature-dir>
-  rubric_ps: scripts/powershell/validate-rubric-score.ps1 -Json -FeatureDir <feature-dir>
   closure_ps: scripts/powershell/inspect-workflow-closure.ps1 -Json -FeatureDir <feature-dir> -Stage complete-branch
 ---
 
@@ -15,134 +13,56 @@ $ARGUMENTS
 ## Context Contract
 
 Default context is `AGENTS.md`, `.specify/workspace.yml`, `.specify/memory/repository-map.md`, `.specify/feature.json` when present, and `ai/workflows/task-routing.md`.
+Load only branch completion facts, commit facts, validation summary, and implementation summary. Governance/rubric artifacts are optional strict-mode inputs, not default blockers.
 Load `ai/knowledge/*`, `ai/tools/*`, `ai/templates/*`, old `specs/*`, or design-history docs only when this command explicitly needs them.
-Scripts provide `facts`, `blockers`, `unknowns`, and `hints`; LLM owns semantic routing, root-cause judgment, validation sufficiency, and tradeoff decisions.
-Keep this command stage-specific. Do not duplicate long-term governance prose here.
+Scripts provide `facts`, `blockers`, `unknowns`, and `hints`; LLM owns semantic routing, branch risk judgment, and tradeoff decisions.
 
 ## Stage Continuation Rule
 
-Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md`; if this stage cannot execute the next required stage, report `blockers` and `next_required_human_action`.
+Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md`; if this opt-in stage cannot continue, report `blockers` and `next_required_human_action`.
 
 ## Purpose
 
-Complete the accepted local Spec branch only after commit, retrospective/留痕,
-one post-commit self-check, final Rubric gates, and explicit human approval are
-complete. This is the final local branch-state mutation. The default is:
-preflight, ask for approval, switch back to the entry branch recorded when the
-spec branch was created, cherry-pick the local spec commits there, 保留 spec
-branch, 不删除 the local Spec branch, and 不 push.
-
-## Language Rules
-
-- Human-facing summaries use Chinese-first style.
-- Preserve technical identifiers in their original form: branch names,
-  repository names, script names, commands, and commit hashes.
+Complete an accepted local Spec branch only when the user explicitly asks for branch completion and approves the exact preflight result. The default action is: preflight, ask for approval, cherry-pick local spec commits into the recorded entry branch, keep the spec branch, do not delete it, and do not push.
 
 ## Execution Steps
 
-1. Run `inspect-workflow-closure`; continue only when it returns `ok` and
-   `facts.next_required_stage` is empty.
-2. Run `post-commit-self-check` exactly once for the active feature. If it
-   produces deterministic fixes, amend the commit once and do not repeat this
-   self-check.
-3. Run `validate-rubric-score` for the active feature. The final Rubric score
-   must have been produced after the self-check, not during plan/implement/
-   acceptance. Block complete-branch when hard gates fail, total score is below
-   90, any L1-L5 score is missing, any dimension below 80 lacks blocker or
-   accepted-gap evidence, evidence paths or deduction reasons are missing, or
-   the complete-branch allow/deny conclusion is missing.
-4. Run the configured preflight-only completion script from the Spec Kit
-   repository root:
+1. Run `inspect-workflow-closure`; block only on default delivery issues such as missing implementation summary, missing validation, failing root-fix closure, or unresolved commit hook rework. Do not require retrospective, workflow-observer, post-commit self-check, or rubric unless the user selected strict governance.
+2. Run preflight:
    - PowerShell: `.specify/scripts/powershell/complete-spec-branches.ps1 -Json -PreflightOnly`
-5. Parse and show the preflight result for every affected repository:
-    - Repository path, current branch, local spec branch, dirty state, spec branch existence, cherry-pick safety, and upstream/remote tracking.
-    - Completion target branch: the recorded entry branch from `.specify/feature.json` `completion_targets`, or an explicit `-BaseBranch` override when supplied.
-    - Dirty classification: tracked source changes, generated/temp/excluded untracked entries, and unclassified untracked files.
-   - Remote divergence for the completion target branch when an upstream exists: ahead,
-     behind, or no upstream.
-    - Retrospective gate status. `workflow-record.md`, `improvement-candidates.md`, `knowledge-candidates.md`, and `workflow-observation.md` must exist; if any are missing, stop and run the closure gate's next required stage before completing the branch.
-6. If preflight reports dirty files, classify before completion:
-   - Tracked modifications, staged changes, deleted files, or untracked files
-     in repositories that still have spec commits to cherry-pick are blockers
-     unless the correct handling is clear from source evidence.
-   - Untracked files in repositories that are already up to date, have no spec
-     commits to cherry-pick, or are clearly temporary/generated/intermediate
-     local output are not blockers. Automatically pass them, record the
-     classification, and continue without manual confirmation just to ignore
-     those files.
-   - Stop only when the dirty file may be source work that belongs to this
-     feature, may be overwritten by branch switching/cherry-pick, or cannot be
-     semantically classified from repository-map, path category, git status,
-     and local evidence.
-7. If any remaining preflight item fails, stop and report the blocker. Do not
-   partially cherry-pick repositories.
-8. Ask for explicit human approval to perform the local cherry-pick branch
-   completion. Do not proceed from a previous broad approval; the approval must
-   refer to this preflight result.
-9. Complete the branch with confirmation:
+3. Show every affected repository:
+   - repository path
+   - current branch
+   - local spec branch
+   - target entry branch
+   - dirty classification
+   - cherry-pick safety
+   - remote/upstream divergence
+4. Stop on dirty tracked source changes or unclassified files that may be overwritten.
+5. Ask for explicit human approval for this preflight result.
+6. After approval, run:
    - PowerShell: `.specify/scripts/powershell/complete-spec-branches.ps1 -Json -ConfirmCompletion`
-   - Run the completion script or native git commands in a way that
-     cherry-picks the local spec branch commits into the recorded entry branch
-     across all affected repositories.
-   - Cherry-pick target is the recorded entry branch for each repository unless
-     the caller explicitly supplied `-BaseBranch`.
-   - The local spec branch is kept.
-   - The command does not delete local branches.
-   - The command does not push or create remote tracking.
-   - The command does not create merge commits.
-   - Ignore untracked temporary/generated artifacts and semantically unrelated
-     no-commit repository noise when deciding whether dirty state blocks
-     completion. Examples include cache folders, build output, installed plugin
-     artifacts, local spec-kit init output, logs, evidence/memory scratch
-     output, workbench screenshots, and host descriptor mocks. Do not ignore
-     tracked source changes or unclassified dirty files that may belong to the
-     spec branch being completed.
-   - Switch every affected repository that can be safely handled back to its
-     recorded entry branch, including repositories that are already up to date
-     or have no commits to cherry-pick.
-   - Pass or emulate keep-branch behavior so the spec branch remains available.
-   - If the packaged script only supports deletion by default, do not use the
-     deleting path; perform a safe cherry-pick sequence that preserves the
-     branch and record that choice.
-10. Verify final repository state:
-   - Current branch is the recorded entry branch in every affected repository,
-     including repositories that did not produce a new cherry-pick commit.
-   - Spec branch still exists.
-   - No remote push occurred.
-   - No remote tracking was created by this stage.
-11. Update `progress.md` with completion result when present.
+7. Verify:
+   - affected repositories are on the recorded entry branch
+   - local spec branch still exists
+   - no remote push occurred
+   - no remote tracking was created
+   - no merge commit was created
 
 ## Quality Rules
 
-- Never cherry-pick when the preflight result is missing or failing.
-- Never run before `speckit.retrospective` / 留痕 is complete for the feature.
-- Never run before the one post-commit self-check completes.
-- Never run before final Rubric score is emitted and `validate-rubric-score`
-  passes.
-- Never cherry-pick without explicit human approval for this preflight result.
-- Treat missing `workflow-record.md`, `improvement-candidates.md`,
-  `knowledge-candidates.md`, or `workflow-observation.md` as a hard completion
-  blocker, even if the user says "进入下一阶段".
+- Never cherry-pick when preflight is missing or failing.
+- Never cherry-pick without explicit approval for this preflight result.
 - Never delete the local spec branch by default.
 - Never push from this stage.
-- Do not hide unrelated dirty source work; report it and stop only if it blocks
-  a safe cherry-pick and cannot be classified as temporary/generated output.
-- If a cherry-pick conflict occurs, automatically resolve generated-artifact
-  conflicts by keeping the base artifact and continuing. For source conflicts,
-  continue resolving when the correct result is clear from spec/plan/tasks,
-  commits, or local source evidence; only ask for human intervention when the
-  semantic choice is genuinely ambiguous.
+- Ignore only clearly generated/temp/local artifacts; do not hide source work.
+- Resolve generated-artifact conflicts by keeping the base artifact when safe; source conflicts require semantic confidence or human input.
 
 ## Output
 
 Report in Chinese:
 
 - Preflight result.
-- Post-commit self-check result.
-- Rubric score and hard-gate result.
 - Cherry-pick result per repository.
-- Any ignored temporary/generated dirty entries or automatically resolved
-  artifact conflicts.
-- Confirmation that the workflow cherry-picked to the recorded entry branch, or
-  the explicit `-BaseBranch` override when one was supplied.
-- Confirmation that it did 保留 spec branch, 不删除 it, and 不 push.
+- Ignored temporary/generated dirty entries.
+- Confirmation that the workflow cherry-picked to the recorded entry branch, kept the spec branch, did not delete it, and did not push.

@@ -314,17 +314,16 @@ def test_automation_assets_are_packaged_and_declared():
     assert "implementation-summary.md" in manifest["artifact_sets"]["acceptance"]
     assert "workpack.md" in manifest["artifact_sets"]["standard-bugfix-lite-plan"]
     assert "workpack.md" in manifest["artifact_sets"]["standard-bugfix-lite-implement"]
-    assert "workpack.md" in manifest["artifact_sets"]["standard-bugfix-lite-commit"]
     assert "implementation-summary.md" in manifest["artifact_sets"]["commit"]
-    assert "workflow-record.md" in manifest["artifact_sets"]["commit"]
-    assert "improvement-candidates.md" in manifest["artifact_sets"]["commit"]
-    assert "knowledge-candidates.md" in manifest["artifact_sets"]["commit"]
-    assert "workflow-observation.md" in manifest["artifact_sets"]["commit"]
+    assert manifest["artifact_sets"]["commit"] == [
+        "implementation-summary.md",
+        "validation.md",
+        "workflow-state.json",
+    ]
     assert "implementation-summary.md" in manifest["artifact_sets"]["full-sdd-commit"]
-    assert "workflow-record.md" in manifest["artifact_sets"]["full-sdd-commit"]
-    assert "improvement-candidates.md" in manifest["artifact_sets"]["full-sdd-commit"]
-    assert "knowledge-candidates.md" in manifest["artifact_sets"]["full-sdd-commit"]
-    assert "workflow-observation.md" in manifest["artifact_sets"]["full-sdd-commit"]
+    assert "validation.md" in manifest["artifact_sets"]["full-sdd-commit"]
+    assert "workflow-state.json" in manifest["artifact_sets"]["full-sdd-commit"]
+    assert "workflow-record.md" not in manifest["artifact_sets"]["full-sdd-commit"]
     assert "improvement-candidates.md" in manifest["artifact_sets"]["retrospective"]
     assert "knowledge-candidates.md" in manifest["artifact_sets"]["retrospective"]
     assert "workflow-observer-packet.json" in manifest["artifact_sets"]["retrospective"]
@@ -412,17 +411,15 @@ def test_resolve_next_stage_routes_profiles_and_commit_closure(tmp_path):
     assert decision["next_stage"] == "speckit.implement"
     assert decision["missing_artifacts"] == ["implementation-summary.md"]
 
-    for name in ["implementation-summary.md", "convergence.md", "acceptance.md", "workflow-record.md", "improvement-candidates.md", "knowledge-candidates.md", "workflow-observation.md", "post-commit-self-check.md", "rubric-score.md"]:
+    for name in ["implementation-summary.md", "acceptance.md"]:
         (feature_dir / name).write_text(f"# {name}\n", encoding="utf-8")
     (feature_dir / "workflow-state.json").write_text(
         json.dumps(
             {
                 "workflow_model": {"delivery_profile": "standard-bugfix-lite"},
                 "acceptance": {"status": "passed"},
-                "retrospective": {"status": "completed"},
                 "commit": {"status": "completed", "commit_hash": "abc123"},
-                "post_commit_self_check": {"status": "completed"},
-                "rubric_score": {"status": "completed"},
+                "stage_statuses": {"complete-branch": "requested"},
                 "human_gates": {"complete-branch": {"status": "pending"}},
             }
         ),
@@ -443,7 +440,7 @@ def test_resolve_next_stage_keeps_micro_fix_converge_and_standard_current_stage(
         encoding="utf-8",
     )
     (micro_dir / "workflow-state.json").write_text("{}", encoding="utf-8")
-    (micro_dir / "progress.md").write_text("# Progress\n", encoding="utf-8")
+    (micro_dir / "workpack.md").write_text("# Workpack\n", encoding="utf-8")
     (micro_dir / "validation.md").write_text("# Validation\n", encoding="utf-8")
 
     decision = run_ps("resolve-next-stage", "-RepoRoot", str(tmp_path), "-FeatureDir", str(micro_dir))
@@ -454,8 +451,8 @@ def test_resolve_next_stage_keeps_micro_fix_converge_and_standard_current_stage(
     (micro_dir / "implementation-summary.md").write_text("# Implementation Summary\n", encoding="utf-8")
     decision = run_ps("resolve-next-stage", "-RepoRoot", str(tmp_path), "-FeatureDir", str(micro_dir))
     assert decision["current_stage"] == "implement"
-    assert decision["next_stage"] == "speckit.converge"
-    assert decision["missing_artifacts"] == ["convergence.md"]
+    assert decision["next_stage"] == "speckit.acceptance"
+    assert decision["missing_artifacts"] == []
 
     standard_dir = tmp_path / "specs" / "002-standard"
     standard_dir.mkdir(parents=True)
@@ -2963,7 +2960,7 @@ def test_post_commit_self_check_uses_workflow_state_bugfix_routing(tmp_path):
     assert "root fix cannot be claimed" in "\n".join(check["blockers"])
 
 
-def test_workflow_closure_blocks_after_acceptance_without_retrospective(tmp_path):
+def test_workflow_closure_blocks_after_acceptance_without_validation(tmp_path):
     feature_dir = tmp_path / "specs" / "001-demo"
     feature_dir.mkdir(parents=True)
     write_valid_implementation_summary(feature_dir)
@@ -2984,7 +2981,8 @@ def test_workflow_closure_blocks_after_acceptance_without_retrospective(tmp_path
     assert_standard_shape(output, "inspect-workflow-closure")
     assert output["status"] == "blocked"
     assert output["facts"]["acceptance_status"] == "passed"
-    assert output["facts"]["next_required_stage"] == "speckit.retrospective"
+    assert output["facts"]["next_required_stage"] == "speckit.implement"
+    assert "validation.md" in "\n".join(output["blockers"])
 
 
 def test_workflow_closure_blocks_missing_implementation_summary(tmp_path):
@@ -3005,7 +3003,7 @@ def test_workflow_closure_blocks_missing_implementation_summary(tmp_path):
     output = run_ps("inspect-workflow-closure", "-RepoRoot", str(tmp_path), "-FeatureDir", str(feature_dir))
 
     assert output["status"] == "blocked"
-    assert output["facts"]["next_required_stage"] == "speckit.converge"
+    assert output["facts"]["next_required_stage"] == "speckit.implement"
     assert "implementation-summary.md" in "\n".join(output["blockers"])
 
 
@@ -3013,6 +3011,7 @@ def test_workflow_closure_blocks_root_fix_mislabel(tmp_path):
     feature_dir = tmp_path / "specs" / "001-demo"
     feature_dir.mkdir(parents=True)
     write_valid_implementation_summary(feature_dir, fix_type="root fix", eliminated="partial")
+    (feature_dir / "validation.md").write_text("# Validation\n", encoding="utf-8")
     (feature_dir / "acceptance.md").write_text("人工验收通过\n", encoding="utf-8")
     (feature_dir / "workflow-state.json").write_text(
         json.dumps(
@@ -3028,12 +3027,12 @@ def test_workflow_closure_blocks_root_fix_mislabel(tmp_path):
     output = run_ps("inspect-workflow-closure", "-RepoRoot", str(tmp_path), "-FeatureDir", str(feature_dir))
 
     assert output["status"] == "blocked"
-    assert output["facts"]["next_required_stage"] == "speckit.converge"
+    assert output["facts"]["next_required_stage"] == "speckit.implement"
     assert output["facts"]["root_fix_decision_gate"]["gate_status"] == "blocked"
     assert "root fix cannot be claimed" in "\n".join(output["blockers"])
 
 
-def test_workflow_closure_blocks_after_commit_without_self_check(tmp_path):
+def test_workflow_closure_does_not_require_self_check_after_commit(tmp_path):
     feature_dir = tmp_path / "specs" / "001-demo"
     feature_dir.mkdir(parents=True)
     for name in [
@@ -3045,6 +3044,7 @@ def test_workflow_closure_blocks_after_commit_without_self_check(tmp_path):
     ]:
         (feature_dir / name).write_text(f"# {name}\n", encoding="utf-8")
     write_valid_implementation_summary(feature_dir)
+    (feature_dir / "validation.md").write_text("# Validation\n", encoding="utf-8")
     (feature_dir / "workflow-state.json").write_text(
         json.dumps(
             {
@@ -3064,9 +3064,9 @@ def test_workflow_closure_blocks_after_commit_without_self_check(tmp_path):
 
     output = run_ps("inspect-workflow-closure", "-RepoRoot", str(tmp_path), "-FeatureDir", str(feature_dir))
 
-    assert output["status"] == "blocked"
+    assert output["status"] == "ok"
     assert output["facts"]["commit_detected"] is True
-    assert output["facts"]["next_required_stage"] == "speckit.post-commit-self-check"
+    assert output["facts"]["next_required_stage"] == ""
 
 
 def test_post_commit_self_check_runs_missing_commit_after_hook(tmp_path):
@@ -3173,6 +3173,7 @@ def test_workflow_closure_blocks_missing_commit_after_hook_result(tmp_path):
     feature_dir = tmp_path / "specs" / "001-demo"
     feature_dir.mkdir(parents=True)
     for name in [
+        "validation.md",
         "acceptance.md",
         "workflow-record.md",
         "improvement-candidates.md",
@@ -3207,13 +3208,14 @@ def test_workflow_closure_blocks_missing_commit_after_hook_result(tmp_path):
     assert gate["required"] is True
     assert gate["gate_status"] == "blocked"
     assert gate["summary"] == "required workflow hook has no recorded result"
-    assert output["facts"]["next_required_stage"] == "speckit.post-commit-self-check"
+    assert output["facts"]["next_required_stage"] == "speckit.commit"
 
 
-def test_workflow_closure_blocks_self_check_without_rubric(tmp_path):
+def test_workflow_closure_does_not_require_rubric_after_self_check(tmp_path):
     feature_dir = tmp_path / "specs" / "001-demo"
     feature_dir.mkdir(parents=True)
     for name in [
+        "validation.md",
         "acceptance.md",
         "workflow-record.md",
         "improvement-candidates.md",
@@ -3243,12 +3245,12 @@ def test_workflow_closure_blocks_self_check_without_rubric(tmp_path):
 
     output = run_ps("inspect-workflow-closure", "-RepoRoot", str(tmp_path), "-FeatureDir", str(feature_dir))
 
-    assert output["status"] == "blocked"
+    assert output["status"] == "ok"
     assert output["facts"]["post_commit_self_check_status"] == "completed"
-    assert output["facts"]["next_required_stage"] == "speckit.rubric-score"
+    assert output["facts"]["next_required_stage"] == ""
 
 
-def test_local_branch_policy_does_not_skip_retrospective_or_rubric(tmp_path):
+def test_local_branch_policy_does_not_create_default_governance_requirement(tmp_path):
     (tmp_path / ".specify").mkdir()
     (tmp_path / ".specify" / "workspace.yml").write_text(
         "local_only: true\npush_remote: false\ncomplete_by_cherry_picking_to_base: false\n",
@@ -3257,6 +3259,7 @@ def test_local_branch_policy_does_not_skip_retrospective_or_rubric(tmp_path):
     feature_dir = tmp_path / "specs" / "001-demo"
     feature_dir.mkdir(parents=True)
     write_valid_implementation_summary(feature_dir)
+    (feature_dir / "validation.md").write_text("# Validation\n", encoding="utf-8")
     (feature_dir / "acceptance.md").write_text("人工验收通过\n", encoding="utf-8")
     (feature_dir / "workflow-state.json").write_text(
         json.dumps(
@@ -3271,11 +3274,11 @@ def test_local_branch_policy_does_not_skip_retrospective_or_rubric(tmp_path):
 
     output = run_ps("inspect-workflow-closure", "-RepoRoot", str(tmp_path), "-FeatureDir", str(feature_dir))
 
-    assert output["status"] == "blocked"
+    assert output["status"] == "ok"
     assert output["facts"]["branch_policy"]["local_only"] is True
     assert output["facts"]["branch_policy"]["push_remote"] is False
     assert output["facts"]["branch_policy"]["closure_exemption"] is False
-    assert output["facts"]["next_required_stage"] == "speckit.retrospective"
+    assert output["facts"]["next_required_stage"] == ""
 
 
 def test_workflow_observer_packet_is_context_bounded(tmp_path):
@@ -4148,10 +4151,7 @@ def test_validate_feature_artifacts_blocks_missing_commit_stage_files(tmp_path):
         "implementation-summary.md",
         "tasks.md",
         "validation.md",
-        "acceptance.md",
         "workflow-state.json",
-        "workflow-record.md",
-        "improvement-candidates.md",
     ]:
         assert missing in blocker_text
     assert output["facts"]["required_source"] == "layer-manifest.yml"
@@ -4702,7 +4702,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         "stale/current-feature hint\nread the current plan only\n"
         "standard-bugfix-lite\nworkpack.md\npreflight-new-workflow\npreflight-push\n"
         "select-knowledge\nselect-gates\nvalidate-knowledge-index\nvalidate-context-budget\n"
-        "inspect-validation-capabilities\ninspect-workflow-closure\nknowledge-candidates.md\n",
+        "inspect-validation-capabilities\ninspect-workflow-closure\nCommit is opt-in\n",
         encoding="utf-8",
     )
     (repo / ".specify" / "memory" / "repository-map.md").write_text(
@@ -4738,7 +4738,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         "validate-context-budget\nselect-knowledge\nselect-gates\nskill-routing.yml\nartifact_sections\n"
         "Stage Continuation\nNew Workflow Start\npreflight-new-workflow\nWorkflow Hooks\nspecify workflow invoke-hooks\nworkflow-agent-chain\nauto_continue=true\n"
         "Final Response Guard\ninspect-workflow-closure\n"
-        "workflow-observer\npromote-candidates\ninspect-host-cdp-target\n"
+        "not default artifacts\nOpt-in\nworkflow-observer\npromote-candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
         "capture-cdp-screenshot\n"
         "do not apply stale feature risk flags\n",
@@ -4755,17 +4755,14 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         "Generated Context Drift\nstandard-bugfix-lite\nworkpack.md\nimplementation-summary.md\nRoot-Fix Decision Gate\nresolve-next-stage\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
         "Stage Continuation Contract\npreflight-new-workflow\nWorkflow hooks are dispatched through the unified engine entry\nspecify workflow invoke-hooks\nworkflow-agent-chain\nHost Frontend Delivery Chain\n"
         "ensure-host-cdp\n"
-        "Retrospective/留痕 is mandatory before commit\n"
-        "inspect-workflow-closure\nknowledge-candidates.md\npreflight-push\n",
+        "Commit is opt-in\ninspect-workflow-closure\nopt-in governance\npreflight-push\n",
         encoding="utf-8",
     )
     (repo / "spec-kit" / "workflows" / "speckit" / "workflow.yml").write_text(
-        "id: new-workflow-preflight\npreflight-new-workflow\nid: retrospective\nid: workflow-observer\nid: commit\nstandard-bugfix-lite\nrequires_confirmation: true\nRequire workflow-record.md\nimplementation-summary.md\nroot_fix_decision_gate\n"
-        "knowledge-candidates.md\nworkflow-observation.md\n"
-        "automatic_stage_continuation\ndeterministic_next_stage\nworkflow_hooks\nspecify workflow invoke-hooks\nworkflow-agent-chain\n.specify/workflow-hooks.yml\npost_human_acceptance_closure\n"
-        "promote_knowledge_candidates\ninspect-host-cdp-target\n"
+        "id: new-workflow-preflight\npreflight-new-workflow\nid: implement\nid: acceptance\nstandard-bugfix-lite\nconditional_stages:\ncommit: \"Opt-in\ncomplete-branch: \"Opt-in\nimplementation-summary.md\nRoot-Fix Decision Gate\n"
+        "automatic_stage_continuation\ndeterministic_next_stage\nworkflow_hooks\nspecify workflow invoke-hooks\nworkflow-agent-chain\n.specify/workflow-hooks.yml\nfinal_response_guard\n"
+        "inspect-host-cdp-target\n"
         "ensure-host-cdp\n"
-        "capture-cdp-screenshot\n"
         "validate-knowledge-index\nvalidate-context-budget\nselect-gates\ncurrent-feature state only\n",
         encoding="utf-8",
     )
@@ -4781,12 +4778,12 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-commit" / "SKILL.md").write_text(
-        "validate-feature-artifacts\nStage commit\nworkflow-record.md\nimplementation-summary.md\nRoot-Fix Decision Gate\n"
-        "improvement-candidates.md\nretrospective.status\n",
+        "validate-feature-artifacts\nStage commit\nimplementation-summary.md\nvalidation.md\nRoot-Fix Decision Gate\n"
+        "Retrospective/observer/promotion artifacts are optional\n",
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-implement" / "SKILL.md").write_text(
-        "ensure-host-cdp\nCDP host recovery ladder\nmanual acceptance\nselect-gates\n",
+        "ensure-host-cdp\nreal product target\nHuman acceptance\nselect-gates\n",
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-retrospective" / "SKILL.md").write_text(
@@ -4795,8 +4792,8 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-tasks" / "SKILL.md").write_text(
-        "Run mandatory `speckit.retrospective` / 留痕 after quick acceptance and before commit\n"
-        "optional test-hardening, retrospective/留痕\n",
+        "Do not create tasks.md for micro-fix\nDo not add default tasks for acceptance checklist\n"
+        "workflow-state.json\nprogress.md is not required by default\n",
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-test-plan").mkdir(parents=True)
@@ -4896,7 +4893,7 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         "stale/current-feature hint\nread the current plan only\n"
         "standard-bugfix-lite\nworkpack.md\npreflight-new-workflow\npreflight-push\n"
         "select-knowledge\nselect-gates\nvalidate-knowledge-index\nvalidate-context-budget\n"
-        "inspect-validation-capabilities\ninspect-workflow-closure\nknowledge-candidates.md\n",
+        "inspect-validation-capabilities\ninspect-workflow-closure\nCommit is opt-in\n",
         encoding="utf-8",
     )
     (repo / ".specify" / "memory" / "repository-map.md").write_text(
@@ -4924,7 +4921,7 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         "validate-context-budget\nselect-knowledge\nselect-gates\nskill-routing.yml\nartifact_sections\n"
         "Stage Continuation\nNew Workflow Start\npreflight-new-workflow\nWorkflow Hooks\nspecify workflow invoke-hooks\nworkflow-agent-chain\nauto_continue=true\n"
         "Final Response Guard\ninspect-workflow-closure\n"
-        "workflow-observer\npromote-candidates\ninspect-host-cdp-target\n"
+        "not default artifacts\nOpt-in\nworkflow-observer\npromote-candidates\ninspect-host-cdp-target\n"
         "ensure-host-cdp\n"
         "capture-cdp-screenshot\n"
         "do not apply stale feature risk flags\n",
@@ -4941,17 +4938,14 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         "Generated Context Drift\nstandard-bugfix-lite\nworkpack.md\nimplementation-summary.md\nRoot-Fix Decision Gate\nresolve-next-stage\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
         "Stage Continuation Contract\npreflight-new-workflow\nWorkflow hooks are dispatched through the unified engine entry\nspecify workflow invoke-hooks\nworkflow-agent-chain\nHost Frontend Delivery Chain\n"
         "ensure-host-cdp\n"
-        "Retrospective/留痕 is mandatory before commit\n"
-        "inspect-workflow-closure\nknowledge-candidates.md\npreflight-push\n",
+        "Commit is opt-in\ninspect-workflow-closure\nopt-in governance\npreflight-push\n",
         encoding="utf-8",
     )
     (repo / "spec-kit" / "workflows" / "speckit" / "workflow.yml").write_text(
-        "id: new-workflow-preflight\npreflight-new-workflow\nid: retrospective\nid: workflow-observer\nid: commit\nstandard-bugfix-lite\nrequires_confirmation: true\nRequire workflow-record.md\nimplementation-summary.md\nroot_fix_decision_gate\n"
-        "knowledge-candidates.md\nworkflow-observation.md\n"
-        "automatic_stage_continuation\ndeterministic_next_stage\nworkflow_hooks\nspecify workflow invoke-hooks\nworkflow-agent-chain\n.specify/workflow-hooks.yml\npost_human_acceptance_closure\n"
-        "promote_knowledge_candidates\ninspect-host-cdp-target\n"
+        "id: new-workflow-preflight\npreflight-new-workflow\nid: implement\nid: acceptance\nstandard-bugfix-lite\nconditional_stages:\ncommit: \"Opt-in\ncomplete-branch: \"Opt-in\nimplementation-summary.md\nRoot-Fix Decision Gate\n"
+        "automatic_stage_continuation\ndeterministic_next_stage\nworkflow_hooks\nspecify workflow invoke-hooks\nworkflow-agent-chain\n.specify/workflow-hooks.yml\nfinal_response_guard\n"
+        "inspect-host-cdp-target\n"
         "ensure-host-cdp\n"
-        "capture-cdp-screenshot\n"
         "validate-knowledge-index\nvalidate-context-budget\nselect-gates\ncurrent-feature state only\n",
         encoding="utf-8",
     )
@@ -4967,12 +4961,12 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-commit" / "SKILL.md").write_text(
-        "validate-feature-artifacts\nStage commit\nworkflow-record.md\nimplementation-summary.md\nRoot-Fix Decision Gate\n"
-        "improvement-candidates.md\nretrospective.status\n",
+        "validate-feature-artifacts\nStage commit\nimplementation-summary.md\nvalidation.md\nRoot-Fix Decision Gate\n"
+        "Retrospective/observer/promotion artifacts are optional\n",
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-implement" / "SKILL.md").write_text(
-        "ensure-host-cdp\nCDP host recovery ladder\nmanual acceptance\nselect-gates\n",
+        "ensure-host-cdp\nreal product target\nHuman acceptance\nselect-gates\n",
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-retrospective" / "SKILL.md").write_text(
@@ -4981,8 +4975,8 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-tasks" / "SKILL.md").write_text(
-        "Run mandatory `speckit.retrospective` / 留痕 after quick acceptance and before commit\n"
-        "optional test-hardening, retrospective/留痕\n",
+        "Do not create tasks.md for micro-fix\nDo not add default tasks for acceptance checklist\n"
+        "workflow-state.json\nprogress.md is not required by default\n",
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-test-plan" / "SKILL.md").write_text(
@@ -5082,6 +5076,8 @@ def test_validate_feature_artifacts_blocks_missing_layer_sections(tmp_path):
         str(feature_dir),
         "-Stage",
         "implement",
+        "-DeliveryProfile",
+        "standard-bugfix",
     )
 
     assert output["status"] == "blocked"
@@ -5089,7 +5085,7 @@ def test_validate_feature_artifacts_blocks_missing_layer_sections(tmp_path):
     assert output["facts"]["missing_sections"][0]["file"] == "plan.md"
 
 
-def test_validate_feature_artifacts_blocks_commit_without_retrospective(tmp_path):
+def test_validate_feature_artifacts_blocks_commit_without_summary_state(tmp_path):
     feature_dir = tmp_path / "specs" / "001-demo"
     feature_dir.mkdir(parents=True)
     (feature_dir / "spec.md").write_text(
@@ -5145,27 +5141,10 @@ def test_validate_feature_artifacts_blocks_commit_without_retrospective(tmp_path
 
     assert blocked["status"] == "blocked"
     blocker_text = "\n".join(blocked["blockers"])
-    assert "workflow-record.md" in blocker_text
-    assert "improvement-candidates.md" in blocker_text
     assert "workflow-state.json missing implementation_summary state before commit" in blocker_text
-    assert "retrospective.status must be completed before commit" in blocker_text
-    assert blocked["facts"]["retrospective_gate"]["gate_status"] == "blocked"
     assert blocked["facts"]["implementation_summary_gate"]["gate_status"] == "blocked"
-    assert blocked["facts"]["retrospective_gate"]["status"] == ""
-
-    (feature_dir / "workflow-record.md").write_text("# Workflow Record\n", encoding="utf-8")
-    (feature_dir / "improvement-candidates.md").write_text("# Improvement Candidates\n", encoding="utf-8")
-    (feature_dir / "knowledge-candidates.md").write_text("# Knowledge Candidates\nstatus: no-candidates\n", encoding="utf-8")
-    (feature_dir / "workflow-observation.md").write_text("# Workflow Observation\n", encoding="utf-8")
-    still_blocked = run_ps(
-        "validate-feature-artifacts",
-        "-FeatureDir",
-        str(feature_dir),
-        "-Stage",
-        "commit",
-    )
-    assert still_blocked["status"] == "blocked"
-    assert "retrospective.status must be completed before commit" in "\n".join(still_blocked["blockers"])
+    assert blocked["facts"]["retrospective_gate"]["gate_status"] == "opt_in"
+    assert blocked["facts"]["retrospective_gate"]["status"] == "not_required"
 
     (feature_dir / "workflow-state.json").write_text(
         json.dumps(
@@ -5178,13 +5157,7 @@ def test_validate_feature_artifacts_blocks_commit_without_retrospective(tmp_path
                     "status": "completed",
                     "artifact": "implementation-summary.md",
                 },
-                "retrospective": {
-                    "status": "completed",
-                    "workflow_record": "workflow-record.md",
-                    "improvement_candidates": "improvement-candidates.md",
-                    "knowledge_candidates": "knowledge-candidates.md",
-                    "workflow_observation": "workflow-observation.md",
-                },
+                "retrospective": {},
                 "promotion": {},
                 "stage_statuses": {},
                 "human_gates": {},
@@ -5202,8 +5175,8 @@ def test_validate_feature_artifacts_blocks_commit_without_retrospective(tmp_path
         "commit",
     )
     assert ok["status"] == "ok"
-    assert ok["facts"]["retrospective_gate"]["gate_status"] == "ok"
-    assert ok["facts"]["retrospective_gate"]["status"] == "completed"
+    assert ok["facts"]["retrospective_gate"]["gate_status"] == "opt_in"
+    assert ok["facts"]["retrospective_gate"]["status"] == "not_required"
 
 
 def test_suggest_validation_emits_candidates_without_sufficiency_claim(tmp_path):
@@ -5226,7 +5199,7 @@ def test_suggest_validation_emits_candidates_without_sufficiency_claim(tmp_path)
     assert "pytest" in commands
     assert "cmake --build <build-dir>" in commands
     assert all("sufficient" not in json.dumps(hint).lower() for hint in output["hints"])
-    assert output["facts"]["validation_artifacts"] == ["validation.md", "acceptance.md"]
+    assert output["facts"]["validation_artifacts"] == ["validation.md"]
     assert output["facts"]["optional_evidence_artifacts"] == [
         "evidence.md",
         "fact-pack.md",

@@ -62,8 +62,7 @@ def test_manifest_declares_lean_architecture_buckets():
     assert "templates/commands/complete-branch.md" in layers["Evidence"]["source_assets"]
 
     assert manifest["artifact_sets"]["implement"] == [
-        "spec.md",
-        "plan.md",
+        "workpack.md",
         "workflow-state.json",
     ]
     assert manifest["artifact_sets"]["full-sdd-implement"] == [
@@ -112,9 +111,9 @@ def test_agents_template_uses_minimal_default_context():
 
     assert "Layered SDD model" not in agents_template
     assert "ai/skills/code-review.skill.md" not in agents_template
-    assert "route by matching user text keywords alone" in task_routing
+    assert "do not route by keyword matching alone" in task_routing
     assert "Hard Upgrade Gates" in task_routing
-    assert "Context Budget" in task_routing
+    assert "Delivery Rules" in task_routing
     assert "select-gates" in task_routing
     assert "validate-context-budget" in task_routing
     assert "skill-routing.yml" in task_routing
@@ -198,7 +197,7 @@ def test_validation_templates_are_minimal_and_installed(tmp_path):
     assert not (SPEC_KIT_ROOT / "templates/ai/templates/knowledge-entry-template.md").exists()
     assert not (SPEC_KIT_ROOT / "templates/ai/templates/skill-template.md").exists()
 
-    assert manifest["artifact_sets"]["validation"] == ["validation.md", "acceptance.md"]
+    assert manifest["artifact_sets"]["validation"] == ["validation.md"]
     assert manifest["artifact_sets"]["validation-only"] == ["validation.md"]
     assert "implementation-summary.md" in manifest["artifact_sets"]["converge"]
     assert "Evidence Index" in manifest["artifact_sections"]["evidence.md"]

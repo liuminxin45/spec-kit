@@ -95,10 +95,11 @@ work also writes into this file instead of creating a separate report.
 - Remaining blocker, if any:
 - Human acceptance may start:
 
-## 10. Final Rubric Score (post-commit self-check only)
+## 10. Final Rubric Score (strict/release only)
 
-Do not fill this section before `post-commit-self-check` completes. The final
-Rubric may also be written to `rubric-score.md`; if so, link it here.
+Do not fill this section for normal lean delivery. Use it only when the user
+selected strict/release scoring, `speckit.rubric-score`, or branch completion.
+The final Rubric may also be written to `rubric-score.md`; if so, link it here.
 
 | Dimension | Weight | Score / Status | Evidence | Deduction Notes |
 | --- | --- | --- | --- | --- |
@@ -123,8 +124,8 @@ Rubric may also be written to `rubric-score.md`; if so, link it here.
 - Keep raw command output and tool facts in `evidence.md` when they are lengthy.
 - For host-embedded frontend plugin edits, record source edit -> frontend build
   -> direct runtime replacement -> real host CDP verification before asking for
-  human acceptance, then record final `.plugin` package evidence before commit
-  and complete-branch.
+  human acceptance. Record final `.plugin` package evidence before strict
+  release, package delivery, or complete-branch.
 - For host CDP validation, record `/json/list` page targets and
   the selected target id/title/url. Mark Plugin Workbench, `base-win.html`,
   `devtools://`, blank, or unrelated product UI evidence as
@@ -138,4 +139,4 @@ Rubric may also be written to `rubric-score.md`; if so, link it here.
 - For native bridge/proto changes, validate required generated bundle messages
   and fields before using frontend/UI behavior as final evidence.
 - AI self-acceptance records criteria coverage only. Final Rubric score output
-  is a post-commit hard gate and is invalid before the one self-check completes.
+  is strict/release opt-in and is not required for normal lean delivery.
