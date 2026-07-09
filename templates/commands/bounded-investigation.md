@@ -32,13 +32,13 @@ implement product-code fixes by default.
 ## UI Runtime Investigation Triggers
 
 Use a bounded UI runtime investigation before another implementation patch when
-frontend parity or host-embedded UI work has any of these symptoms and the owner
+frontend parity or embedded UI work has any of these symptoms and the owner
 chain is not already proven:
 
 - Clipping, blank area, unexpected compression, overflow, or scrollbars changing
   sibling/header/footer sizes.
-- UI works in a plugin preview but fails in the real host route/page.
-- Static design or Qt source is known, but runtime parent containers, flex/grid
+- UI works in an isolated preview but fails in the real embedded route/page.
+- Static design or source behavior is known, but runtime parent containers, flex/grid
   grow-shrink, overflow, fixed dimensions, or scroll owner are unknown.
 - A first CSS/layout patch did not change the observed result.
 
@@ -54,21 +54,21 @@ Create or update `FEATURE_DIR/investigation.md` with:
 - **Stop conditions**:
   - Evidence found.
   - Scope expands beyond affected repo/module.
-  - Real-device/API/cross-layer risk appears.
+   - External-system/API/cross-layer risk appears.
   - Search would require whole-workspace scan.
   - Validation condition is unavailable.
 - **Evidence collected**.
 - **UI runtime evidence**, when applicable:
   - Runtime DOM / computed style / box metrics summary.
-  - Real route/page and host plugin chain.
-  - DOM ancestry from host container to target element.
+   - Real route/page and embedding chain.
+   - DOM ancestry from embedded container to target element.
   - Computed style and box metrics for target, siblings, and scroll owner.
   - `height`/`min-height`/`max-height`, `padding`/`margin`, `overflow`,
     `position`, `display`, `flex`/`grid`, `flex-shrink`, `flex-grow`, and
     scrollbar reservation behavior.
   - Screenshots or inspector evidence for normal, hover, selected, disabled,
     expanded/collapsed, many-item, and scrollbar appear/disappear states.
-  - Which repository/plugin owns each container that must change.
+   - Which repository/module owns each container that must change.
 - **Routing decision**: micro-fix, standard-bugfix-lite, standard-bugfix,
   full-sdd, validation-only, or still blocked.
 

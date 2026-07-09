@@ -1,7 +1,7 @@
 ---
 description: Prepare and create confirmed local commits with the commit-message rules.
 scripts:
-  ps: scripts/powershell/check-prerequisites.ps1 -Json -IncludeTasks
+  ps: scripts/powershell/check-prerequisites.ps1 -Json -Stage commit -IncludeTasks
   preflight_ps: scripts/powershell/validate-feature-artifacts.ps1 -Json -Stage commit -FeatureDir <feature-dir>
   validate_message_ps: scripts/powershell/validate-commit-message.ps1 -Json -MessageFile <message-file>
 ---
@@ -64,7 +64,7 @@ Create local commits after implementation validation and user acceptance. This s
 
 ## Quality Rules
 
-- Do not commit generated build output, temp files, local logs, caches, installed runtime plugin directories, or host-served runtime artifacts.
+- Do not commit generated build output, temp files, local logs, caches, installed runtime directories, served runtime artifacts, or generated deployment outputs.
 - If unrelated dirty work exists, leave it unstaged and call it out.
 - If the commit-message skill or validator is unavailable, stop.
 - A commit hash is successful only after the post-commit message validates.

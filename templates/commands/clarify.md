@@ -45,16 +45,16 @@ rollout risk.
 4. Build an ambiguity list across these categories:
    - Capability scope and out-of-scope boundaries.
    - Affected modules and ownership.
-   - Public interfaces, SDK headers, plugin contracts, or serialized fields.
-   - Runtime state, device state, permissions, handles, and cache behavior.
+   - Public interfaces, SDK/API headers, integration contracts, or serialized fields.
+   - Runtime state, external-system state, permissions, handles, and cache behavior.
    - Encoding, localization, or frontend display boundaries.
-   - Validation target: build, smoke, real device, virtual device, UI flow, or
+   - Validation target: build, smoke, target environment, simulation, UI flow, or
      manual review.
    - Test-case plan: required API tests, E2E/interface tests, regression
      tests, fixture/smoke updates, or explicit N/A reasons.
    - UI parity runtime inputs when frontend visual parity is involved:
-     design/mockup files, Qt/source reference files, screenshots, dynamic
-     states, geometry constraints, host embedding boundary, and runtime
+      design/mockup files, source behavior references, screenshots, dynamic
+      states, geometry constraints, embedding boundary, and runtime
      evidence source.
    - Compatibility, migration, rollback, and downstream effects.
 
@@ -76,10 +76,10 @@ rollout risk.
    - Ask one question at a time if the answer may change later questions.
    - Do not ask about trivial wording or implementation preferences.
 
-7. For UI parity, frontend plugin visual work, or host-embedded UI fixes,
+7. For UI parity, frontend visual work, or embedded UI fixes,
    clarify or record explicit assumptions for:
-   - Static references: design files, Qt `.ui` / delegate / qss / source
-     files, screenshots, and target frontend/plugin path.
+   - Static references: design files, source files, screenshots, and target
+     frontend/UI path.
    - UI/UX/copy evidence: exact source for every changed icon, tooltip,
      label, menu text, button, visible state, style, and layout rule. Missing
      source for visible UI is a high-impact clarification item, not a trivial
@@ -89,23 +89,23 @@ rollout risk.
    - Geometry constraints: fixed sizes, padding/margin, line height, sibling
      containers, parent ownership, scroll owner, overflow, flex/grid
      grow/shrink, and clipping/compression boundaries.
-   - Host integration: the real runtime route/page, embedding parent plugin,
-     affected sibling plugins, and whether validation must run in a host page
-     instead of a single plugin preview.
+   - Runtime integration: the real runtime route/page, embedding parent
+     surface, affected sibling surfaces, and whether validation must run in the
+     embedded target instead of an isolated preview.
    - Acceptance evidence: screenshots plus runtime DOM / computed style / box
      metrics when available. If such evidence cannot be collected by the agent,
      require the acceptance checklist to request it explicitly.
 
 8. When changed behavior needs API, E2E/interface, regression, fixture, smoke,
-   UI, or device test planning, load `speckit-test-plan` via
+   UI, or external-system test planning, load `speckit-test-plan` via
    `ai/workflows/skill-routing.yml`.
    - If the test-case mapping is obvious, record the drafted plan and continue.
-   - If choices affect public contracts, device coverage, fixtures, test cost,
+   - If choices affect public contracts, external-system coverage, fixtures, test cost,
      or accepted gaps, stop for human review before planning/implementation.
 
 9. For UI/UX/copy/parity work, load `speckit-quality-vision` via
    `ai/workflows/skill-routing.yml` before planning.
-   - Require baseline screenshot/design/Qt source or owner-approved `N/A`.
+   - Require baseline screenshot/design/source behavior or owner-approved `N/A`.
    - If baseline choice affects quality expectations, stop for human review.
 
 10. Update `spec.md`.

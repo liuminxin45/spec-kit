@@ -55,8 +55,7 @@ Optionally configure the Codex stdio MCP server during init:
   -ConfigureMcpAgent `
   -McpServerId chrome-devtools `
   -McpCommand npm `
-  -McpChromeMode electron-slim `
-  -McpBrowserUrl http://127.0.0.1:9222
+  -McpChromeMode browser-slim
 ```
 
 Default init does not write MCP config. When `-ConfigureMcpAgent` is supplied,
@@ -69,23 +68,22 @@ start it through native process launchers.
 
 Chrome DevTools MCP modes:
 
-- `electron-slim` (default): connect to the host application Electron remote
-  debugging endpoint and enable the MCP server's slim toolset. This avoids
-  initialization paths that can time out on Electron targets while still
+- `browser-slim` (default): use the MCP server's slim toolset; attach to a
+  browser/runtime endpoint only when `-McpBrowserUrl` is supplied. This avoids
+  initialization paths that can time out on runtime targets while still
   allowing page listing, script execution, and screenshots.
-- `electron`: connect to the Electron remote debugging endpoint with the full
+- `browser`: connect to the browser/runtime debugging endpoint with the full
   Chrome DevTools MCP toolset.
 - `auto`: do not pass a browser URL and let `chrome-devtools-mcp` launch or
   discover a browser. Use this when the agent should not attach to
-  host application directly.
+  a configured runtime target directly.
 - `-McpArgs`: explicit low-level override for advanced troubleshooting. When
   provided, Spec Kit writes those args exactly and does not derive args from
   `-McpChromeMode`.
 
-The default Chrome DevTools MCP arguments connect to an already running
-host application debug session on `http://127.0.0.1:9222`. Start
-host application with `npm run debug` before asking the agent to inspect DOM,
-console, network, or runtime CSS.
+The default Chrome DevTools MCP mode expects a browser/runtime target selected
+by repository-map, selected gates, or explicit user input before the agent
+inspects DOM, console, network, or runtime CSS.
 When MCP config is requested, init validates the global `node` version before
 writing MCP config. `chrome-devtools-mcp@latest` requires Node.js
 `^20.19.0 || ^22.12.0 || >=23`; switch Node first, or run init without
@@ -102,7 +100,7 @@ micro-fix/auto: intake -> plan(workpack.md) -> implement -> acceptance
               -> human-acceptance gate
 standard-bugfix-lite: intake -> plan(workpack.md) -> implement -> acceptance
 standard-bugfix: intake -> specify -> plan -> implement -> acceptance
-full-sdd: intake -> specify -> plan -> tasks -> analyze -> checklist
+full-sdd: intake -> specify -> plan -> checklist -> tasks -> analyze
           -> implement -> acceptance
 validation-only: intake -> specify -> plan -> validation
 blocked-investigation: intake -> specify -> plan -> fact-layer

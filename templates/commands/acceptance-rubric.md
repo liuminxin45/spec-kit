@@ -45,7 +45,7 @@ self-acceptance.
 - `Pitfall` (weight 0.9): must not trigger.
 - Layers:
   - `L1 功能与需求闭合`: requirements, acceptance items, user confirmation, and scoped source changes.
-  - `L2 验证与证据`: build/test/API/E2E/CDP/log/runtime/plugin package evidence.
+  - `L2 验证与证据`: build/test/API/E2E/log/runtime/selected gate-pack evidence.
   - `L3 工作流阶段合规`: selected stage order, required lean artifacts, optional governance choices, and AI self-acceptance timing.
   - `L4 交付与仓库状态`: validation/acceptance state, optional commit/amend state, dirty classification, message validation, and complete-branch readiness.
   - `L5 上下文与自动化治理`: minimal context, selected knowledge/skills/gates, scripts first, and no temporary guessing.
@@ -53,7 +53,7 @@ self-acceptance.
   - L1/L2/L3/L4/L5 use weights `0.30 / 0.25 / 0.25 / 0.10 / 0.10`.
   - AI acceptance closure is a hard gate: `PASS` is required before human
     acceptance unless a true external blocker is recorded.
-  - API/E2E plan, `.plugin` package evidence when applicable, and CDP/runtime
+  - API/E2E plan, selected gate-pack evidence when applicable, and runtime
     evidence when applicable are hard gates for the selected implementation
     surface. Retrospective, commit-message validation, and post-commit
     self-check are hard gates only when those opt-in stages are selected.
@@ -68,13 +68,13 @@ self-acceptance.
 2. Derive concise rubric rows. Each row must be self-contained: criterion,
    evidence required, pass condition, and source requirement/risk.
    Include rows that allow scoring the actual workflow, AI validation closure,
-   plugin package evidence when applicable, and UI/UX quality after
+   selected gate-pack evidence when applicable, and UI/UX quality after
    implementation.
    For bugfix work, include an Essential Root-Fix Decision Gate row and a
    Pitfall row for mitigation / containment / compatibility fallback being
    mislabeled as root fix.
 3. Include negative `Pitfall` rows for high-risk errors such as false UI-only
-   state, wrong API payload, stale runtime artifact, wrong CDP target, XSS,
+   state, wrong API payload, stale runtime artifact, wrong runtime target, XSS,
    duplicate submit, or unhandled network/device failure when relevant.
    Also include the generic bugfix pitfall when a plan only cleans, releases,
    resets, retries, falls back, limits quantity/scope, or narrows impact

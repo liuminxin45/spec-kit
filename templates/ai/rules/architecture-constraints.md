@@ -7,43 +7,41 @@ cross-layer ownership. It is intentionally stable and human-reviewed.
 
 Treat these as first-class compatibility boundaries:
 
-- Public SDK headers.
-- `native plugin` / `forwarding bridge` bridge contracts.
-- host application plugin APIs.
-- Frontend plugin state/events.
-- Serialized fields, device status values, and operation permission semantics.
+- Public APIs, SDK headers, CLIs, and script interfaces.
+- Bridge, adapter, or integration contracts.
+- Extension, runtime, or embedded-surface APIs.
+- Frontend state/events and serialized fields.
+- Status values, permission semantics, and externally visible behavior.
 
 Any breaking change must be explicit in `spec.md` and `plan.md`, with impact,
 migration notes, and validation evidence.
 
 ## Runtime Truth Boundary
 
-- Preserve real SDK, cache, device, transport, handle, permission, and runtime
-  state.
+- Preserve real external-system, cache, transport, handle, permission, and
+  runtime state.
 - Fake status, placeholder handles, or optimistic UI state are allowed only in a
-  documented virtual or simulation boundary.
+  documented simulation boundary.
 - Events are refresh triggers, not durable truth stores.
 
-## service layer / runtime libraries / Frontend Ownership
+## Service / Runtime / Frontend Ownership
 
-- `forwarding bridge` is forwarding-only. It must not implement business rules,
-  device-state inference, permission decisions, UI behavior calculation, or
-  durable runtime truth.
+- A forwarding or adapter layer must not implement business rules, state
+  inference, permission decisions, UI behavior calculation, or durable runtime
+  truth.
 - `runtime/domain owner` owns reusable non-UI runtime facts, permission/capability
   facts, identity rules, and reusable business logic.
-- Frontend plugins own UI-specific structure, order, visible/enabled
-  presentation, and action-entry composition based on facts received through
-  the bridge.
+- Frontend or presentation layers own UI-specific structure, order,
+  visible/enabled presentation, and action-entry composition based on facts from
+  the owning domain/runtime layer.
 
-## Device Identity
+## Identity Ownership
 
-- Cross-boundary device identity is UUID decimal string only.
-- C++ internals may use `uint64_t uuid`; public bridge/UI contracts must not
-  introduce parallel identities such as `deviceIndex`, `deviceId`, `handleId`,
-  or `virtualDeviceId`.
-- UUID generation belongs to `device::identity::generateUUID()`.
-- Frontend business operations use `node.uuid` only. `node.id` is a UI tree node
-  identity.
+- Cross-boundary entity identity must have one canonical owner and format.
+- Public contracts must not introduce parallel identifiers for the same entity.
+- Identifier generation belongs to the owning domain layer.
+- UI node IDs, list indices, cache keys, and display labels are not business
+  entity identifiers unless the project explicitly defines them as such.
 
 ## File Ownership
 

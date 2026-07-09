@@ -28,7 +28,7 @@ Project-specific facts belong in workspace-local `ai/knowledge/` or portable cap
 
 官方 Spec Kit 的主线是通用 Spec-Driven Development：先把想法写成 spec，再生成 plan、tasks，最后 implement。这个仓库保留这个思想，但把它收敛成 Codex-only 的工程交付系统。
 
-当前对齐基线为 `upstream_baseline: github/spec-kit@v0.12.5`；本仓库版本独立演进，当前本地版本线为 `0.10.2`，不冒用官方 `0.12.x` 版本号。
+当前对齐基线为 `upstream_baseline: github/spec-kit@v0.12.5`；本仓库版本独立演进，当前本地版本线为 `0.10.3`，不冒用官方 `0.12.x` 版本号。
 
 | 维度 | 官方 `github/spec-kit` | 本仓库 | 主要优势 |
 | --- | --- | --- | --- |

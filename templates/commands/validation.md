@@ -2,8 +2,6 @@
 description: Run a validation-only Spec Kit path without changing product code.
 scripts:
   select_knowledge_ps: scripts/powershell/select-knowledge.ps1 -Json -Stage validation -FeatureDir <feature-dir>
-  inspect_cdp_target_ps: scripts/powershell/inspect-host-cdp-target.ps1 -Json -TargetKind host-app
-  capture_cdp_screenshot_ps: scripts/powershell/capture-cdp-screenshot.ps1 -Json -FeatureDir <feature-dir> -Scenario <checkpoint>
 ---
 
 ## User Input
@@ -50,7 +48,7 @@ Create or update these evidence artifacts:
   actually loaded, context intentionally not loaded, missing facts, sufficiency
   judgment, and why the evidence is enough for AI acceptance.
 - AI Self-Acceptance: rubric rows judged, Essential/Pitfall result, UI baseline
-  status, selected CDP/log/runtime evidence, and `PASS | FAIL | BLOCKED`.
+  status, selected gate/log/runtime evidence, and `PASS | FAIL | BLOCKED`.
 - Gaps and who can close them.
 - Whether the result changes routing to `micro-fix`, `standard-bugfix-lite`,
   `standard-bugfix`, `full-sdd`, or `blocked-investigation`.
@@ -61,57 +59,39 @@ Create or update these evidence artifacts:
 - No validation claim is complete without evidence in `evidence.md`,
   `fact-pack.md`, logs, screenshots, named command output, or inline evidence
   links in `validation.md`.
-- For host-embedded UI validation, prefer real host application Electron CDP at
-  `http://127.0.0.1:9222` after source build and source-to-runtime sync. First
-  run `ensure-host-cdp` to reuse an existing valid host, start
-  the host when no process owns the port, or identify a port owner before
-  declaring a blocker. Do not turn a running process or occupied port into
-  manual acceptance until this CDP host recovery ladder has concrete evidence. Then run
-  `inspect-host-cdp-target` or inspect `/json/list`; record all
-  page target `id/title/url/webSocketDebuggerUrl`, the selected target id, and
-  the selected target URL. A note that `9222` is connected is not validation
-  evidence. For host app or frontend-plugin validation, select targets matching
-  `app-home`, `app-main-window`, or
-  `frontend/static/index.html`; reject `Plugin Workbench`, `base-win.html`,
-  `devtools://`, blank, and unrelated targets as `wrong-target / insufficient`
-  product UI evidence. For `plugin-host` DevTools / Plugin Workbench changes,
-  select `Plugin Workbench|plugin-workbench.html`; `npm run debug` opens this
-  target directly and it is the primary evidence target for workbench
-  DOM/CSS/click smoke. Save key-path screenshots with
-  `capture-cdp-screenshot` under `FEATURE_DIR/cdp-screenshots/`; capture the
-  baseline/reproduced and final validated states for visible UI behavior, plus
-  intermediate dialog/error/hover/scroll states only when they decide
-  acceptance. Record `screenshots-index.md` and report the screenshot directory
-  to the human when CDP validation ends. If only isolated plugin preview was used, mark it as
-  fallback evidence and keep host validation as a gap.
-  For frontend plugin source edits, validation must also show the source edit
-  -> frontend build -> direct runtime replacement -> real host CDP verification
-  chain. Record build command/result, `sync-ui-runtime-artifacts` source/runtime
-  dirs, removed stale count, plugin id, and loaded resource evidence from the
-  real target, such as `performance.getEntriesByType('resource')` entries for
-  plugin entry files and current split chunks. All plugin source edits,
-  including frontend, native, JS, and integrated plugin changes, must also
-  record final `.plugin` build/package evidence before
-  commit/complete-branch. Frontend runtime hot replacement remains validation
-  evidence, not final plugin delivery evidence.
-  For height, clipping, scrollbar, bottom spacing, detail/footer panel, or
-  information-panel validation, include box metrics for plugin root, shell,
-  main panel, detail/footer panel, scroll owner, and last visible row/control.
+- For selected gate-pack validation, follow the selected gate's target
+  selection, recovery, screenshot, build/package, runtime sync, and evidence
+  rules. Record the selected gate id, target identity, commands run, evidence
+  paths, and any unresolved gaps. Do not substitute isolated previews or manual
+  acceptance when the selected gate requires a real runtime target.
+- For visible UI validation, capture the baseline/reproduced and final validated
+  states for visible behavior, plus intermediate dialog/error/hover/scroll
+  states only when they decide acceptance. Record screenshot paths or the
+  owner-approved reason they could not be collected.
+- For source edits that require build/deploy/runtime verification, validation
+  must show source edit -> build -> runtime/deployment verification evidence.
+  Record build command/result, deploy/sync command/result when applicable, and
+  loaded-resource or runtime proof from the selected target. Runtime hot
+  replacement remains validation evidence, not final delivery evidence unless
+  the project explicitly treats it as source delivery.
+- For height, clipping, scrollbar, bottom spacing, detail/footer panel, or
+  information-panel validation, include box metrics for the relevant embedded
+  root, shell, main panel, detail/footer panel, scroll owner, and last visible row/control.
   State whether each relevant bottom edge is `<= window.innerHeight`. Treat
-  bare `100vh` in an embedded plugin as a risk requiring measured host-offset
+  bare `100vh` in an embedded surface as a risk requiring measured container-offset
   evidence, not as proof that the layout fits.
-- For real-device, connection, acquisition, permission, status, service/runtime, or
-  host-embedded runtime validation, the agent owns the primary smoke when local
-  host and automation tools are available. Start or reuse host application,
-  select the real Electron target through CDP/browser automation, execute the
-  user flow or equivalent host/API operation, and verify process liveness,
+- For external-system, connection, permission, status, service/runtime, or
+  embedded runtime validation, the agent owns the primary smoke when local
+  target resources and automation tools are available. Start or reuse the
+  required target when safe and configured, execute the user flow or equivalent
+  API operation, and verify process liveness,
   latest service/runtime logs, console errors, and refreshed runtime/UI state. Do not
   mark validation complete by assigning these technical checks to human manual
-  acceptance. If the smoke cannot run, record the concrete unavailable device,
-  host, permission, or automation condition and route to investigation or a
+  acceptance. If the smoke cannot run, record the concrete unavailable resource,
+  permission, or automation condition and route to investigation or a
   visible validation gap.
 - If agent-owned smoke fails or the original symptom remains, validation is not
-  complete. Return to implementation/investigation, collect fresh CDP/log/runtime
+  complete. Return to implementation/investigation, collect fresh log/runtime
   evidence, adjust source, rebuild/deploy as needed, and rerun the smoke until it
   passes or a concrete blocker is proven. Human review is the final acceptance
   layer after this evidence, not the fallback debugger.
@@ -120,7 +100,7 @@ Create or update these evidence artifacts:
   implementation/self-acceptance before human acceptance.
 - Keep optional `evidence.md` factual and tool/test-facing.
 - When repository-map and active artifacts do not identify enough validation
-  commands, smoke routes, host/CDP evidence requirements, or repository-specific
+  commands, smoke routes, selected gate evidence requirements, or repository-specific
   caveats, run `select-knowledge` for stage `validation` and read only the
   returned `ai/knowledge/*` guide paths, especially `validation-matrix.yml`.
   Do not load the whole knowledge tree and do not use full-text/BM25 search.
@@ -136,7 +116,7 @@ Report in Chinese:
 
 - `validation.md` path.
 - `evidence.md` path when created.
-- CDP screenshot directory when CDP was used.
+- Screenshot directory when screenshots were used.
 - Checks run and results.
 - Remaining gaps.
 - Recommended next delivery profile.

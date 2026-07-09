@@ -3,7 +3,7 @@
 This file documents MCP servers known to Spec Kit. It does not make any MCP
 server mandatory for normal feature work.
 
-## Chrome DevTools
+## Browser Runtime Inspection
 
 Server id:
 
@@ -14,15 +14,15 @@ chrome-devtools
 Default command configured by `configure-mcp-agents.ps1`:
 
 ```text
-npm exec --yes --package=chrome-devtools-mcp@latest -c "chrome-devtools-mcp --browserUrl http://127.0.0.1:9222 --slim"
+npm exec --yes --package=chrome-devtools-mcp@latest -c "chrome-devtools-mcp --slim"
 ```
 
 Connection modes:
 
-- `electron-slim` (default): connect to the host application/Electron remote
-  debugging endpoint with `--slim`.
-- `electron`: connect to the host application/Electron remote debugging
-  endpoint with the full Chrome DevTools MCP toolset.
+- `browser-slim` (default): use the MCP server's slim toolset; attach to a
+  browser/runtime target only when `-BrowserUrl` is supplied.
+- `browser`: use the full Chrome DevTools MCP toolset; attach to a
+  browser/runtime target only when `-BrowserUrl` is supplied.
 - `auto`: omit `--browserUrl` and let Chrome DevTools MCP launch or discover a
   browser.
 - explicit args: bypass mode-derived defaults for advanced troubleshooting.
@@ -33,39 +33,36 @@ Global Node.js requirement for MCP setup:
 ^20.19.0 || ^22.12.0 || >=23
 ```
 
-Expected target for host application runtime investigation:
+Expected target:
 
 ```text
-http://127.0.0.1:9222
+Configured by repository-map, selected gates, or explicit user input.
 ```
 
-host application development launch:
+Runtime launch:
 
 ```text
-cd <workspace-root>/host application/host application
-npm run debug
+Use the command documented by the repository or selected gate pack.
 ```
 
-`npm run debug` enables plugin DevTools and sets
-`UTILITY_CHROME_REMOTE_DEBUGGING_PORT=9222`. Confirm the endpoint with
-`/json/version`, then choose a real page from `/json/list`.
+When using a remote debugging endpoint, confirm the endpoint and choose the real
+target page before collecting evidence.
 
-Preferred host application target patterns:
+Preferred target patterns:
 
 ```text
-app-home|app-main-window|frontend/static/index.html
+Configured by repository-map, selected gates, or explicit user input.
 ```
 
-When investigating Electron UI, attach to the host application/Electron target.
-Do not treat DevTools, Plugin Workbench, a newly launched blank Chrome page, or
-any unrelated target as evidence for the Electron application. For
-host-embedded UI fixes, prefer the real Electron host + CDP after source build
-and source-to-runtime sync; use isolated plugin previews only as fallback or
-supplemental evidence.
+When investigating runtime UI, attach to the real target. Do not treat DevTools,
+a newly launched blank page, or any unrelated target as evidence for the target
+application. For embedded UI fixes, prefer the real target after source build
+and runtime/deploy sync; use isolated previews only as fallback or supplemental
+evidence.
 
-For CSS-only hover states, `Input.dispatchMouseEvent` may not always produce a
-stable hover state in Electron. Use CDP `CSS.forcePseudoState(['hover'])` on the
-target node when needed, and record that method in validation evidence.
+For CSS-only hover states, a dispatched mouse event may not always produce a
+stable hover state. Use the available inspection tool's pseudo-state support on
+the target node when needed, and record that method in validation evidence.
 
 ## Agent Configuration Support
 
@@ -77,5 +74,5 @@ The script configures capability access only. Runtime use is governed by
 
 ## Fallback
 
-If no Chrome DevTools MCP server or usable Electron target is available, ask the
+If no browser inspection MCP server or usable runtime target is available, ask the
 user for the relevant DOM/CSS/console excerpt and continue from that evidence.

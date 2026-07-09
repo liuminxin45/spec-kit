@@ -32,7 +32,7 @@ This is an opt-in strict/release stage after `speckit.commit`. It verifies deliv
 3. Run `inspect-workflow-closure`; if it reports a default-stage blocker, return to `facts.next_required_stage`.
 4. Confirm `implementation_summary.status = completed`.
 5. For bugfix work, confirm final fix type and root-fix closure are explicit.
-6. Confirm applicable AI self-acceptance, API/E2E plan, plugin package evidence, CDP/host/runtime evidence, and post-commit message validation when those gates were selected.
+6. Confirm applicable AI self-acceptance, API/E2E plan, selected gate-pack evidence, runtime evidence, and post-commit message validation when those gates were selected.
 7. If a deterministic fix is required, apply it, amend the commit once, and do not run another self-check.
 
 ## Quality Rules

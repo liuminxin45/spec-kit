@@ -59,12 +59,18 @@ artifact_sets:
     - "implementation-summary.md"
     - "validation.md"
     - "workflow-state.json"
+  micro-fix-acceptance:
+    - "workpack.md"
+    - "workflow-state.json"
+  standard-bugfix-lite-acceptance:
+    - "workpack.md"
+    - "workflow-state.json"
   full-sdd-implement:
     - "spec.md"
     - "plan.md"
+    - "checklists/implementation-readiness.md"
     - "tasks.md"
     - "analysis.md"
-    - "checklists/implementation-readiness.md"
     - "workflow-state.json"
   validation:
     - "validation.md"
@@ -143,6 +149,7 @@ artifact_sections:
     - "Root-Fix Decision Gate"
     - "Change Slice"
     - "Validation"
+    - "Outcome"
     - "Acceptance Rubric Summary"
   validation.md:
     - "Validation Matrix"
@@ -177,13 +184,13 @@ stage_gates:
   implement:
     full-sdd:
       required_prior_stages:
+        - "checklist"
         - "tasks"
         - "analyze"
-        - "checklist"
       required_artifacts:
+        - "checklists/implementation-readiness.md"
         - "tasks.md"
         - "analysis.md"
-        - "checklists/implementation-readiness.md"
     high-risk:
       risk_levels:
         - "high"
@@ -193,13 +200,13 @@ stage_gates:
         - "host-embedded-ui"
         - "cross-repo-validation"
         - "public-api"
-        - "real-device"
+        - "external-system"
       required_prior_stages:
-        - "analyze"
         - "checklist"
+        - "analyze"
       required_artifacts:
-        - "analysis.md"
         - "checklists/implementation-readiness.md"
+        - "analysis.md"
 
 read_strategies:
   skills:
@@ -281,6 +288,7 @@ layers:
     lifecycle: "per-feature"
     responsibility:
       - "Hold only the active task intent, plan, executable slices, and progress."
+      - "Keep lean bugfixes closed in workpack.md Outcome unless commit, handoff, or strict evidence requires split validation/summary artifacts."
       - "Keep standard-bugfix compact by allowing plan.md slices instead of mandatory tasks.md."
     source_assets:
       - "templates/spec-template.md"
@@ -292,10 +300,6 @@ layers:
       - "templates/tasks-template.md"
       - "templates/workflow-state-template.json"
       - "templates/commands/*.md"
-      - "templates/commands/quality-vision.md"
-      - "templates/commands/acceptance-rubric.md"
-      - "templates/commands/implement.md"
-      - "templates/commands/ai-self-acceptance.md"
       - "scripts/powershell/select-gates.ps1"
       - "scripts/powershell/validate-implementation-slices.ps1"
       - "scripts/powershell/validate-generated-context.ps1"
@@ -311,6 +315,7 @@ layers:
     protected_current_behavior:
       - "Plugin code changes must modify repository source files, not only runtime/build artifacts."
       - "Full-sdd keeps tasks.md; standard-bugfix may skip it when plan.md has complete slices."
+      - "Micro-fix and standard-bugfix-lite may close with workpack.md Outcome instead of mandatory validation.md plus implementation-summary.md."
 
   - id: "Knowledge"
     lifecycle: "long-term, load-on-demand"
@@ -409,6 +414,7 @@ layers:
       - "specs/<feature>/knowledge-promotion-report.md"
       - "specs/<feature>/promotion-report.md"
     protected_current_behavior:
-      - "Default closure is implementation-summary.md plus validation.md; acceptance.md is optional user-facing evidence."
+      - "Standard/full closure is implementation-summary.md plus validation.md; acceptance.md is optional user-facing evidence."
+      - "Lean bugfix default closure may use workpack.md Outcome; split validation.md and implementation-summary.md for commit, branch completion, strict governance, or handoff."
       - "fact-pack.md and evidence.md are optional runtime/tool-heavy evidence."
       - "complete-branch uses cherry-pick, not merge commits; spec branches are kept by default."

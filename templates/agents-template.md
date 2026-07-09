@@ -18,9 +18,10 @@ active feature's `specs/<feature>/*` artifacts or apply its risk flags unless
 the user explicitly resumes that feature.
 
 Then read only active feature files for the selected path: use
-`implementation-summary.md` first for final actual implementation facts when
-present; lightweight and standard-lite fixes use `workpack.md`; standard work
-uses `plan.md` with compact slices; heavy work adds `spec.md`, `tasks.md`,
+`workpack.md` `Outcome` first for lean final implementation facts;
+`implementation-summary.md` first for non-lean, handoff, commit, branch
+completion, or strict governance facts when present; lightweight and
+standard-lite fixes use `workpack.md`; standard work uses `plan.md` with compact slices; heavy work adds `spec.md`, `tasks.md`,
 `research.md`, `contracts/`, or `data-model.md` only when needed; runtime/debug work adds
 `fact-pack.md`, latest logs, or DevTools evidence only for unclear/repeated/runtime symptoms.
 
@@ -36,49 +37,28 @@ This avoids stale knowledge and keeps AI coding context bounded.
 
 - Use `.specify/memory/repository-map.md` as repository role truth. Do not infer
   ownership by scanning source trees.
-- Product or plugin fixes belong in repository source files, not only installed
-  runtime plugin directories or built artifacts.
+- Durable fixes belong in repository source files, not generated outputs,
+  installed runtime directories, caches, or built artifacts.
 - Bugfix work must complete a Root-Fix Decision Gate before implementation:
   compare root fix, mitigation, compatibility fallback, and containment when
   applicable. Do not describe cleanup, release, reset, retry, fallback, or
   limiting as root fix unless the failure mechanism is eliminated.
-- When a task needs plugin source, build output, package artifact, or runtime
-  directory context, use the `Project Path Categories` section in
+- When a task needs repository path, build output, package, generated output, or
+  runtime/deployment context, use the `Project Path Categories` section in
   `.specify/memory/repository-map.md` first. When repository-map is not enough,
   use `select-knowledge` or read `ai/knowledge/index.yml` to select at most the
   small guide set required by affected repositories, risk flags, capability
   tags, or stage. Do not load all `ai/knowledge/*` by default, and do not use
   full-text/BM25 search for this layer. Keep long-term path notes relative; do
   not write machine-specific absolute paths into team memory. Use placeholders
-  such as `<workspace-root>`, `<host-app-root>`, `<app-data-root>`,
-  `<plugin-id>`, `<version>`, and `<location>`.
+  such as `<workspace-root>`, `<app-root>`, `<artifact-root>`, `<component-id>`,
+  `<version>`, and `<location>`.
 - For workflow-specific evidence rules, use `select-gates` or
   `ai/workflows/gates/index.yml` first and read only selected packs. Command
   templates are stage contracts, not full manuals.
-- Optional desktop host/plugin/native delivery chains live behind selected gate
-  packs such as `host-cdp`, `frontend-runtime-sync`, `native-bridge`, and
-  `plugin-package`; they are not default context for generic repositories.
-- For host-embedded UI fixes, a source-to-runtime copy and refresh may validate
-  built source output; runtime artifacts are still not source or commit targets.
-- Host-embedded frontend plugin source edits must follow the AI delivery chain:
-  source edit -> frontend build -> direct runtime replacement -> real host CDP
-  verification, then final `.plugin` build/package evidence. Native, JS, and
-  integrated plugin source edits also require the shared `.plugin`
-  build/package evidence; local build/export/runtime replacement is validation
-  evidence only.
-- host CDP validation must inspect `/json/list` first and record
-  all page target `id/title/url/webSocketDebuggerUrl` values plus the selected
-  target id/URL. Product UI validation rejects Plugin Workbench, `base-win.html`,
-  `devtools://`, blank, and unrelated targets as wrong-target evidence.
-  Before giving up on AI-owned host validation, run
-  `ensure-host-cdp` or equivalent probes to reuse a valid
-  running target, start the host when no process owns the CDP port, or identify
-  a port owner as a real blocker; a running process or occupied port is not by
-  itself a reason to skip to manual acceptance. Save key-path screenshots from
-  CDP into `FEATURE_DIR/cdp-screenshots/` and report the screenshot directory to
-  the human when CDP validation ends.
-- Qt-to-frontend UI parity should read `.specify/memory/qt-source-behavior-map.md`
-  or `ai/knowledge/qt-source-behavior-map.md` before broad workspace search.
+- Optional specialized delivery chains live behind selected gate packs; they are
+  not default context for generic repositories. Run `select-gates` before
+  loading their detailed evidence rules.
 - After changing or upgrading `spec-kit` templates, run
   `validate-generated-context`, `validate-knowledge-index`, and
   `validate-context-budget` before relying on generated default context. If a
@@ -98,9 +78,9 @@ This avoids stale knowledge and keeps AI coding context bounded.
   unresolved workflow runs block intake until the user manually resolves them
   or explicitly authorizes a named AI action.
 - If a UI/CSS/layout patch fails once, collect runtime DOM/CSS/computed
-  style/box metrics through DevTools/CDP before a second patch, unless the user
-  provides copied DOM/CSS evidence.
-- After UI/UX-affecting code changes, use available MCP/CDP/browser automation
+  style/box metrics through available browser/runtime inspection tools before a
+  second patch, unless the user provides copied DOM/CSS evidence.
+- After UI/UX-affecting code changes, use available browser/runtime automation
   for best-effort self-validation such as screenshots, visual comparison, and
   simulated interactions. If unsupported, record the reason instead of treating
   it as a hard blocker.
@@ -131,13 +111,13 @@ This avoids stale knowledge and keeps AI coding context bounded.
 
 ## Workflow Weight
 
-- `micro-fix`: `workpack.md`, code change, validation, acceptance.
+- `micro-fix`: `workpack.md`, code change, `Outcome` validation evidence, acceptance.
 - `standard-bugfix-lite`: compact low/medium-risk bugfix in `workpack.md`,
-  with root cause, one implementation slice, validation, and acceptance summary.
+  with root cause, one implementation slice, validation, `Outcome`, and acceptance summary.
 - `standard-bugfix`: `plan.md` may contain executable slices and replace a
   separate `tasks.md`.
 - `full-sdd`: add `tasks.md` and extra design artifacts only for broad,
-  cross-repo, public API, architecture, migration, or real-device semantics.
+  cross-repo, public API, architecture, migration, or external-system semantics.
 - `blocked-investigation`: collect facts first; do not patch by guessing.
 - `validation-only`: write validation evidence without product-code changes.
 

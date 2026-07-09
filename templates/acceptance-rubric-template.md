@@ -13,8 +13,8 @@
   - L4 交付与仓库状态: 0.10
   - L5 上下文与自动化治理: 0.10
 - `workflow_score`、`ai_acceptance_score`、`ui_ux_score` 必须引用具体验证证据，
-  例如测试、构建、API/E2E 计划、CDP 截图、日志、运行时事实、
-  `.plugin` 包或验收记录。
+  例如测试、构建、API/E2E 计划、截图、日志、运行时事实、
+  selected gate-pack evidence 或验收记录。
 - 最终 Rubric 评分只在 strict/release、rubric-score 或 complete-branch
   被显式选择时输出；plan / implement / acceptance 阶段只维护准则定义、
   证据入口和 hard gates。
@@ -73,7 +73,7 @@ rubric must verify:
 | L3 工作流阶段合规 | 0.25 |  |  |  |
 | L4 交付与仓库状态 | 0.10 |  |  |  |
 | L5 上下文与自动化治理 | 0.10 |  |  |  |
-| Hard gates | hard gate | PASS / FAIL / BLOCKED |  | AI Self-Acceptance, selected API/E2E, `.plugin`, CDP/runtime, optional commit message, optional self-check |
+| Hard gates | hard gate | PASS / FAIL / BLOCKED |  | AI Self-Acceptance, selected API/E2E, selected gate-pack evidence, optional commit message, optional self-check |
 
 - Overall Weighted Score / 总加权分:
 - AI acceptance decision / AI 验收结论:

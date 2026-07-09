@@ -29,25 +29,26 @@ Stable rules only. Do not load broad project knowledge or historical process doc
 - Starting a new Spec Kit workflow must run `preflight-new-workflow` before intake writes feature state.
 - Use lean implementation paths by default:
   - `micro-fix`: no `spec.md`, `plan.md`, or `tasks.md`; use `workpack.md`.
-  - `standard-bugfix-lite`: default bugfix path; use `workpack.md`, `implementation-summary.md`, and `validation.md`.
+  - `standard-bugfix-lite`: default bugfix path; use `workpack.md` and close lean delivery in `workpack.md` `Outcome`; split out `validation.md` and `implementation-summary.md` only for commit, branch completion, strict governance, handoff, or high-risk evidence.
   - `standard-bugfix`: use `plan.md` with compact Implementation Slices; skip `tasks.md` unless slices are too broad.
-  - `full-sdd`: use `spec.md -> plan.md -> tasks.md` and run `tasks -> analyze -> checklist`.
+  - `full-sdd`: use `spec.md -> plan.md -> checklist -> tasks.md -> analyze`.
   - `blocked-investigation`: collect facts before editing.
   - `validation-only`: write `validation.md` without product-code changes.
 - `progress.md`, `review.md`, `acceptance-checklist.md`, `convergence.md`, retrospective, workflow-observer, promotion, post-commit self-check, rubric, and complete-branch are opt-in or conditional artifacts, not default delivery.
 - Bugfix work must complete a Root-Fix Decision Gate before implementation. Do not call cleanup, release, reset, retry, fallback, rate/quantity limiting, or impact narrowing a root fix unless evidence shows the failure mechanism is eliminated.
-- `implementation-summary.md` is the final actual implementation index. It records final approach, changed files, mechanism changes, final fix type, validation result, residual risk, compatibility impact, follow-up root-fix route, and evidence links.
+- `workpack.md` `Outcome` is enough to close micro-fix and standard-bugfix-lite work when there is no commit, branch completion, strict governance, handoff, or high-risk evidence need.
+- `implementation-summary.md` is the final actual implementation index for non-lean, handoff, commit, branch completion, or strict governance paths. It records final approach, changed files, mechanism changes, final fix type, validation result, residual risk, compatibility impact, follow-up root-fix route, and evidence links.
 
 ## Runtime Investigation Hard Gates
 
 - If repeated fixes do not change the symptom, run fact-layer collection before editing more code.
-- For UI parity/layout issues, a first failed CSS/layout patch triggers fact-layer: collect runtime DOM/CSS/computed style/box metrics through Chrome DevTools/CDP from the real target, or ask for copied evidence, before making a second patch.
+- For UI parity/layout issues, a first failed CSS/layout patch triggers fact-layer: collect runtime DOM/CSS/computed style/box metrics through available browser/runtime inspection tools from the real target, or ask for copied evidence, before making a second patch.
 - For service/runtime issues, prefer latest configured logs after the relevant process exits.
 
 ## UI / UX / Copy Evidence Gate
 
 - UI changes, UX changes, icons, tooltips, labels, visible copy, layout, spacing, and style changes need a reliable reference before implementation.
-- Reliable references include original Qt UI/source/delegate/QSS/resource files, design/mockup/Figma/export files, screenshots, existing target-app conventions, or explicit owner/user approval.
+- Reliable references include source UI files, design/mockup/Figma/export files, screenshots, existing target-app conventions, or explicit owner/user approval.
 - Do not invent UI shape, controls, text, icons, tooltip style, hierarchy, or interaction behavior from general taste.
 - If no reliable source is found, route to clarify or blocked investigation.
 
@@ -55,24 +56,13 @@ Stable rules only. Do not load broad project knowledge or historical process doc
 
 - Use `ai/workflows/task-routing.md` as the single source of truth for auto-continue and stop rules.
 - Use `resolve-next-stage` when available so continuation consumes structured `next_stage` and blocker facts.
-- Auto-continue only through default delivery stages. Opt-in governance, commit, rubric, and branch mutation stages require explicit user request.
+- A single slash-command or stage skill stops after its own stage and reports the next command. Only an explicit workflow-runner invocation may auto-continue through default delivery stages. Opt-in governance, commit, rubric, and branch mutation stages require explicit user request.
 
-## Host Frontend Delivery Chain
+## Gate-Pack Routed Evidence
 
-- Host-embedded frontend plugin source changes use source edit -> frontend build -> direct runtime replacement -> real host CDP verification when the corresponding gate is selected.
-- Runtime replacement must be scoped to the explicit plugin runtime directory and should remove stale split chunks by default.
-- `.plugin` build/package evidence is required for release/branch-completion paths, not every lean bugfix.
-
-## host CDP Target Gate
-
-- Before declaring host/CDP unavailable, run `ensure-host-cdp` or equivalent probes.
-- Before host UI CDP evidence, inspect `/json/list` or run `inspect-host-cdp-target`.
-- Product UI validation must reject Plugin Workbench, `base-win.html`, `devtools://`, blank, and unrelated targets.
-
-## Qt Source Behavior Map
-
-- For Qt-to-frontend UI parity, read the selected Qt source behavior map before broad source search.
-- Placeholder, missing, or stale map rows require bounded source investigation and active feature evidence.
+- Use `select-gates` before loading specialized gate-pack details.
+- Read only selected gate packs, and keep command templates as stage contracts rather than full manuals.
+- A selected gate can add required build, runtime, browser, package, external-system, or source-parity evidence; unselected gate details are not default context.
 
 ## Generated Context Drift
 

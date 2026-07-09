@@ -22,12 +22,12 @@ def test_local_version_and_upstream_baseline_are_explicit(tmp_path):
     workflow = yaml.safe_load(read_text("workflows/speckit/workflow.yml"))
     readme = read_text("README.md")
 
-    assert pyproject["project"]["version"] == "0.10.2"
-    assert workflow["requires"]["speckit_version"] == ">=0.10.2"
+    assert pyproject["project"]["version"] == "0.10.3"
+    assert workflow["requires"]["speckit_version"] == ">=0.10.3"
     assert UPSTREAM_BASELINE == "github/spec-kit@v0.12.5"
     assert "upstream_baseline: github/spec-kit@v0.12.5" in readme
 
-    lock_path = write_spec_kit_lock(tmp_path, version="0.10.2", source="test")
+    lock_path = write_spec_kit_lock(tmp_path, version="0.10.3", source="test")
     lock = yaml.safe_load(lock_path.read_text(encoding="utf-8"))
     assert lock["spec_kit"]["upstream_baseline"] == UPSTREAM_BASELINE
 

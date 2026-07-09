@@ -57,20 +57,24 @@ paths:
 
 feature_artifacts:
   commit:
-    - spec.md
-    - plan.md
+    - implementation-summary.md
     - validation.md
-    - acceptance.md
+    - workflow-state.json
+  standard-bugfix-lite-commit:
+    - implementation-summary.md
+    - validation.md
     - workflow-state.json
   full-sdd-commit:
     - spec.md
     - plan.md
     - tasks.md
+    - implementation-summary.md
     - validation.md
-    - acceptance.md
     - workflow-state.json
   implement:
-    - spec.md
+    - workpack.md
+    - workflow-state.json
+  standard-bugfix-implement:
     - plan.md
     - workflow-state.json
   full-sdd-implement:
@@ -83,9 +87,16 @@ feature_artifacts:
     - workflow-record.md
 
 required_sections:
+  workpack.md:
+    - Root Cause
+    - Root-Fix Decision Gate
+    - Change Slice
+    - Validation
+    - Outcome
   plan.md:
     - Root Cause Evidence
     - Validation Mapping
+    - Implementation Slices
   tasks.md:
     - Implementation Slices
   workflow-record.md:

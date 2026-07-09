@@ -48,6 +48,21 @@
 - Expected result:
 - Failure signal:
 
+## Outcome
+
+- Final status: pending / completed / blocked
+- Final fix type: root fix / mitigation / containment / compatibility fallback
+- Eliminated failure mechanism: yes / no / partial
+- Changed paths:
+- Validation result:
+- Validation evidence:
+- AI Self-Acceptance: PASS / FAIL / BLOCKED / N/A
+- Compatibility impact:
+- Remaining failure path:
+- Residual risk:
+- Follow-up root-fix route:
+- Acceptance notes:
+
 ## Acceptance Rubric Summary
 
 - Essential criteria:

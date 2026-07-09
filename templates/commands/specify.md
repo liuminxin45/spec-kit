@@ -57,8 +57,8 @@ routing decisions.
 
 Use "Capability Scenario" instead of generic "User Story". A capability
 scenario must be independently understandable and independently verifiable,
-even when it covers SDK, native plugin/bridge/adaptor bridge, host application, frontend plugin,
-device integration, migration, or tooling work.
+even when it covers SDK/API, integration/adapter, UI/runtime, external-system,
+migration, or tooling work.
 
 ## Language Rules
 
@@ -197,42 +197,40 @@ device integration, migration, or tooling work.
 
 - Every requirement must be testable or reviewable.
 - Every capability scenario must state success and failure behavior.
-- Mention real-device, virtual-device, SDK, plugin, encoding, or UI state
+- Mention external-system, simulation, SDK/API, integration, encoding, or UI state
   boundaries when relevant.
-- For UI state, UI interaction, operation availability, or device runtime UI:
-  - State that `bridge/adaptor` is an API forwarding bridge only and must not
-    implement business logic, device-state inference, permission/availability
+- For UI state, UI interaction, operation availability, or runtime UI:
+  - State that forwarding/adapter layers are integration boundaries only and must not
+    implement business logic, state inference, permission/availability
     decisions, or UI behavior rule calculation.
   - State that non-UI-specific runtime facts, permission/capability data, and
-    reusable business rules belong in `owning runtime/domain repository`.
+    reusable business rules belong in the owning domain/runtime layer.
   - State that UI-display-specific composition, such as interaction surface structure,
-    order, visible/enabled presentation, and action entry layout, belongs
-    in the frontend plugin and must be based on `owning runtime/domain repository` facts obtained
-    through the bridge.
+     order, visible/enabled presentation, and action entry layout, belongs
+     in the frontend/presentation layer and must be based on owning
+     domain/runtime facts.
   - Do not allow frontend label/string inference, fake runtime facts, or durable
-    caching of device/runtime/permission truth.
-- For device identity, runtime state, RPC/N-API, JS/UI, or public API work:
-  - State that cross-boundary device identity must be UUID decimal string only.
-    Do not introduce parallel identities such as `deviceIndex`, `deviceId`,
-    `handleId`, or `virtualDeviceId`.
-  - State that UUID generation belongs only to
-    `device::identity::generateUUID()`; `DeviceManager`, `SdkService`, and UI
-    code only use the identity.
-  - State that SDK native id, virtual id, and handle are bottom-layer
-    implementation details and must not cross runtime facade/service/UI boundaries.
-  - State that frontend business operations use `node.uuid` only, not
-    `node.id`, `entityId`, or `metadata.uuid` fallbacks.
+    caching of runtime/permission truth.
+- For identity, runtime state, RPC/API, JS/UI, or public API work:
+  - State the canonical cross-boundary entity identity owner and format. Do not
+    introduce parallel identities for the same entity.
+  - State that identity generation belongs to the owning domain layer; service,
+    adapter, and UI code only use the identity.
+  - State that native/external ids and handles are bottom-layer implementation
+    details unless the public contract explicitly exposes them.
+  - State that frontend business operations use domain identities only, not UI
+    node ids, list indices, labels, or metadata fallbacks.
   - State that equivalent legacy APIs, debug/test APIs in production exports,
-    cross-layer caches, and build artifact based interface judgments are not
-    allowed unless an owner-approved temporary gap is recorded.
-- For `migration`, preserve source Qt behavior references and equivalence
+     cross-layer caches, and build artifact based interface judgments are not
+     allowed unless an owner-approved temporary gap is recorded.
+- For `migration`, preserve source behavior references and equivalence
   expectations from `intake.md`.
-- For UI-interaction or operation-availability `migration`, include Qt source
-  behavior coverage. It must cover object/device type, device state/condition,
+- For UI-interaction or operation-availability `migration`, include source
+  behavior coverage. It must cover object/entity type, state/condition,
   UI element order or action order, visible/enabled rules, action handler,
   keep/change/gap notes, and target contract source. Recommend a table for
   simple cases, but allow grouping, decision tables, state-machine notes,
-  fixture matrices, or per-Qt-function rule lists.
+  fixture matrices, or per-source-function rule lists.
 - For `bugfix`, include actual behavior, expected behavior, repro path, and
   regression expectation from `intake.md`.
 - For `new-feature`, include why it is not direct migration and the new
@@ -241,7 +239,7 @@ device integration, migration, or tooling work.
   bugfixes that affect icons, tooltip text/style, labels, menus, buttons,
   visible state, layout, spacing, or interaction, include design/source
   directory paths and a UI / UX / 文案依据追踪 section. Each changed visible
-  element must cite a reliable source: Qt UI/source/delegate/QSS/resource,
+  element must cite a reliable source: source behavior,
   product design/mockup/export, screenshot, existing target-app convention, or
   explicit owner/user decision. If no reliable source is found after bounded
   search, record `NEEDS CLARIFICATION` instead of inventing UI.
@@ -251,8 +249,8 @@ device integration, migration, or tooling work.
   `.specify/memory/repository-map.md` as the source of truth. If it is stale or
   incomplete, stop and ask the user to update that fixed map.
 - The spec branch is the workflow identity. Default delivery closure happens
-  after implementation validation, `implementation-summary.md`, and human
-  acceptance. Simplify, test-hardening, retrospective/留痕, workflow-observer,
+  after lean `workpack.md` `Outcome` or strict implementation validation plus
+  `implementation-summary.md`, then human acceptance. Simplify, test-hardening, retrospective/留痕, workflow-observer,
   promote-lessons/promote-knowledge, commit, post-commit self-check, final
   Rubric score, and complete-branch are opt-in or strict/release stages.
 - Commit and branch-state completion are opt-in and still do not push or create

@@ -3,9 +3,9 @@ param(
     [string[]]$Agents = @("Codex"),
     [string]$ServerId = "chrome-devtools",
     [string]$Command = "npm",
-    [ValidateSet("auto", "electron", "electron-slim")]
-    [string]$ChromeMode = "electron-slim",
-    [string]$BrowserUrl = "http://127.0.0.1:9222",
+    [ValidateSet("auto", "browser", "browser-slim", "electron", "electron-slim")]
+    [string]$ChromeMode = "browser-slim",
+    [string]$BrowserUrl = "",
     [string[]]$ServerArgs = @(),
     [string]$HomePath = "",
     [string]$ProjectPath = "",
@@ -100,21 +100,35 @@ function Resolve-McpCommand {
     return $CommandName
 }
 
+function Resolve-EffectiveBrowserUrl {
+    param([string]$Mode)
+
+    if (-not [string]::IsNullOrWhiteSpace($BrowserUrl)) {
+        return $BrowserUrl
+    }
+    if ($Mode -in @("electron", "electron-slim")) {
+        return "http://127.0.0.1:9222"
+    }
+    return ""
+}
+
 function Resolve-DefaultChromeDevToolsArgs {
     if ($ServerArgs.Count -gt 0) {
         return @($ServerArgs)
     }
 
     $chromeCommand = "chrome-devtools-mcp"
+    $effectiveBrowserUrl = Resolve-EffectiveBrowserUrl -Mode $ChromeMode
+    $browserUrlArg = if ([string]::IsNullOrWhiteSpace($effectiveBrowserUrl)) { "" } else { " --browserUrl $effectiveBrowserUrl" }
     switch ($ChromeMode) {
         "auto" {
             $chromeCommand = "chrome-devtools-mcp"
         }
-        "electron" {
-            $chromeCommand = "chrome-devtools-mcp --browserUrl $BrowserUrl"
+        { $_ -in @("browser", "electron") } {
+            $chromeCommand = "chrome-devtools-mcp$browserUrlArg"
         }
-        "electron-slim" {
-            $chromeCommand = "chrome-devtools-mcp --browserUrl $BrowserUrl --slim"
+        { $_ -in @("browser-slim", "electron-slim") } {
+            $chromeCommand = "chrome-devtools-mcp$browserUrlArg --slim"
         }
     }
 

@@ -41,7 +41,7 @@ work also writes into this file instead of creating a separate report.
 - `fact-pack.md` (optional fact-layer evidence):
 - Logs:
 - Screenshots:
-- CDP screenshot directory:
+- Screenshot directory:
 - Test output:
 
 ## 6. Validation Context Contract
@@ -53,33 +53,31 @@ work also writes into this file instead of creating a separate report.
 - Sufficiency judgment:
 - Reason this is enough for AI acceptance:
 
-## 7. Host Frontend Delivery Chain
+## 7. Selected Gate / Runtime Evidence
 
 - Applies:
 - Source edit evidence:
-- Frontend build command/result:
-- Direct runtime replacement evidence (`sync-ui-runtime-artifacts`):
-- Runtime plugin directory:
+- Build command/result:
+- Runtime/deployment verification evidence:
+- Runtime directory:
 - Removed stale runtime files:
-- Real host CDP target id/title/url:
-- Key-path CDP screenshots:
+- Runtime target id/title/url:
+- Key-path screenshots:
 - Loaded resource evidence:
-- Final `.plugin` package evidence (all plugin types):
+- Final package/release evidence when selected gates require it:
 
-## 8. Native Runtime Delivery Chain
+## 8. Integration / Generated-Artifact Evidence
 
 - Applies:
-- Native source edit evidence:
-- Native build/export command/result:
-- Runtime replacement evidence (`sync-native-runtime-artifacts`):
-- Runtime plugin directory:
-- Runtime `native/` addon hash parity:
-- Root `.proto` / `native-exports.json` evidence:
-- Duplicate `native/*.proto` check:
-- RPC proto bundle validation (`validate-rpc-proto-bundle`):
-- Host restart evidence:
-- Real host CDP/device behavior evidence:
-- Final `.plugin` package evidence:
+- Source edit evidence:
+- Build/export command/result:
+- Runtime replacement evidence:
+- Runtime directory:
+- Generated artifact hash/parity evidence:
+- Protocol/export validation:
+- Restart/reload evidence:
+- Runtime/external-system behavior evidence:
+- Final package/release evidence:
 
 ## 9. AI Acceptance Result
 
@@ -91,7 +89,7 @@ work also writes into this file instead of creating a separate report.
 - UI baseline source/status:
 - Original symptom reproduced before fix:
 - Original symptom absent after fix:
-- CDP/browser/device validation loop completed:
+- Runtime/browser/external-system validation loop completed:
 - Remaining blocker, if any:
 - Human acceptance may start:
 
@@ -122,21 +120,19 @@ The final Rubric may also be written to `rubric-score.md`; if so, link it here.
   command output, or another cited artifact.
 - This file may summarize sufficiency, but only the LLM can judge sufficiency.
 - Keep raw command output and tool facts in `evidence.md` when they are lengthy.
-- For host-embedded frontend plugin edits, record source edit -> frontend build
-  -> direct runtime replacement -> real host CDP verification before asking for
-  human acceptance. Record final `.plugin` package evidence before strict
-  release, package delivery, or complete-branch.
-- For host CDP validation, record `/json/list` page targets and
-  the selected target id/title/url. Mark Plugin Workbench, `base-win.html`,
-  `devtools://`, blank, or unrelated product UI evidence as
-  `wrong-target / insufficient`. Save key-path screenshots under
-  `FEATURE_DIR/cdp-screenshots/`, keep `screenshots-index.md`, and report that
-  directory to the human when CDP validation ends.
+- For selected gate-pack validation, record the selected gate id, target
+  identity, commands run, evidence paths, and unresolved gaps before asking for
+  human acceptance. Record final package/release evidence when selected gates or
+  strict delivery require it.
+- For runtime/browser validation, record the selected target id/title/url when
+  available. Mark unrelated targets as `wrong-target / insufficient`. Save
+  key-path screenshots when they decide acceptance and report the screenshot
+  directory to the human when validation ends.
 - If AI changed code, human acceptance may start only after this file records
-  AI acceptance `PASS` or a true external blocker. Fixable CDP target, runtime
-  sync, host process, bridge/proto bundle, or deployment gaps must return to
+  AI acceptance `PASS` or a true external blocker. Fixable runtime target,
+  sync, process, generated-artifact, or deployment gaps must return to
   implementation.
-- For native bridge/proto changes, validate required generated bundle messages
+- For integration/protocol changes, validate required generated bundle messages
   and fields before using frontend/UI behavior as final evidence.
 - AI self-acceptance records criteria coverage only. Final Rubric score output
   is strict/release opt-in and is not required for normal lean delivery.

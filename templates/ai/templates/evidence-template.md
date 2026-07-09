@@ -27,7 +27,7 @@ validation or root-cause claims.
 
 - Source:
 - Target:
-- CDP page targets:
+- Runtime/browser page targets:
 - Selected target id/title/url:
 - Rejected target reason:
 - Facts:
@@ -57,18 +57,18 @@ validation or root-cause claims.
 - Runtime replacement removed stale count:
 - Consistency result:
 
-### E-NATIVE-001
+### E-INTEGRATION-001
 
-- Source native output:
-- Runtime plugin root:
-- Runtime native directory:
-- `.node` source/target SHA256:
-- Root `.proto` source/target SHA256:
-- `native-exports.json` source/target SHA256:
-- Duplicate `native/*.proto` files:
-- Host restart evidence:
+- Source integration output:
+- Runtime root:
+- Runtime generated-artifact directory:
+- Source/target artifact SHA256:
+- Protocol source/target SHA256:
+- Export metadata source/target SHA256:
+- Duplicate generated files:
+- Restart/reload evidence:
 
-### E-RPC-BUNDLE-001
+### E-PROTOCOL-BUNDLE-001
 
 - Bundle file:
 - Service name:
@@ -81,12 +81,12 @@ validation or root-cause claims.
 
 - Command list:
 - Build/runtime sync result:
-- CDP target inventory:
+- Runtime/browser target inventory:
 - Selected target id/title/url:
 - Rejected targets and reasons:
-- CDP screenshot directory: `FEATURE_DIR/cdp-screenshots/`
-- CDP screenshots index:
-- Raw RPC/device facts:
+- Screenshot directory:
+- Screenshots index:
+- Raw API/external-system facts:
 - DOM selector and box metrics:
 - Artifact hashes:
 - Original symptom assertion:

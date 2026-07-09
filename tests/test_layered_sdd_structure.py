@@ -50,10 +50,7 @@ def test_manifest_declares_lean_architecture_buckets():
     assert "templates/ai/workflows/skill-routing.yml" in layers["Foundation"]["source_assets"]
     assert ".specify/memory/repository-map.md" in layers["Foundation"]["generated_assets"]
     assert "ai/workflows/skill-routing.yml" in layers["Foundation"]["generated_assets"]
-    assert "templates/commands/implement.md" in layers["WorkItem"]["source_assets"]
-    assert "templates/commands/quality-vision.md" in layers["WorkItem"]["source_assets"]
-    assert "templates/commands/acceptance-rubric.md" in layers["WorkItem"]["source_assets"]
-    assert "templates/commands/ai-self-acceptance.md" in layers["WorkItem"]["source_assets"]
+    assert "templates/commands/*.md" in layers["WorkItem"]["source_assets"]
     assert "templates/quality-vision-template.md" in layers["WorkItem"]["source_assets"]
     assert "templates/acceptance-rubric-template.md" in layers["WorkItem"]["source_assets"]
     assert "templates/subskills/*/SKILL.md" in layers["Capabilities"]["source_assets"]
@@ -68,9 +65,9 @@ def test_manifest_declares_lean_architecture_buckets():
     assert manifest["artifact_sets"]["full-sdd-implement"] == [
         "spec.md",
         "plan.md",
+        "checklists/implementation-readiness.md",
         "tasks.md",
         "analysis.md",
-        "checklists/implementation-readiness.md",
         "workflow-state.json",
     ]
     assert manifest["artifact_sets"]["validation-only"] == ["validation.md"]

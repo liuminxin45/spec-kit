@@ -781,6 +781,11 @@ function Test-IsBugfixRouting {
     )
 }
 
+function Test-LeanDeliveryProfileName {
+    param([string]$Profile)
+    return (([string]$Profile).ToLowerInvariant() -in @("micro-fix", "standard-bugfix-lite"))
+}
+
 function Get-LabeledMarkdownValue {
     param([string]$Text, [string]$Label)
     $escaped = [regex]::Escape($Label)
@@ -789,6 +794,74 @@ function Get-LabeledMarkdownValue {
         return $match.Groups[1].Value.Trim()
     }
     return ""
+}
+
+function Get-WorkpackOutcomeGate {
+    param([string]$ResolvedFeatureDir)
+
+    $gate = [ordered]@{
+        checked = $true
+        gate_status = "ok"
+        artifact = "workpack.md"
+        exists = $false
+        final_status = ""
+        final_fix_type = ""
+        eliminated_failure_mechanism = ""
+        validation_result = ""
+        validation_evidence = ""
+        compatibility_impact = ""
+        missing = @()
+    }
+
+    $path = Join-Path $ResolvedFeatureDir "workpack.md"
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        $gate.exists = $false
+        $gate.gate_status = "blocked"
+        $gate.missing += "workpack.md"
+        return $gate
+    }
+
+    $gate.exists = $true
+    $text = Get-Content -LiteralPath $path -Raw -ErrorAction SilentlyContinue
+    if ($text -notmatch "(?im)^\s*##\s+Outcome\s*$") {
+        $gate.gate_status = "blocked"
+        $gate.missing += "Outcome"
+        return $gate
+    }
+
+    $gate.final_status = (Get-LabeledMarkdownValue -Text $text -Label "Final status").ToLowerInvariant()
+    $gate.final_fix_type = (Get-LabeledMarkdownValue -Text $text -Label "Final fix type").ToLowerInvariant()
+    $gate.eliminated_failure_mechanism = (Get-LabeledMarkdownValue -Text $text -Label "Eliminated failure mechanism").ToLowerInvariant()
+    $gate.validation_result = Get-LabeledMarkdownValue -Text $text -Label "Validation result"
+    $gate.validation_evidence = Get-LabeledMarkdownValue -Text $text -Label "Validation evidence"
+    $gate.compatibility_impact = Get-LabeledMarkdownValue -Text $text -Label "Compatibility impact"
+
+    if ($gate.final_status -notin @("completed", "complete", "passed", "ok", "done")) {
+        $gate.missing += "Final status"
+    }
+    if ($gate.final_fix_type -notin @("root fix", "mitigation", "containment", "compatibility fallback")) {
+        $gate.missing += "Final fix type"
+    }
+    if ($gate.eliminated_failure_mechanism -notin @("yes", "no", "partial")) {
+        $gate.missing += "Eliminated failure mechanism"
+    }
+    if ($gate.final_fix_type -eq "root fix" -and $gate.eliminated_failure_mechanism -ne "yes") {
+        $gate.missing += "root fix requires Eliminated failure mechanism: yes"
+    }
+    if (-not (Test-MeaningfulMarkdownValue -Value $gate.validation_result)) {
+        $gate.missing += "Validation result"
+    }
+    if (-not (Test-MeaningfulMarkdownValue -Value $gate.validation_evidence -AllowNa)) {
+        $gate.missing += "Validation evidence"
+    }
+    if (-not (Test-MeaningfulMarkdownValue -Value $gate.compatibility_impact -AllowNa)) {
+        $gate.missing += "Compatibility impact"
+    }
+
+    if ($gate.missing.Count -gt 0) {
+        $gate.gate_status = "blocked"
+    }
+    return $gate
 }
 
 function Test-MeaningfulMarkdownValue {
@@ -929,7 +1002,7 @@ function Get-StageGateRequiredArtifacts {
         return @()
     }
 
-    $highRiskFlags = @("ui-parity", "host-embedded-ui", "cross-repo-validation", "public-api", "real-device")
+    $highRiskFlags = @("ui-parity", "host-embedded-ui", "cross-repo-validation", "public-api", "real-device", "external-system")
     $hasHighRiskFlag = $false
     foreach ($flag in @($Routing.risk_flags)) {
         if ($highRiskFlags -contains $flag) {
@@ -939,10 +1012,10 @@ function Get-StageGateRequiredArtifacts {
     }
 
     if ($Routing.profile -eq "full-sdd") {
-        return @("tasks.md", "analysis.md", "checklists/implementation-readiness.md")
+        return @("checklists/implementation-readiness.md", "tasks.md", "analysis.md")
     }
     if ($Routing.risk_level -in @("high", "blocked") -or $hasHighRiskFlag) {
-        return @("analysis.md", "checklists/implementation-readiness.md")
+        return @("checklists/implementation-readiness.md", "analysis.md")
     }
     return @()
 }
@@ -1449,13 +1522,26 @@ function Invoke-ValidateFeatureArtifacts {
         Set-Blocked $result ("unfinished placeholders in: " + ($todos -join ", "))
     }
 
+    $isLeanProfile = Test-LeanDeliveryProfileName $routing.profile
+    $isLeanAcceptance = $isLeanProfile -and $Stage -eq "acceptance"
     $requireRootFixPlanning = ($Stage -eq "implement")
-    $requireRootFixSummary = ($Stage -in @("converge", "acceptance", "commit"))
+    $requireRootFixSummary = ($Stage -in @("converge", "commit")) -or (($Stage -eq "acceptance") -and -not $isLeanAcceptance)
     $rootFixGate = Invoke-ValidateRootFixDecisionGate `
         -Result $result `
         -Routing $routing `
         -RequirePlanningGate:$requireRootFixPlanning `
         -RequireSummaryGate:$requireRootFixSummary
+
+    $workpackOutcomeGate = [ordered]@{
+        checked = $false
+        gate_status = "not_checked"
+    }
+    if ($isLeanAcceptance) {
+        $workpackOutcomeGate = Get-WorkpackOutcomeGate -ResolvedFeatureDir $FeatureDir
+        if ($workpackOutcomeGate.gate_status -eq "blocked") {
+            Set-Blocked $result ("workpack.md Outcome incomplete before acceptance: " + (@($workpackOutcomeGate.missing) -join ", "))
+        }
+    }
 
     $retrospectiveGate = [ordered]@{
         checked = $false
@@ -1472,7 +1558,7 @@ function Invoke-ValidateFeatureArtifacts {
         status = ""
         artifact = ""
     }
-    if ($Stage -in @("acceptance", "commit")) {
+    if (($Stage -in @("acceptance", "commit")) -and (-not $isLeanAcceptance)) {
         $implementationSummaryGate.checked = $true
         $implementationSummaryGate.gate_status = "ok"
         $workflowStatePath = Join-Path $FeatureDir "workflow-state.json"
@@ -1540,6 +1626,7 @@ function Invoke-ValidateFeatureArtifacts {
     $result.facts.layer_manifest = $manifestPath
     $result.facts.missing_sections = $missingSections
     $result.facts.root_fix_decision_gate = $rootFixGate
+    $result.facts.workpack_outcome_gate = $workpackOutcomeGate
     $result.facts.retrospective_gate = $retrospectiveGate
     $result.facts.implementation_summary_gate = $implementationSummaryGate
     return $result
@@ -1562,16 +1649,16 @@ function Invoke-ValidateGeneratedContext {
         $workflowPath = ".specify/workflows/speckit/workflow.yml"
     }
     $knowledgeLockPath = Join-Path $RepoRoot ".specify/knowledge/lock.yml"
-    $repositoryMapPhrases = @("Project Path Categories", "CDP target inventory", "Do not write machine-specific absolute paths here")
+    $repositoryMapPhrases = @("Project Path Categories", "Target inventory", "Do not write machine-specific absolute paths here")
     if (-not (Test-Path -LiteralPath $knowledgeLockPath -PathType Leaf)) {
         $repositoryMapPhrases += "<workspace-root>/<app-path>/"
-        $repositoryMapPhrases += "Optional Host / CDP Defaults"
+        $repositoryMapPhrases += "Optional Runtime / Inspection Targets"
     }
     $checks = @()
     $checks += @(
         [ordered]@{
             path = $canonicalContextFile
-            phrases = @("Project Path Categories", "source-to-runtime copy", "best-effort self-validation", "direct runtime replacement", "host CDP validation", "ensure-host-cdp", "stale/current-feature hint", "read the current plan only", "standard-bugfix-lite", "workpack.md", "implementation-summary.md", "Root-Fix Decision Gate", "select-knowledge", "select-gates", "validate-knowledge-index", "validate-context-budget", "inspect-validation-capabilities", "inspect-workflow-closure", "Commit is opt-in", "preflight-new-workflow", "preflight-push")
+            phrases = @("Project Path Categories", "best-effort self-validation", "stale/current-feature hint", "read the current plan only", "standard-bugfix-lite", "workpack.md", "implementation-summary.md", "Root-Fix Decision Gate", "select-knowledge", "select-gates", "validate-knowledge-index", "validate-context-budget", "inspect-validation-capabilities", "inspect-workflow-closure", "Commit is opt-in", "preflight-new-workflow", "preflight-push")
         },
         [ordered]@{
             path = if ($isSourceCheckout) { "templates/repository-map-template.md" } else { ".specify/memory/repository-map.md" }
@@ -1583,7 +1670,7 @@ function Invoke-ValidateGeneratedContext {
         },
         [ordered]@{
             path = if ($isSourceCheckout) { "templates/ai/workflows/task-routing.md" } else { "ai/workflows/task-routing.md" }
-            phrases = @("tasks -> analyze -> checklist", "standard-bugfix-lite", "workpack.md", "implementation-summary.md", "Root-Fix Decision Gate", "resolve-next-stage", "skill-routing.yml", "validate-generated-context", "validate-knowledge-index", "validate-context-budget", "select-knowledge", "select-gates", "Stage Continuation", "New Workflow Start", "preflight-new-workflow", "Workflow Hooks", "specify workflow invoke-hooks", "workflow-agent-chain", "auto_continue=true", "Final Response Guard", "inspect-workflow-closure", "not default artifacts", "Opt-in", "do not apply stale feature risk flags")
+            phrases = @("checklist -> tasks -> analyze", "standard-bugfix-lite", "workpack.md", "implementation-summary.md", "Root-Fix Decision Gate", "resolve-next-stage", "skill-routing.yml", "validate-generated-context", "validate-knowledge-index", "validate-context-budget", "select-knowledge", "select-gates", "Stage Continuation", "New Workflow Start", "preflight-new-workflow", "Workflow Hooks", "specify workflow invoke-hooks", "workflow-agent-chain", "auto_continue=true", "Final Response Guard", "inspect-workflow-closure", "not default artifacts", "Opt-in", "do not apply stale feature risk flags")
         },
         [ordered]@{
             path = if ($isSourceCheckout) { "templates/ai/workflows/skill-routing.yml" } else { "ai/workflows/skill-routing.yml" }
@@ -1591,16 +1678,16 @@ function Invoke-ValidateGeneratedContext {
         },
         [ordered]@{
             path = if ($isSourceCheckout) { "templates/ai/rules/ai-coding-rules.md" } else { "ai/rules/ai-coding-rules.md" }
-            phrases = @("Generated Context Drift", "standard-bugfix-lite", "workpack.md", "implementation-summary.md", "Root-Fix Decision Gate", "resolve-next-stage", "validate-generated-context", "validate-knowledge-index", "Stage Continuation Contract", "preflight-new-workflow", "Workflow hooks are dispatched through", "specify workflow invoke-hooks", "Host Frontend Delivery Chain", "ensure-host-cdp", "Commit is opt-in", "inspect-workflow-closure", "opt-in governance", "preflight-push")
+            phrases = @("Generated Context Drift", "standard-bugfix-lite", "workpack.md", "implementation-summary.md", "Root-Fix Decision Gate", "resolve-next-stage", "validate-generated-context", "validate-knowledge-index", "Stage Continuation Contract", "preflight-new-workflow", "Workflow hooks are dispatched through", "specify workflow invoke-hooks", "Gate-Pack Routed Evidence", "Commit is opt-in", "inspect-workflow-closure", "opt-in governance", "preflight-push")
         },
         [ordered]@{
             path = $workflowPath
-            phrases = @("id: new-workflow-preflight", "preflight-new-workflow", "id: implement", "id: acceptance", "standard-bugfix-lite", "implementation-summary.md", "Root-Fix Decision Gate", "conditional_stages:", "commit: `"Opt-in", "complete-branch: `"Opt-in", "automatic_stage_continuation", "deterministic_next_stage", "workflow_hooks", "specify workflow invoke-hooks", "workflow-agent-chain", ".specify/workflow-hooks.yml", "final_response_guard", "inspect-host-cdp-target", "ensure-host-cdp", "validate-knowledge-index", "validate-context-budget", "select-gates", "current-feature state only")
+            phrases = @("id: new-workflow-preflight", "preflight-new-workflow", "id: implement", "id: acceptance", "standard-bugfix-lite", "implementation-summary.md", "Root-Fix Decision Gate", "conditional_stages:", "commit: `"Opt-in", "complete-branch: `"Opt-in", "automatic_stage_continuation", "deterministic_next_stage", "workflow_hooks", "specify workflow invoke-hooks", "workflow-agent-chain", ".specify/workflow-hooks.yml", "final_response_guard", "checklist -> tasks -> analyze", "validate-knowledge-index", "validate-context-budget", "select-gates", "current-feature state only")
         },
         [ordered]@{
             path = if ($isSourceCheckout) { "TEAM-README.md" } else { "spec-kit/TEAM-README.md" }
             optional = $true
-            phrases = @("source edit -> frontend build -> direct runtime replacement -> real host CDP verification", "select-knowledge", "select-gates", "validate-context-budget", "full-text/BM25 search")
+            phrases = @("select-knowledge", "select-gates", "validate-context-budget", "full-text/BM25 search")
         }
     )
     if (Test-Path -LiteralPath $knowledgeLockPath -PathType Leaf) {
@@ -1624,7 +1711,27 @@ function Invoke-ValidateGeneratedContext {
         }
         $checks += [ordered]@{
             path = "templates/commands/implement.md"
-            phrases = @("ensure-host-cdp", "real product target", "Human acceptance", "select-gates")
+            phrases = @("selected gate packs", "Human acceptance", "select-gates")
+        }
+        $checks += [ordered]@{
+            path = "templates/ai/workflows/gates/host-cdp.yml"
+            phrases = @("ensure-host-cdp", "inspect-host-cdp-target")
+        }
+        $checks += [ordered]@{
+            path = "templates/ai/workflows/gates/frontend-runtime-sync.yml"
+            phrases = @("source edits", "Build command", "sync-ui-runtime-artifacts", "CDP")
+        }
+        $checks += [ordered]@{
+            path = "templates/ai/workflows/gates/plugin-package.yml"
+            phrases = @("validate-plugin-package", ".plugin")
+        }
+        $checks += [ordered]@{
+            path = "templates/ai/workflows/gates/qt-parity.yml"
+            phrases = @("Qt Source Behavior Parity Gate", "Source Behavior Execution Map")
+        }
+        $checks += [ordered]@{
+            path = "templates/ai/workflows/gates/real-device.yml"
+            phrases = @("real-device", "device")
         }
         $checks += [ordered]@{
             path = "templates/commands/retrospective.md"
@@ -1648,7 +1755,7 @@ function Invoke-ValidateGeneratedContext {
         }
         $checks += [ordered]@{
             path = "templates/commands/ai-self-acceptance.md"
-            phrases = @("AI Self-Acceptance", "PASS", "FAIL", "BLOCKED", "Root-Fix Decision Gate", "CDP", "console", "logs", "cdp-screenshots")
+            phrases = @("AI Self-Acceptance", "PASS", "FAIL", "BLOCKED", "Root-Fix Decision Gate", "console", "logs", "runtime target")
         }
         $checks += [ordered]@{
             path = "templates/acceptance-rubric-template.md"
@@ -1656,7 +1763,7 @@ function Invoke-ValidateGeneratedContext {
         }
         $checks += [ordered]@{
             path = "templates/checklist-template.md"
-            phrases = @("next_required_human_action", "CHK010N", "runtime 替换目录")
+            phrases = @("next_required_human_action", "CHK010F", "selected gate packs")
         }
     } else {
         $checks += [ordered]@{
@@ -1669,7 +1776,27 @@ function Invoke-ValidateGeneratedContext {
         }
         $checks += [ordered]@{
             path = "$internalSkillsDir/speckit-implement/SKILL.md"
-            phrases = @("ensure-host-cdp", "real product target", "Human acceptance", "select-gates")
+            phrases = @("selected gate packs", "Human acceptance", "select-gates")
+        }
+        $checks += [ordered]@{
+            path = "ai/workflows/gates/host-cdp.yml"
+            phrases = @("ensure-host-cdp", "inspect-host-cdp-target")
+        }
+        $checks += [ordered]@{
+            path = "ai/workflows/gates/frontend-runtime-sync.yml"
+            phrases = @("source edits", "Build command", "sync-ui-runtime-artifacts", "CDP")
+        }
+        $checks += [ordered]@{
+            path = "ai/workflows/gates/plugin-package.yml"
+            phrases = @("validate-plugin-package", ".plugin")
+        }
+        $checks += [ordered]@{
+            path = "ai/workflows/gates/qt-parity.yml"
+            phrases = @("Qt Source Behavior Parity Gate", "Source Behavior Execution Map")
+        }
+        $checks += [ordered]@{
+            path = "ai/workflows/gates/real-device.yml"
+            phrases = @("real-device", "device")
         }
         $checks += [ordered]@{
             path = "$internalSkillsDir/speckit-retrospective/SKILL.md"
@@ -1693,7 +1820,7 @@ function Invoke-ValidateGeneratedContext {
         }
         $checks += [ordered]@{
             path = "$internalSkillsDir/speckit-ai-self-acceptance/SKILL.md"
-            phrases = @("AI Self-Acceptance", "PASS", "FAIL", "BLOCKED", "Root-Fix Decision Gate", "CDP", "console", "logs", "cdp-screenshots")
+            phrases = @("AI Self-Acceptance", "PASS", "FAIL", "BLOCKED", "Root-Fix Decision Gate", "console", "logs", "runtime target")
         }
         $checks += [ordered]@{
             path = ".specify/templates/acceptance-rubric-template.md"
@@ -1703,7 +1830,7 @@ function Invoke-ValidateGeneratedContext {
         $checks += [ordered]@{
             path = ".specify/templates/checklist-template.md"
             source_path = "spec-kit/templates/checklist-template.md"
-            phrases = @("next_required_human_action", "CHK010N", "runtime 替换目录")
+            phrases = @("next_required_human_action", "CHK010F", "selected gate packs")
         }
     }
 
@@ -2212,7 +2339,43 @@ function Invoke-ValidateTestPlan {
 
 function Invoke-ValidateAiSelfAcceptance {
     $result = New-Result "validate-ai-self-acceptance"
-    $validationPath = Join-Path $FeatureDir "validation.md"
+    $resolvedFeatureDir = Resolve-FeatureDirPath $FeatureDir
+    $routing = Read-FeatureRouting -Result $result
+    $isLean = Test-LeanDeliveryProfileName $routing.profile
+    $result.facts.delivery_profile = $routing.profile
+    $result.facts.feature_dir = $resolvedFeatureDir
+
+    if ($isLean) {
+        $workpackPath = Join-Path $resolvedFeatureDir "workpack.md"
+        if (-not (Test-Path -LiteralPath $workpackPath -PathType Leaf)) {
+            Set-Blocked $result "workpack.md not found"
+            return $result
+        }
+
+        $text = Get-Content -LiteralPath $workpackPath -Raw
+        $outcomeMatch = [regex]::Match($text, '(?ims)^\s*##\s+Outcome\s*$([\s\S]*?)(?=^\s*##\s+|\z)')
+        if (-not $outcomeMatch.Success) {
+            Set-Blocked $result "workpack.md missing Outcome section"
+            return $result
+        }
+
+        $outcomeText = $outcomeMatch.Groups[1].Value
+        $hasSection = ($outcomeText -match "(?i)AI\s+Self-Acceptance|AI\s+Acceptance\s+Result|AI\s+自验|AI\s+验收")
+        $isPass = ($outcomeText -match "(?i)AI\s+(Self-)?Acceptance[^#\r\n]*(PASS)|AI\s+Self-Acceptance\s*[:：]\s*PASS|AI\s+Acceptance\s+Result\s*[:：]\s*PASS")
+        if (-not $hasSection) {
+            Set-Blocked $result "workpack.md Outcome missing AI Self-Acceptance result"
+        } elseif (-not $isPass) {
+            Set-Blocked $result "AI Self-Acceptance must be PASS before human acceptance or commit"
+        }
+
+        $result.facts.validation = $workpackPath
+        $result.facts.validation_artifact = "workpack.md Outcome"
+        $result.facts.has_ai_self_acceptance = $hasSection
+        $result.facts.pass = $isPass
+        return $result
+    }
+
+    $validationPath = Join-Path $resolvedFeatureDir "validation.md"
     if (-not (Test-Path -LiteralPath $validationPath -PathType Leaf)) {
         Set-Blocked $result "validation.md not found"
         return $result
@@ -2228,6 +2391,7 @@ function Invoke-ValidateAiSelfAcceptance {
     }
 
     $result.facts.validation = $validationPath
+    $result.facts.validation_artifact = "validation.md"
     $result.facts.has_ai_self_acceptance = $hasSection
     $result.facts.pass = $isPass
     return $result
@@ -2517,6 +2681,9 @@ function Invoke-InspectWorkflowClosure {
 
     $artifacts = [ordered]@{}
     foreach ($name in @(
+        "workpack.md",
+        "plan.md",
+        "tasks.md",
         "validation.md",
         "implementation-summary.md",
         "acceptance.md",
@@ -2586,16 +2753,6 @@ function Invoke-InspectWorkflowClosure {
         $rubricStatus = "missing"
     }
 
-    $missingArtifacts = @()
-    foreach ($entry in $artifacts.GetEnumerator()) {
-        if (-not $entry.Value -and $entry.Key -in @(
-            "implementation-summary.md",
-            "validation.md"
-        )) {
-            $missingArtifacts += $entry.Key
-        }
-    }
-
     $workflowRecordExists = [bool]$artifacts["workflow-record.md"]
     $implementationSummaryExists = [bool]$artifacts["implementation-summary.md"]
     $improvementCandidatesExists = [bool]$artifacts["improvement-candidates.md"]
@@ -2619,13 +2776,37 @@ function Invoke-InspectWorkflowClosure {
     if ([string]::IsNullOrWhiteSpace([string]$closureRouting.profile) -and -not [string]::IsNullOrWhiteSpace($deliveryProfile)) {
         $closureRouting.profile = $deliveryProfile
     }
+    $isLeanClosure = Test-LeanDeliveryProfileName $closureRouting.profile
+    $strictClosureRequired = ($commitDetected -or $postCommitCompleted -or $artifacts["rubric-score.md"])
+    $workpackOutcomeGate = [ordered]@{
+        checked = $false
+        gate_status = "not_checked"
+    }
+    $missingArtifacts = @()
+    if ($closureRequired -and $isLeanClosure -and (-not $strictClosureRequired)) {
+        $workpackOutcomeGate = Get-WorkpackOutcomeGate -ResolvedFeatureDir $resolvedFeatureDir
+        if ($workpackOutcomeGate.gate_status -eq "blocked") {
+            $missingArtifacts += "workpack.md Outcome"
+        }
+    } else {
+        foreach ($entry in $artifacts.GetEnumerator()) {
+            if (-not $entry.Value -and $entry.Key -in @(
+                "implementation-summary.md",
+                "validation.md"
+            )) {
+                $missingArtifacts += $entry.Key
+            }
+        }
+    }
     $rootFixGate = [ordered]@{
         checked = $false
         is_bugfix = $false
         gate_status = "not_checked"
     }
     if ($closureRequired) {
-        $rootFixGate = Invoke-ValidateRootFixDecisionGate -Result $result -Routing $closureRouting -RequireSummaryGate
+        if (-not ($isLeanClosure -and (-not $strictClosureRequired))) {
+            $rootFixGate = Invoke-ValidateRootFixDecisionGate -Result $result -Routing $closureRouting -RequireSummaryGate
+        }
     }
     $workflowHookGate = [ordered]@{
         checked = $false
@@ -2652,6 +2833,7 @@ function Invoke-InspectWorkflowClosure {
     $result.facts.missing_artifacts = @($missingArtifacts | Select-Object -Unique)
     $result.facts.artifacts = $artifacts
     $result.facts.root_fix_decision_gate = $rootFixGate
+    $result.facts.workpack_outcome_gate = $workpackOutcomeGate
     $result.facts.workflow_hook_gate = $workflowHookGate
     if ($rubricValidation) {
         $result.facts.rubric_validation = $rubricValidation
@@ -2679,10 +2861,13 @@ function Invoke-InspectWorkflowClosure {
 
     $nextRequiredStage = ""
     if ($closureRequired) {
-        if (-not $implementationSummaryExists) {
+        if ($isLeanClosure -and (-not $strictClosureRequired) -and $workpackOutcomeGate.gate_status -eq "blocked") {
+            $nextRequiredStage = "speckit.implement"
+            Set-Blocked $result ("accepted lean work detected but workpack.md Outcome is incomplete: " + (@($workpackOutcomeGate.missing) -join ", "))
+        } elseif (-not $implementationSummaryExists -and (-not ($isLeanClosure -and (-not $strictClosureRequired)))) {
             $nextRequiredStage = "speckit.implement"
             Set-Blocked $result "acceptance or commit detected but implementation-summary.md is missing"
-        } elseif (-not $artifacts["validation.md"]) {
+        } elseif ((-not $artifacts["validation.md"]) -and (-not ($isLeanClosure -and (-not $strictClosureRequired)))) {
             $nextRequiredStage = "speckit.implement"
             Set-Blocked $result "acceptance or commit detected but validation.md is missing"
         } elseif ($rootFixGate.checked -and $rootFixGate.gate_status -ne "ok") {
@@ -2751,6 +2936,7 @@ function Invoke-CollectWorkflowObserverPacket {
 
     $artifactNames = @(
         "intake.md",
+        "workpack.md",
         "spec.md",
         "plan.md",
         "tasks.md",

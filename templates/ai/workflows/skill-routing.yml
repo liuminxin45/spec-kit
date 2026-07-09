@@ -7,10 +7,7 @@ policy:
   internal_skill_root: ".agents/spec-kit/skills"
   load_only_selected_skill: true
   selection_rule: "Use task-routing.md for profile/stage choice, then read only the matching internal skill."
-  forbidden:
-    - "Do not pre-load the internal skill directory."
-    - "Do not duplicate gate-pack, knowledge-guide, or command details in this map."
-    - "Do not treat this map as source truth for product behavior."
+  forbidden: "Do not pre-load internal skills, duplicate gate/knowledge details, or treat this map as product truth."
 stage_skills:
   new-workflow-preflight: "speckit-new-workflow-preflight"
   intake: "speckit-intake"
@@ -41,8 +38,7 @@ capability_skills:
   fact-layer:
     skill: "speckit-fact-layer"
     when:
-      - "repeated same-class failure or unchanged symptom"
-      - "runtime DOM, console, computed style, box metrics, SDK log, or service layer log evidence is needed"
+      - "repeated same-class failure, unchanged symptom, or runtime/log evidence is needed"
   repository-map:
     skill: "speckit-repository-map"
     when:
@@ -70,12 +66,11 @@ capability_skills:
   test-plan:
     skill: "speckit-test-plan"
     when:
-      - "clarify or plan must draft API, E2E, interface, regression, fixture, or smoke test-case plans"
-      - "test-case choices need human review before implementation"
+      - "clarify or plan must draft or negotiate API, E2E, interface, regression, fixture, or smoke test-case plans"
   quality-vision:
     skill: "speckit-quality-vision"
     when:
-      - "clarify or plan needs UI/UX quality tier, design intent, baseline screenshot, Qt source, or owner-approved N/A"
+      - "clarify or plan needs UI/UX quality tier, design intent, baseline screenshot, source behavior, or owner-approved N/A"
   acceptance-rubric:
     skill: "speckit-acceptance-rubric"
     when:

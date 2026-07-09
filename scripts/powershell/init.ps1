@@ -7,9 +7,9 @@ param(
     [switch]$CheckAgentTools,
     [string]$McpServerId = "chrome-devtools",
     [string]$McpCommand = "npm",
-    [ValidateSet("auto", "electron", "electron-slim")]
-    [string]$McpChromeMode = "electron-slim",
-    [string]$McpBrowserUrl = "http://127.0.0.1:9222",
+    [ValidateSet("auto", "browser", "browser-slim", "electron", "electron-slim")]
+    [string]$McpChromeMode = "browser-slim",
+    [string]$McpBrowserUrl = "",
     [string[]]$McpArgs = @(),
     [switch]$ConfigureMcpAgent,
     [switch]$SkipMcpAgentConfig,
@@ -35,8 +35,8 @@ if ($Help) {
     Write-Output "  -SkipMcpAgentConfig  Compatibility switch; prevents MCP configuration even when -ConfigureMcpAgent is supplied."
     Write-Output "  -McpServerId  MCP server id. Default: chrome-devtools."
     Write-Output "  -McpCommand   MCP stdio command. Default: npm."
-    Write-Output "  -McpChromeMode  Chrome DevTools MCP mode: auto, electron, electron-slim. Default: electron-slim."
-    Write-Output "  -McpBrowserUrl  Electron remote debugging URL for electron modes. Default: http://127.0.0.1:9222."
+    Write-Output "  -McpChromeMode  Chrome DevTools MCP mode: auto, browser, browser-slim. Default: browser-slim. electron/electron-slim remain aliases."
+    Write-Output "  -McpBrowserUrl  Optional browser/runtime remote debugging URL. Browser modes omit it by default; electron aliases use http://127.0.0.1:9222 when omitted."
     Write-Output "  -McpArgs      Optional MCP stdio arguments. When set, overrides the default args derived from -McpChromeMode."
     Write-Output "                When MCP config is enabled, global node must satisfy ^20.19.0 || ^22.12.0 || >=23 for chrome-devtools-mcp@latest."
     Write-Output "  -CreateMissingMcpConfig  Create missing agent config files. Default only updates detected configs."

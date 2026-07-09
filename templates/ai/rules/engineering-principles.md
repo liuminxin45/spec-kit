@@ -24,16 +24,16 @@ that normal feature workflows may cite but must not silently change.
 
 - Claims of completion require concrete validation evidence or an explicit
   validation gap with follow-up.
-- Prefer build, unit, integration, smoke, UI flow, virtual-device, real-device,
+- Prefer build, unit, integration, smoke, UI flow, target-environment,
   manual review, or downstream consumer validation depending on risk.
 - LLM may judge validation sufficiency, but scripts provide only hard facts,
   blockers, unknowns, and hints.
 
 ## Source Ownership
 
-- Product and plugin fixes must modify repository source files.
-- Installed runtime plugin directories, host-served frontend plugin outputs,
-  `dist/`, `build/`, `export/`, and `plugin-out/` are validation or deployment
+- Product fixes must modify repository source files.
+- Installed runtime directories, served runtime outputs, `dist/`, `build/`,
+  `export/`, and similar generated outputs are validation or deployment
   artifacts unless a repository explicitly treats them as source.
 - Emergency artifact patches must be ported back to source before acceptance or
   commit.

@@ -48,7 +48,7 @@
 
 - [ ] T001 审核 `spec.md`、`plan.md`、selected gate packs，以及附近既有代码模式。
 - [ ] T002 确认精确影响文件/模块，并确认不需要无关清理。
-- [ ] T003 审核 public API、identity/state、runtime/service/UI、real-device 或 cross-repo 边界。
+- [ ] T003 审核 public API、identity/state、runtime/service/UI、external-system 或 cross-repo 边界。
 
 ## Phase 2: 实现
 

@@ -56,8 +56,10 @@ Create the smallest useful planning artifact:
 
 ## Execution Steps
 
-1. Run the setup script and parse `FEATURE_SPEC`, `IMPL_PLAN`, `SPECS_DIR`, and branch facts.
-2. Load `.specify/feature.json`, repository-map, and only the active feature artifact needed by the selected profile.
+1. Run the setup script and parse `ARTIFACT`, `ARTIFACT_KIND`, `WORKPACK`,
+   `IMPL_PLAN`, `SPECS_DIR`, delivery profile, and branch facts.
+2. Load `.specify/feature.json`, repository-map, and only the active feature
+   artifact selected by `ARTIFACT_KIND`.
 3. Run `select-gates` for stage `plan`; record selected gate ids, not full gate text.
 4. Run `select-knowledge` only when repository-map and selected gates are not enough.
 5. For changed behavior that needs API/E2E/interface/regression/fixture/smoke/UI/device planning, load `speckit-test-plan`; if choices are ambiguous or costly, stop for human review.
@@ -70,6 +72,7 @@ Create the smallest useful planning artifact:
    - one bounded change slice
    - allowed and forbidden scope
    - validation command or substitute evidence
+   - empty Outcome fields to fill after implementation
    - acceptance summary
 9. For `plan.md`, keep only decision-critical sections:
    - human summary

@@ -29,7 +29,7 @@ context_policy:
     - "ai/templates/*"
 
 requires:
-  speckit_version: ">=0.10.2"
+  speckit_version: ">=0.10.3"
 
 inputs:
   spec:
@@ -72,7 +72,7 @@ steps:
     command: speckit.intake
     integration: "{{ inputs.integration }}"
     input:
-      args: "Classify delivery_profile from repository facts and risk, not keyword matching. Prefer micro-fix or standard-bugfix-lite when the work is bounded. Upgrade to standard-bugfix/full-sdd only for public API, architecture, migration, cross-repo, identity/permission/status, real-device, or host/plugin/native delivery-chain work. {{ inputs.spec }}"
+      args: "Classify delivery_profile from repository facts and risk, not keyword matching. Prefer micro-fix or standard-bugfix-lite when the work is bounded. Upgrade to standard-bugfix/full-sdd only for public API, architecture, migration, cross-repo, identity/permission/status, external-system, or selected-gate delivery-chain work. {{ inputs.spec }}"
 
   - id: specify
     command: speckit.specify
@@ -86,7 +86,7 @@ steps:
     integration: "{{ inputs.integration }}"
     skip_profiles: ["validation-only", "blocked-investigation"]
     input:
-      args: "Create the smallest execution artifact. Micro-fix and standard-bugfix-lite use workpack.md instead of spec.md/plan.md/tasks.md. Standard-bugfix uses plan.md with Implementation Slices and normally skips tasks.md. Full-sdd may add spec.md, plan.md, tasks.md, research, contracts, and quickstart only when required by scope or risk. Bugfix work must record Root-Fix Decision Gate in workpack.md or plan.md. Select gate packs with select-gates before loading CDP/native/plugin/real-device details."
+      args: "Create the smallest execution artifact. Micro-fix and standard-bugfix-lite use workpack.md instead of spec.md/plan.md/tasks.md. Standard-bugfix uses plan.md with Implementation Slices and normally skips tasks.md. Full-sdd may add spec.md, plan.md, tasks.md, research, contracts, and quickstart only when required by scope or risk. Bugfix work must record Root-Fix Decision Gate in workpack.md or plan.md. Select gate packs with select-gates before loading specialized evidence details."
 
   - id: validation
     command: speckit.validation
@@ -100,42 +100,42 @@ steps:
     integration: "{{ inputs.integration }}"
     profiles: ["blocked-investigation"]
     input:
-      args: "Collect bounded root-cause facts, logs, runtime evidence, CDP/DOM/CSS details, and blockers required to unblock implementation. Do not patch by guessing."
-
-  - id: tasks
-    command: speckit.tasks
-    integration: "{{ inputs.integration }}"
-    profiles: ["full-sdd"]
-    input:
-      args: "Generate tasks.md only for full-sdd or when plan.md cannot hold executable slices compactly."
-
-  - id: analyze
-    command: speckit.analyze
-    integration: "{{ inputs.integration }}"
-    profiles: ["full-sdd"]
-    input:
-      args: "Analyze spec/plan/tasks consistency, root-cause evidence, Root-Fix Decision Gate, and implementation readiness before broad source changes."
+      args: "Collect bounded root-cause facts, logs, runtime evidence, browser/DOM/CSS details when relevant, and blockers required to unblock implementation. Do not patch by guessing."
 
   - id: checklist
     command: speckit.checklist
     integration: "{{ inputs.integration }}"
     profiles: ["full-sdd"]
     input:
-      args: "Run implementation-readiness checklist gates only for full-sdd or explicitly high-risk work."
+      args: "After plan, run implementation-readiness checklist gates for full-sdd or explicitly high-risk work before tasks or implementation."
+
+  - id: tasks
+    command: speckit.tasks
+    integration: "{{ inputs.integration }}"
+    profiles: ["full-sdd"]
+    input:
+      args: "After checklist, generate tasks.md only for full-sdd or when plan.md cannot hold executable slices compactly."
+
+  - id: analyze
+    command: speckit.analyze
+    integration: "{{ inputs.integration }}"
+    profiles: ["full-sdd"]
+    input:
+      args: "After tasks, analyze spec/plan/tasks consistency, root-cause evidence, Root-Fix Decision Gate, and implementation readiness before broad source changes."
 
   - id: implement
     command: speckit.implement
     integration: "{{ inputs.integration }}"
     skip_profiles: ["validation-only", "blocked-investigation"]
     input:
-      args: "Implement from workpack.md, plan slices, or tasks.md when present. Keep searches bounded to affected repositories. Record durable state in workflow-state.json, validation.md, and implementation-summary.md; do not create progress.md by default. After code changes, collect required validation and use speckit-ai-self-acceptance when an acceptance rubric exists. Product and plugin fixes must target repository source, not installed runtime plugin directories or built artifacts. Do not commit, push, merge, or delete branches."
+      args: "Implement from workpack.md, plan slices, or tasks.md when present. Keep searches bounded to affected repositories. For micro-fix and standard-bugfix-lite, record final result in workpack.md Outcome plus workflow-state.json; split validation.md and implementation-summary.md only for non-lean, commit, branch completion, strict governance, handoff, high-risk, or evidence-heavy paths. Do not create progress.md by default. After code changes, collect required validation and use speckit-ai-self-acceptance when an acceptance rubric exists. Durable fixes must target repository source, not installed/generated/runtime outputs or built artifacts. Do not commit, push, merge, or delete branches."
 
   - id: acceptance
     command: speckit.acceptance
     integration: "{{ inputs.integration }}"
     skip_profiles: ["validation-only", "blocked-investigation"]
     input:
-      args: "Produce concise user acceptance steps after validation.md and implementation-summary.md exist. Write acceptance.md only when durable user-facing acceptance is useful; otherwise report steps in the response. Do not create acceptance-checklist.md by default. Wait for explicit user confirmation that acceptance passes."
+      args: "Produce concise user acceptance steps after lean workpack.md Outcome or strict validation.md plus implementation-summary.md exists. Write acceptance.md only when durable user-facing acceptance is useful; otherwise report steps in the response. Do not create acceptance-checklist.md by default. Wait for explicit user confirmation that acceptance passes."
 
   - id: human-acceptance
     type: gate
@@ -146,7 +146,7 @@ steps:
 
 conditional_stages:
   clarify: "Use only for high-impact ambiguity or owner-approved gaps."
-  converge: "Use only when full-sdd/high-risk work needs a separate promised-vs-delivered reconciliation artifact; otherwise keep closure in implementation-summary.md."
+  converge: "Use only when full-sdd/high-risk work needs a separate promised-vs-delivered reconciliation artifact; otherwise close lean work in workpack.md Outcome and strict/non-lean work in implementation-summary.md."
   tasks: "Use for full-sdd or when plan.md lacks compact executable slices."
   analyze: "Use for full-sdd/high-risk work; standard-bugfix-lite and micro-fix should not create analysis.md by default."
   checklist: "Use for full-sdd/high-risk readiness gates; do not create implementation-readiness.md by default."
@@ -171,8 +171,8 @@ stage_gate_policy:
     stage: "new-workflow-preflight"
     rule: "Before intake writes or overwrites active feature state, block dirty worktrees, non-base branches, unfinished .specify/feature.json state, and unresolved workflow runs."
   automatic_stage_continuation:
-    rule: "Every default stage auto-continues to the next structurally required default stage when no human acceptance, clarification, owner decision, high-risk confirmation, unavailable external dependency, build/validation failure, unresolved blocker, source/runtime delivery-chain gap, or explicit user pause remains."
-    execution_contract: "Auto-continue means execute the next default stage in the same agent turn; opt-in governance and branch stages require explicit user request."
+    rule: "A single slash-command or stage skill stops after its own stage and reports the next required command. Only an explicit workflow-runner invocation may auto-continue to the next structurally required default stage when no human acceptance, clarification, owner decision, high-risk confirmation, unavailable external dependency, build/validation failure, unresolved blocker, delivery evidence gap, or explicit user pause remains."
+    execution_contract: "Auto-continue means the workflow runner may execute the next YAML step; individual slash-command/stage-skill invocations must not run unrelated later stages. Opt-in governance and branch stages require explicit user request."
   next_stage_routing:
     micro-fix:
       after_plan: "implement when workpack or micro-fix evidence names files, validation, stop conditions, and root cause."
@@ -181,8 +181,8 @@ stage_gate_policy:
     standard-bugfix:
       after_plan: "implement when plan.md has complete Implementation Slices; tasks first only when slices are missing or too broad."
     full-sdd:
-      after_plan: "tasks"
-      before_implement: "tasks -> analyze -> checklist must complete."
+      after_plan: "checklist"
+      before_implement: "checklist -> tasks -> analyze must complete."
     blocked-investigation:
       after_plan: "fact-layer or bounded-investigation; do not implement until root cause and validation condition are known."
     validation-only:
@@ -205,7 +205,7 @@ stage_gate_policy:
     rule: "After template, command, gate, or knowledge changes, verify default context and selected skill files stay compact."
   workflow_gate_selection:
     command: "select-gates"
-    rule: "For plan, implement, and validation work, select gate packs by stage, affected repositories, risk flags, capability tags, and AI Context Contract terms before loading host CDP, runtime sync, native bridge, Qt parity, or real-device details. Selected host CDP gates may use ensure-host-cdp and inspect-host-cdp-target."
+    rule: "For plan, implement, and validation work, select gate packs by stage, affected repositories, risk flags, capability tags, and AI Context Contract terms before loading specialized evidence details. Selected gate packs own their exact scripts and blockers."
   root_fix_decision_gate:
     command: "Root-Fix Decision Gate"
     rule: "For bugfix work, compare Root fix, Mitigation, Compatibility fallback, and Containment when applicable before implementation. Non-root-fix selections must record residual risk and follow-up root-fix route."
@@ -217,4 +217,4 @@ stage_gate_policy:
     rule: "Before final response, inspect closure only when feature state indicates accepted implementation, commit, strict self-check, or rubric work. Governance stages are not required unless explicitly selected."
   implementation_summary:
     command: "implementation-summary.md"
-    rule: "After implementation, maintain implementation-summary.md as the compact final actual implementation index: final solution, changed files, mechanism changes, validation summary, residual risks, follow-ups, and evidence links."
+    rule: "For non-lean, handoff, commit, branch completion, or strict governance paths, maintain implementation-summary.md as the compact final actual implementation index. Lean micro-fix and standard-bugfix-lite paths close in workpack.md Outcome unless upgraded."

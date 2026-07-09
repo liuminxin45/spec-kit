@@ -28,4 +28,4 @@ Local log reading is not MCP usage and does not require MCP. Known paths:
 - consumer harness: `<system-temp>/runtime log\*.log`
 - runtime/domain owner service layer: `<system-temp>/forwarding bridgeLog\forwarding bridge_*.log`
 
-Prefer the latest matching file after closing the host application process.
+Prefer the latest matching file after closing the relevant local process.

@@ -26,8 +26,8 @@ Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md
 Create or update `FEATURE_DIR/fact-pack.md` from concrete project facts before
 AI continues a repeated or evidence-poor fix. This command is mandatory before a
 second same-class fix when the first patch did not change the observed symptom,
-when UI runtime structure contradicts source assumptions, or when device state,
-permission, connection, acquisition, service/runtime, or plugin behavior cannot be
+when UI runtime structure contradicts source assumptions, or when external-system
+state, permission, connection, service/runtime, or embedded behavior cannot be
 localized from source alone.
 
 ## Fact Sources
@@ -38,22 +38,11 @@ localized from source alone.
   knowledge guide.
 - If no log location is configured, record that fact and use build/test/runtime
   evidence instead of inventing a project-specific log path.
-- Chrome runtime facts use chrome-devtools when available. Use it for DOM,
-  console, computed style, and box metrics, not for local log files.
-- If Chrome DevTools MCP is present but cannot select the desired Electron
-  target, use the direct CDP fallback from `collect-fact-layer.ps1`: query
-  `/json/list`, select the host application page target by URL/title pattern,
-  and run `Runtime.evaluate` through the target WebSocket.
-- host application development CDP default is `http://127.0.0.1:9222`, usually
-  enabled by running `<host-app-root>` `npm run debug`
-  (`UTILITY_CHROME_REMOTE_DEBUGGING_PORT=9222`). For host app or frontend-plugin
-  validation, prefer targets matching `app-home`,
-  `app-main-window`, or `frontend/static/index.html`; reject DevTools,
-  Plugin Workbench, blank Chrome, and unrelated targets as host app evidence.
-  For `plugin-host` DevTools / Plugin Workbench changes, select
-  `Plugin Workbench|plugin-workbench.html` instead; the workbench target is
-  opened directly by `npm run debug` and is valid evidence only for workbench
-  DOM/CSS/click behavior.
+- Browser/runtime facts use available inspection tooling when applicable. Use it
+  for DOM, console, computed style, and box metrics, not for local log files.
+- If a selected gate pack provides a runtime target selection or fallback
+  procedure, follow that gate instead of guessing project-specific URLs, ports,
+  process names, or target titles.
 
 ## Execution Steps
 
@@ -61,33 +50,29 @@ localized from source alone.
 2. Run the fact collector:
    - PowerShell: `scripts/powershell/collect-fact-layer.ps1 -Json`
    - Optional target override:
-     `scripts/powershell/collect-fact-layer.ps1 -TargetUrlPattern "app-home|app-main-window|frontend/static/index.html" -Json`
-   - Workbench target override:
-     `scripts/powershell/collect-fact-layer.ps1 -TargetUrlPattern "Plugin Workbench|plugin-workbench.html" -Json`
+     `scripts/powershell/collect-fact-layer.ps1 -TargetUrlPattern "<runtime-target-pattern>" -Json`
 3. Record the collector output in `fact-pack.md` using
    `.specify/templates/fact-pack-template.md`.
-4. If chrome-devtools is available, inspect the real Electron/host application
-   target at `http://127.0.0.1:9222`; do not accept an unrelated blank Chrome
-   page as evidence.
-   - If MCP is in slim mode and cannot `list_pages` / `select_page`, rely on
-     the collector's `devtools.selectedTarget` and `devtools.directCdp` output.
+4. If browser/runtime inspection is available, inspect the real target selected
+   by repository-map, selected gates, or explicit user input; do not accept an
+   unrelated blank or wrong target as evidence.
 5. For UI work, capture:
-   - DOM subtree for the relevant host/container chain.
+   - DOM subtree for the relevant container chain.
    - computed style for size, display, position, overflow, flex/grid,
      min/max-height, min/max-width, box-sizing, and padding/margin.
-   - box metrics for host panel, plugin root, scroll owner, tree container,
+   - box metrics for embedded root, scroll owner, tree container,
      info panel, headers, footers, and sibling panels.
    - Console errors/warnings.
    - Screenshots and interaction method. For CSS-only hover states, use
      `CSS.forcePseudoState(['hover'])` when `Input.dispatchMouseEvent` does not
      reliably apply Electron hover.
-6. For device state/permission/connection/acquisition work, summarize the
+6. For external-system state/permission/connection work, summarize the
    latest configured log lines that correspond to the user's operation
    timeline.
 7. Verify source/runtime consistency:
    - Repository source files changed.
    - Built artifact generated from those source files.
-   - Installed plugin/runtime path checked only as evidence, not as edit target.
+   - Installed runtime path checked only as evidence, not as edit target.
 8. Separate confirmed facts from inferences. Do not write another patch until
    the next fix target is supported by the collected facts.
 
@@ -100,9 +85,9 @@ Run `speckit.fact-layer` when any of these applies:
 - DOM/CSS/layout ownership is unclear.
 - Scrollbar appearance, clipping, blank area, parent compression, toolbar
   displacement, or sibling resize is involved.
-- Device list state differs from service/runtime expectation.
-- Permission, connected/collecting/disconnected state, virtual device, or
-  acquisition behavior differs across UI, service, and runtime.
+- Entity/resource state differs from service/runtime expectation.
+- Permission, connected/disconnected state, simulation, or operation behavior
+  differs across UI, service, and runtime.
 - User says the rebuilt/reinstalled result is unchanged.
 - The issue may be caused by editing installed runtime artifacts instead of
   repository source.
@@ -114,8 +99,8 @@ Report in Chinese:
 
 - `fact-pack.md` path.
 - Latest configured project log paths or missing reasons.
-- Chrome DevTools target status.
-- Whether chrome-devtools MCP was available for DOM / computed style / box
+- Browser/runtime inspection target status.
+- Whether browser/runtime inspection was available for DOM / computed style / box
   metrics.
 - Confirmed facts.
 - Inferences.
