@@ -34,7 +34,7 @@ state so later AI self-acceptance does not judge UI by taste alone.
 3. Record positive references with "what is good" and negative references with
    "why avoid".
 4. For UI work, require at least one `UI Baseline` source:
-   screenshot, design file, Qt `.ui`/QSS/source, product URL, or explicit
+   screenshot, design file, source behavior, product URL, or explicit
    owner-approved `N/A`.
 5. If the baseline is missing and UI fidelity is material, stop with
    `next_required_human_action`; otherwise mark `needs-human-baseline` or
@@ -47,10 +47,10 @@ state so later AI self-acceptance does not judge UI by taste alone.
 
 ## Quality Rules
 
-- Keep stable intent here; detailed measurements belong in CDP screenshots,
+- Keep stable intent here; detailed measurements belong in runtime screenshots,
   DOM/computed style/box metrics, logs, or source code.
 - Do not store machine-specific absolute paths as long-term team knowledge.
-- A baseline screenshot or Qt/design source is required for visual parity
+- A baseline screenshot or design/source behavior is required for visual parity
   claims unless the owner explicitly accepts `N/A`.
 - Do not treat "looks fine" as evidence. Cite the baseline and how it will be
   compared during AI self-acceptance.

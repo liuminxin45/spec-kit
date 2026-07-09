@@ -11,6 +11,7 @@ minimal_context:
   - "Plugin id, source root, build output, and host runtime directory."
   - "Build command and result."
 steps:
+  - "Follow the delivery chain: source edit -> frontend build -> direct runtime replacement -> real host CDP verification."
   - "Edit repository source only."
   - "Run the plugin build command from source."
   - "Mirror built output with sync-ui-runtime-artifacts when source/runtime mapping is explicit."

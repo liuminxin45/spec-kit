@@ -244,6 +244,61 @@ def write_valid_implementation_summary(feature_dir: Path, **kwargs) -> None:
     )
 
 
+def workpack_text_with_outcome(*, final_status: str = "completed", validation_result: str = "PASS") -> str:
+    return (
+        "# Workpack\n\n"
+        "## 人类审核摘要\n\n"
+        "- Goal: fix the issue\n"
+        "- Real scope: one bounded slice\n"
+        "- Risk profile: `standard-bugfix-lite`\n"
+        "- Validation entry: regression command\n"
+        "- Acceptance signal: user confirms behavior\n"
+        "- Required human decisions: N/A\n\n"
+        "## Root Cause\n\n"
+        "- Symptom: broken behavior\n"
+        "- Expected behavior: works\n"
+        "- Actual behavior: fails\n"
+        "- Evidence: reproduced\n"
+        "- Excluded alternatives: none\n"
+        "- Confidence: high\n\n"
+        f"{root_fix_decision_gate_text()}\n"
+        "- Selected fix type: root fix\n"
+        "- Eliminated failure mechanism: yes\n"
+        "- If not root fix, residual risk and follow-up root-fix route: N/A\n\n"
+        "## Change Slice\n\n"
+        "- Allowed files/modules: src/demo.py\n"
+        "- Forbidden scope: unrelated files\n"
+        "- Implementation steps: patch source\n"
+        "- Stop conditions: validation fails\n\n"
+        "## Validation\n\n"
+        "- Commands: pytest tests/test_demo.py\n"
+        "- Runtime/interface evidence: N/A\n"
+        "- Expected result: pass\n"
+        "- Failure signal: failing test\n\n"
+        "## Outcome\n\n"
+        f"- Final status: {final_status}\n"
+        "- Final fix type: root fix\n"
+        "- Eliminated failure mechanism: yes\n"
+        "- Changed paths: src/demo.py\n"
+        f"- Validation result: {validation_result}\n"
+        "- Validation evidence: pytest tests/test_demo.py passed\n"
+        "- AI Self-Acceptance: PASS\n"
+        "- Compatibility impact: N/A\n"
+        "- Remaining failure path: N/A\n"
+        "- Residual risk: N/A\n"
+        "- Follow-up root-fix route: N/A\n"
+        "- Acceptance notes: ready for human acceptance\n\n"
+        "## Acceptance Rubric Summary\n\n"
+        "- Essential criteria: behavior works\n"
+        "- Important criteria: no regression\n"
+        "- Pitfalls: none\n"
+    )
+
+
+def write_valid_workpack_outcome(feature_dir: Path, **kwargs) -> None:
+    (feature_dir / "workpack.md").write_text(workpack_text_with_outcome(**kwargs), encoding="utf-8")
+
+
 def root_fix_decision_gate_text() -> str:
     return (
         "## Root-Fix Decision Gate\n\n"
@@ -335,6 +390,7 @@ def test_automation_assets_are_packaged_and_declared():
     assert "L3 Artifact Contract" in manifest["artifact_sections"]["tasks.md"]
     assert "Root Cause" in manifest["artifact_sections"]["workpack.md"]
     assert "Root-Fix Decision Gate" in manifest["artifact_sections"]["workpack.md"]
+    assert "Outcome" in manifest["artifact_sections"]["workpack.md"]
     assert "Final Implemented Solution" in manifest["artifact_sections"]["implementation-summary.md"]
     assert "Final fix type" in manifest["artifact_sections"]["implementation-summary.md"]
 
@@ -405,12 +461,14 @@ def test_resolve_next_stage_routes_profiles_and_commit_closure(tmp_path):
     (feature_dir / "workpack.md").write_text("Root Cause\nChange Slice\nValidation\nAcceptance Rubric Summary\n", encoding="utf-8")
     decision = run_ps("resolve-next-stage", "-RepoRoot", str(tmp_path), "-FeatureDir", str(feature_dir))
     assert decision["next_stage"] == "speckit.implement"
+    assert decision["missing_artifacts"] == ["workpack.md Outcome"]
+
+    write_valid_workpack_outcome(feature_dir)
+    decision = run_ps("resolve-next-stage", "-RepoRoot", str(tmp_path), "-FeatureDir", str(feature_dir))
+    assert decision["next_stage"] == "speckit.acceptance"
+    assert decision["missing_artifacts"] == []
 
     (feature_dir / "validation.md").write_text("# validation.md\n", encoding="utf-8")
-    decision = run_ps("resolve-next-stage", "-RepoRoot", str(tmp_path), "-FeatureDir", str(feature_dir))
-    assert decision["next_stage"] == "speckit.implement"
-    assert decision["missing_artifacts"] == ["implementation-summary.md"]
-
     for name in ["implementation-summary.md", "acceptance.md"]:
         (feature_dir / name).write_text(f"# {name}\n", encoding="utf-8")
     (feature_dir / "workflow-state.json").write_text(
@@ -441,14 +499,13 @@ def test_resolve_next_stage_keeps_micro_fix_converge_and_standard_current_stage(
     )
     (micro_dir / "workflow-state.json").write_text("{}", encoding="utf-8")
     (micro_dir / "workpack.md").write_text("# Workpack\n", encoding="utf-8")
-    (micro_dir / "validation.md").write_text("# Validation\n", encoding="utf-8")
 
     decision = run_ps("resolve-next-stage", "-RepoRoot", str(tmp_path), "-FeatureDir", str(micro_dir))
-    assert decision["current_stage"] == "implement"
+    assert decision["current_stage"] == "plan"
     assert decision["next_stage"] == "speckit.implement"
-    assert decision["missing_artifacts"] == ["implementation-summary.md"]
+    assert decision["missing_artifacts"] == ["workpack.md Outcome"]
 
-    (micro_dir / "implementation-summary.md").write_text("# Implementation Summary\n", encoding="utf-8")
+    write_valid_workpack_outcome(micro_dir)
     decision = run_ps("resolve-next-stage", "-RepoRoot", str(tmp_path), "-FeatureDir", str(micro_dir))
     assert decision["current_stage"] == "implement"
     assert decision["next_stage"] == "speckit.acceptance"
@@ -467,6 +524,34 @@ def test_resolve_next_stage_keeps_micro_fix_converge_and_standard_current_stage(
     assert decision["current_stage"] == "analyze"
     assert decision["next_stage"] == "speckit.implement"
     assert decision["missing_artifacts"] == ["validation.md"]
+
+    full_dir = tmp_path / "specs" / "003-full"
+    full_dir.mkdir(parents=True)
+    (tmp_path / ".specify" / "feature.json").write_text(
+        json.dumps({"feature_directory": str(full_dir), "delivery_profile": "full-sdd", "risk_level": "high"}),
+        encoding="utf-8",
+    )
+    for name in ["workflow-state.json", "spec.md", "plan.md"]:
+        (full_dir / name).write_text("{}" if name.endswith(".json") else f"# {name}\n", encoding="utf-8")
+
+    decision = run_ps("resolve-next-stage", "-RepoRoot", str(tmp_path), "-FeatureDir", str(full_dir))
+    assert decision["current_stage"] == "plan"
+    assert decision["next_stage"] == "speckit.checklist"
+    assert decision["missing_artifacts"] == ["checklists/implementation-readiness.md"]
+
+    checklist = full_dir / "checklists" / "implementation-readiness.md"
+    checklist.parent.mkdir()
+    checklist.write_text("# Checklist\n", encoding="utf-8")
+    decision = run_ps("resolve-next-stage", "-RepoRoot", str(tmp_path), "-FeatureDir", str(full_dir))
+    assert decision["current_stage"] == "checklist"
+    assert decision["next_stage"] == "speckit.tasks"
+    assert decision["missing_artifacts"] == ["tasks.md"]
+
+    (full_dir / "tasks.md").write_text("# Tasks\n", encoding="utf-8")
+    decision = run_ps("resolve-next-stage", "-RepoRoot", str(tmp_path), "-FeatureDir", str(full_dir))
+    assert decision["current_stage"] == "tasks"
+    assert decision["next_stage"] == "speckit.analyze"
+    assert decision["missing_artifacts"] == ["analysis.md"]
 
 
 def test_preflight_new_workflow_allows_clean_base_branch(tmp_path):
@@ -2178,7 +2263,7 @@ def test_compare_knowledge_pack_equivalence_scores_indexed_guides_routing_and_al
         encoding="utf-8",
     )
     (profile / "repository-map.md").write_text(
-        "# Repository Map\n\n## Project Path Categories\n\nCDP target inventory\n\nDo not write machine-specific absolute paths here.\n",
+        "# Repository Map\n\n## Project Path Categories\n\nTarget inventory\n\nDo not write machine-specific absolute paths here.\n",
         encoding="utf-8",
     )
     scenarios = tmp_path / "scenarios.json"
@@ -2804,6 +2889,52 @@ def test_validate_ai_self_acceptance_requires_pass(tmp_path):
     )
     ok = run_ps("validate-ai-self-acceptance", "-FeatureDir", str(feature_dir))
     assert ok["status"] == "ok"
+
+
+def test_validate_ai_self_acceptance_accepts_lean_workpack_outcome(tmp_path):
+    repo = tmp_path
+    feature_dir = repo / "specs" / "001-demo"
+    feature_dir.mkdir(parents=True)
+    (repo / ".specify").mkdir()
+    (repo / ".specify" / "feature.json").write_text(
+        json.dumps(
+            {
+                "feature_directory": str(feature_dir),
+                "delivery_profile": "standard-bugfix-lite",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (feature_dir / "workflow-state.json").write_text(
+        json.dumps({"workflow_model": {"delivery_profile": "standard-bugfix-lite"}}),
+        encoding="utf-8",
+    )
+    (feature_dir / "workpack.md").write_text(
+        workpack_text_with_outcome().replace("AI Self-Acceptance: PASS", "AI Self-Acceptance: FAIL"),
+        encoding="utf-8",
+    )
+
+    blocked = run_ps(
+        "validate-ai-self-acceptance",
+        "-RepoRoot",
+        str(repo),
+        "-FeatureDir",
+        str(feature_dir),
+    )
+    assert blocked["status"] == "blocked"
+    assert blocked["facts"]["validation_artifact"] == "workpack.md Outcome"
+    assert "must be PASS" in "\n".join(blocked["blockers"])
+
+    write_valid_workpack_outcome(feature_dir)
+    ok = run_ps(
+        "validate-ai-self-acceptance",
+        "-RepoRoot",
+        str(repo),
+        "-FeatureDir",
+        str(feature_dir),
+    )
+    assert ok["status"] == "ok"
+    assert ok["facts"]["validation_artifact"] == "workpack.md Outcome"
 
 
 def test_plugin_build_plan_and_package_validation(tmp_path):
@@ -4404,13 +4535,103 @@ def test_validate_feature_artifacts_blocks_acceptance_without_summary_state(tmp_
     assert "missing implementation_summary state before acceptance" in "\n".join(output["blockers"])
 
 
+def test_validate_feature_artifacts_allows_lean_acceptance_with_workpack_outcome(tmp_path):
+    repo = tmp_path
+    (repo / ".specify").mkdir()
+    feature_dir = repo / "specs" / "001-lean"
+    feature_dir.mkdir(parents=True)
+    (repo / ".specify" / "feature.json").write_text(
+        json.dumps({"feature_directory": str(feature_dir), "delivery_profile": "standard-bugfix-lite"}),
+        encoding="utf-8",
+    )
+    write_valid_workpack_outcome(feature_dir)
+    (feature_dir / "workflow-state.json").write_text(
+        json.dumps(
+            {
+                "attempts": [],
+                "validations": [],
+                "fact_layer": {},
+                "acceptance": {},
+                "stage_statuses": {},
+                "human_gates": {},
+                "selected_gates": [],
+                "next_stage_decision": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    output = run_ps(
+        "validate-feature-artifacts",
+        "-RepoRoot",
+        str(repo),
+        "-FeatureDir",
+        str(feature_dir),
+        "-Stage",
+        "acceptance",
+        "-DeliveryProfile",
+        "standard-bugfix-lite",
+    )
+
+    assert output["status"] == "ok"
+    assert output["facts"]["workpack_outcome_gate"]["gate_status"] == "ok"
+    assert output["facts"]["implementation_summary_gate"]["checked"] is False
+
+
+def test_validate_feature_artifacts_blocks_lean_acceptance_without_workpack_outcome(tmp_path):
+    repo = tmp_path
+    (repo / ".specify").mkdir()
+    feature_dir = repo / "specs" / "001-lean"
+    feature_dir.mkdir(parents=True)
+    (repo / ".specify" / "feature.json").write_text(
+        json.dumps({"feature_directory": str(feature_dir), "delivery_profile": "standard-bugfix-lite"}),
+        encoding="utf-8",
+    )
+    (feature_dir / "workpack.md").write_text(
+        workpack_text_with_outcome(validation_result="N/A").replace("## Outcome", "## Outcome Missing"),
+        encoding="utf-8",
+    )
+    (feature_dir / "workflow-state.json").write_text(
+        json.dumps(
+            {
+                "attempts": [],
+                "validations": [],
+                "fact_layer": {},
+                "acceptance": {},
+                "stage_statuses": {},
+                "human_gates": {},
+                "selected_gates": [],
+                "next_stage_decision": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    output = run_ps(
+        "validate-feature-artifacts",
+        "-RepoRoot",
+        str(repo),
+        "-FeatureDir",
+        str(feature_dir),
+        "-Stage",
+        "acceptance",
+        "-DeliveryProfile",
+        "standard-bugfix-lite",
+    )
+
+    assert output["status"] == "blocked"
+    blocker_text = "\n".join(output["blockers"])
+    assert "workpack.md Outcome incomplete before acceptance" in blocker_text
+    assert output["facts"]["workpack_outcome_gate"]["gate_status"] == "blocked"
+
+
 def test_root_fix_decision_gate_classifies_minimal_bugfix_candidates(tmp_path):
     repo = tmp_path
     (repo / ".specify").mkdir()
     feature_dir = repo / "specs" / "001-root-fix"
     feature_dir.mkdir(parents=True)
     (repo / ".specify" / "feature.json").write_text(
-        json.dumps({"feature_directory": str(feature_dir), "delivery_profile": "standard-bugfix-lite"}),
+        json.dumps({"feature_directory": str(feature_dir), "delivery_profile": "standard-bugfix"}),
         encoding="utf-8",
     )
     (feature_dir / "spec.md").write_text(
@@ -4436,6 +4657,7 @@ def test_root_fix_decision_gate_classifies_minimal_bugfix_candidates(tmp_path):
         f"{root_fix_decision_gate_text()}\n"
         "## Change Slice\n\n"
         "## Validation\n\n"
+        "## Outcome\n\n"
         "## Acceptance Rubric Summary\n",
         encoding="utf-8",
     )
@@ -4648,6 +4870,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
     (repo / ".specify" / "memory").mkdir(parents=True)
     (repo / ".specify" / "templates").mkdir(parents=True)
     (repo / "ai" / "workflows").mkdir(parents=True)
+    (repo / "ai" / "workflows" / "gates").mkdir(parents=True)
     (repo / "ai" / "rules").mkdir(parents=True)
     (repo / ".specify" / "scripts" / "powershell").mkdir(parents=True)
     (repo / "spec-kit" / "workflows" / "speckit").mkdir(parents=True)
@@ -4696,9 +4919,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
     assert ".agents/spec-kit/skills/speckit-commit/SKILL.md missing required generated-context phrases" in blocker_text
 
     (repo / "AGENTS.md").write_text(
-        "Project Path Categories\nsource-to-runtime copy\nbest-effort self-validation\nimplementation-summary.md\nRoot-Fix Decision Gate\n"
-        "direct runtime replacement\nhost CDP validation\n"
-        "ensure-host-cdp\n"
+        "Project Path Categories\nbest-effort self-validation\nimplementation-summary.md\nRoot-Fix Decision Gate\n"
         "stale/current-feature hint\nread the current plan only\n"
         "standard-bugfix-lite\nworkpack.md\npreflight-new-workflow\npreflight-push\n"
         "select-knowledge\nselect-gates\nvalidate-knowledge-index\nvalidate-context-budget\n"
@@ -4707,7 +4928,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
     )
     (repo / ".specify" / "memory" / "repository-map.md").write_text(
         "Project Path Categories\n<workspace-root>/<app-path>/\n"
-        "Optional Host / CDP Defaults\nCDP target inventory\nDo not write machine-specific absolute paths here\n",
+        "Optional Runtime / Inspection Targets\nTarget inventory\nDo not write machine-specific absolute paths here\n",
         encoding="utf-8",
     )
     (repo / ".specify" / "templates" / "layer-manifest.yml").write_text(
@@ -4733,14 +4954,12 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         encoding="utf-8",
     )
     (repo / "ai" / "workflows" / "task-routing.md").write_text(
-        "tasks -> analyze -> checklist\nstandard-bugfix-lite\nworkpack.md\nimplementation-summary.md\nRoot-Fix Decision Gate\nresolve-next-stage\n"
+        "checklist -> tasks -> analyze\nstandard-bugfix-lite\nworkpack.md\nimplementation-summary.md\nRoot-Fix Decision Gate\nresolve-next-stage\n"
         "validate-generated-context\nvalidate-knowledge-index\n"
         "validate-context-budget\nselect-knowledge\nselect-gates\nskill-routing.yml\nartifact_sections\n"
         "Stage Continuation\nNew Workflow Start\npreflight-new-workflow\nWorkflow Hooks\nspecify workflow invoke-hooks\nworkflow-agent-chain\nauto_continue=true\n"
         "Final Response Guard\ninspect-workflow-closure\n"
-        "not default artifacts\nOpt-in\nworkflow-observer\npromote-candidates\ninspect-host-cdp-target\n"
-        "ensure-host-cdp\n"
-        "capture-cdp-screenshot\n"
+        "not default artifacts\nOpt-in\nworkflow-observer\npromote-candidates\n"
         "do not apply stale feature risk flags\n",
         encoding="utf-8",
     )
@@ -4753,16 +4972,14 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
     )
     (repo / "ai" / "rules" / "ai-coding-rules.md").write_text(
         "Generated Context Drift\nstandard-bugfix-lite\nworkpack.md\nimplementation-summary.md\nRoot-Fix Decision Gate\nresolve-next-stage\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
-        "Stage Continuation Contract\npreflight-new-workflow\nWorkflow hooks are dispatched through the unified engine entry\nspecify workflow invoke-hooks\nworkflow-agent-chain\nHost Frontend Delivery Chain\n"
-        "ensure-host-cdp\n"
+        "Stage Continuation Contract\npreflight-new-workflow\nWorkflow hooks are dispatched through the unified engine entry\nspecify workflow invoke-hooks\nworkflow-agent-chain\nGate-Pack Routed Evidence\n"
         "Commit is opt-in\ninspect-workflow-closure\nopt-in governance\npreflight-push\n",
         encoding="utf-8",
     )
     (repo / "spec-kit" / "workflows" / "speckit" / "workflow.yml").write_text(
         "id: new-workflow-preflight\npreflight-new-workflow\nid: implement\nid: acceptance\nstandard-bugfix-lite\nconditional_stages:\ncommit: \"Opt-in\ncomplete-branch: \"Opt-in\nimplementation-summary.md\nRoot-Fix Decision Gate\n"
         "automatic_stage_continuation\ndeterministic_next_stage\nworkflow_hooks\nspecify workflow invoke-hooks\nworkflow-agent-chain\n.specify/workflow-hooks.yml\nfinal_response_guard\n"
-        "inspect-host-cdp-target\n"
-        "ensure-host-cdp\n"
+        "checklist -> tasks -> analyze\n"
         "validate-knowledge-index\nvalidate-context-budget\nselect-gates\ncurrent-feature state only\n",
         encoding="utf-8",
     )
@@ -4783,7 +5000,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-implement" / "SKILL.md").write_text(
-        "ensure-host-cdp\nreal product target\nHuman acceptance\nselect-gates\n",
+        "selected gate packs\nHuman acceptance\nselect-gates\n",
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-retrospective" / "SKILL.md").write_text(
@@ -4814,7 +5031,27 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
     )
     (internal_skills_dir / "speckit-ai-self-acceptance").mkdir(parents=True)
     (internal_skills_dir / "speckit-ai-self-acceptance" / "SKILL.md").write_text(
-        "AI Self-Acceptance\nPASS\nFAIL\nBLOCKED\nRoot-Fix Decision Gate\nCDP\nconsole\nlogs\ncdp-screenshots\n",
+        "AI Self-Acceptance\nPASS\nFAIL\nBLOCKED\nRoot-Fix Decision Gate\nconsole\nlogs\nruntime target\n",
+        encoding="utf-8",
+    )
+    (repo / "ai" / "workflows" / "gates" / "host-cdp.yml").write_text(
+        "ensure-host-cdp\ninspect-host-cdp-target\n",
+        encoding="utf-8",
+    )
+    (repo / "ai" / "workflows" / "gates" / "frontend-runtime-sync.yml").write_text(
+        "source edits\nBuild command\nsync-ui-runtime-artifacts\nCDP\n",
+        encoding="utf-8",
+    )
+    (repo / "ai" / "workflows" / "gates" / "plugin-package.yml").write_text(
+        "validate-plugin-package\n.plugin\n",
+        encoding="utf-8",
+    )
+    (repo / "ai" / "workflows" / "gates" / "qt-parity.yml").write_text(
+        "Qt Source Behavior Parity Gate\nSource Behavior Execution Map\n",
+        encoding="utf-8",
+    )
+    (repo / "ai" / "workflows" / "gates" / "real-device.yml").write_text(
+        "real-device\ndevice\n",
         encoding="utf-8",
     )
     for script_name in [
@@ -4865,6 +5102,7 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
     (repo / ".specify" / "memory").mkdir(parents=True)
     (repo / ".specify" / "templates").mkdir(parents=True)
     (repo / "ai" / "workflows").mkdir(parents=True)
+    (repo / "ai" / "workflows" / "gates").mkdir(parents=True)
     (repo / "ai" / "rules").mkdir(parents=True)
     (repo / ".specify" / "scripts" / "powershell").mkdir(parents=True)
     (repo / "spec-kit" / "workflows" / "speckit").mkdir(parents=True)
@@ -4887,9 +5125,7 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         encoding="utf-8",
     )
     (repo / "AGENTS.md").write_text(
-        "Project Path Categories\nsource-to-runtime copy\nbest-effort self-validation\nimplementation-summary.md\nRoot-Fix Decision Gate\n"
-        "direct runtime replacement\nhost CDP validation\n"
-        "ensure-host-cdp\n"
+        "Project Path Categories\nbest-effort self-validation\nimplementation-summary.md\nRoot-Fix Decision Gate\n"
         "stale/current-feature hint\nread the current plan only\n"
         "standard-bugfix-lite\nworkpack.md\npreflight-new-workflow\npreflight-push\n"
         "select-knowledge\nselect-gates\nvalidate-knowledge-index\nvalidate-context-budget\n"
@@ -4898,7 +5134,7 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
     )
     (repo / ".specify" / "memory" / "repository-map.md").write_text(
         "Project Path Categories\n<workspace-root>/<app-path>/\n"
-        "Optional Host / CDP Defaults\nCDP target inventory\nDo not write machine-specific absolute paths here\n",
+        "Optional Runtime / Inspection Targets\nTarget inventory\nDo not write machine-specific absolute paths here\n",
         encoding="utf-8",
     )
     (repo / ".specify" / "templates" / "layer-manifest.yml").write_text(
@@ -4916,14 +5152,12 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         encoding="utf-8",
     )
     (repo / "ai" / "workflows" / "task-routing.md").write_text(
-        "tasks -> analyze -> checklist\nstandard-bugfix-lite\nworkpack.md\nimplementation-summary.md\nRoot-Fix Decision Gate\nresolve-next-stage\n"
+        "checklist -> tasks -> analyze\nstandard-bugfix-lite\nworkpack.md\nimplementation-summary.md\nRoot-Fix Decision Gate\nresolve-next-stage\n"
         "validate-generated-context\nvalidate-knowledge-index\n"
         "validate-context-budget\nselect-knowledge\nselect-gates\nskill-routing.yml\nartifact_sections\n"
         "Stage Continuation\nNew Workflow Start\npreflight-new-workflow\nWorkflow Hooks\nspecify workflow invoke-hooks\nworkflow-agent-chain\nauto_continue=true\n"
         "Final Response Guard\ninspect-workflow-closure\n"
-        "not default artifacts\nOpt-in\nworkflow-observer\npromote-candidates\ninspect-host-cdp-target\n"
-        "ensure-host-cdp\n"
-        "capture-cdp-screenshot\n"
+        "not default artifacts\nOpt-in\nworkflow-observer\npromote-candidates\n"
         "do not apply stale feature risk flags\n",
         encoding="utf-8",
     )
@@ -4936,16 +5170,14 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
     )
     (repo / "ai" / "rules" / "ai-coding-rules.md").write_text(
         "Generated Context Drift\nstandard-bugfix-lite\nworkpack.md\nimplementation-summary.md\nRoot-Fix Decision Gate\nresolve-next-stage\nanalysis.md\nvalidate-generated-context\nvalidate-knowledge-index\n"
-        "Stage Continuation Contract\npreflight-new-workflow\nWorkflow hooks are dispatched through the unified engine entry\nspecify workflow invoke-hooks\nworkflow-agent-chain\nHost Frontend Delivery Chain\n"
-        "ensure-host-cdp\n"
+        "Stage Continuation Contract\npreflight-new-workflow\nWorkflow hooks are dispatched through the unified engine entry\nspecify workflow invoke-hooks\nworkflow-agent-chain\nGate-Pack Routed Evidence\n"
         "Commit is opt-in\ninspect-workflow-closure\nopt-in governance\npreflight-push\n",
         encoding="utf-8",
     )
     (repo / "spec-kit" / "workflows" / "speckit" / "workflow.yml").write_text(
         "id: new-workflow-preflight\npreflight-new-workflow\nid: implement\nid: acceptance\nstandard-bugfix-lite\nconditional_stages:\ncommit: \"Opt-in\ncomplete-branch: \"Opt-in\nimplementation-summary.md\nRoot-Fix Decision Gate\n"
         "automatic_stage_continuation\ndeterministic_next_stage\nworkflow_hooks\nspecify workflow invoke-hooks\nworkflow-agent-chain\n.specify/workflow-hooks.yml\nfinal_response_guard\n"
-        "inspect-host-cdp-target\n"
-        "ensure-host-cdp\n"
+        "checklist -> tasks -> analyze\n"
         "validate-knowledge-index\nvalidate-context-budget\nselect-gates\ncurrent-feature state only\n",
         encoding="utf-8",
     )
@@ -4966,7 +5198,7 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-implement" / "SKILL.md").write_text(
-        "ensure-host-cdp\nreal product target\nHuman acceptance\nselect-gates\n",
+        "selected gate packs\nHuman acceptance\nselect-gates\n",
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-retrospective" / "SKILL.md").write_text(
@@ -4993,7 +5225,27 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         encoding="utf-8",
     )
     (internal_skills_dir / "speckit-ai-self-acceptance" / "SKILL.md").write_text(
-        "AI Self-Acceptance\nPASS\nFAIL\nBLOCKED\nRoot-Fix Decision Gate\nCDP\nconsole\nlogs\ncdp-screenshots\n",
+        "AI Self-Acceptance\nPASS\nFAIL\nBLOCKED\nRoot-Fix Decision Gate\nconsole\nlogs\nruntime target\n",
+        encoding="utf-8",
+    )
+    (repo / "ai" / "workflows" / "gates" / "host-cdp.yml").write_text(
+        "ensure-host-cdp\ninspect-host-cdp-target\n",
+        encoding="utf-8",
+    )
+    (repo / "ai" / "workflows" / "gates" / "frontend-runtime-sync.yml").write_text(
+        "source edits\nBuild command\nsync-ui-runtime-artifacts\nCDP\n",
+        encoding="utf-8",
+    )
+    (repo / "ai" / "workflows" / "gates" / "plugin-package.yml").write_text(
+        "validate-plugin-package\n.plugin\n",
+        encoding="utf-8",
+    )
+    (repo / "ai" / "workflows" / "gates" / "qt-parity.yml").write_text(
+        "Qt Source Behavior Parity Gate\nSource Behavior Execution Map\n",
+        encoding="utf-8",
+    )
+    (repo / "ai" / "workflows" / "gates" / "real-device.yml").write_text(
+        "real-device\ndevice\n",
         encoding="utf-8",
     )
     for script_name in [

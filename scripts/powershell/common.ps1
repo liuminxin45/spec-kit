@@ -267,6 +267,93 @@ function Test-FeatureJsonMatchesFeatureDir {
     return [string]::Equals($normJson, $normActive, $comparison)
 }
 
+function ConvertTo-SpecKitFullPath {
+    param(
+        [string]$Path,
+        [string]$RepoRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return "" }
+    $candidate = if ([System.IO.Path]::IsPathRooted($Path)) { $Path } else { Join-Path $RepoRoot $Path }
+    $resolved = Resolve-Path -LiteralPath $candidate -ErrorAction SilentlyContinue
+    if ($resolved) { return $resolved.Path }
+    return [System.IO.Path]::GetFullPath($candidate)
+}
+
+function Test-SpecKitSamePath {
+    param(
+        [string]$Left,
+        [string]$Right,
+        [string]$RepoRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Left) -or [string]::IsNullOrWhiteSpace($Right)) {
+        return $false
+    }
+
+    $leftFull = ConvertTo-SpecKitFullPath -Path $Left -RepoRoot $RepoRoot
+    $rightFull = ConvertTo-SpecKitFullPath -Path $Right -RepoRoot $RepoRoot
+
+    if ($null -ne $IsWindows) {
+        $onWindows = $IsWindows
+    } else {
+        $onWindows = $true
+    }
+    $comparison = if ($onWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+    return [string]::Equals($leftFull, $rightFull, $comparison)
+}
+
+function Get-FeatureDeliveryProfile {
+    param(
+        [string]$RepoRoot,
+        [string]$FeatureDir,
+        [string]$ExplicitProfile = ""
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitProfile)) {
+        $explicit = $ExplicitProfile.Trim().ToLowerInvariant()
+        if ($explicit -ne "auto") { return $explicit }
+        return ""
+    }
+
+    $featureJson = Join-Path $RepoRoot '.specify/feature.json'
+    if (Test-Path -LiteralPath $featureJson -PathType Leaf) {
+        try {
+            $feature = Get-Content -LiteralPath $featureJson -Raw | ConvertFrom-Json
+            $configuredDir = [string]$feature.feature_directory
+            $matchesFeatureDir = [string]::IsNullOrWhiteSpace($configuredDir) -or
+                (Test-SpecKitSamePath -Left $configuredDir -Right $FeatureDir -RepoRoot $RepoRoot)
+            if ($matchesFeatureDir) {
+                $profile = ([string]$feature.delivery_profile).Trim().ToLowerInvariant()
+                if (-not [string]::IsNullOrWhiteSpace($profile) -and $profile -ne "auto") {
+                    return $profile
+                }
+            }
+        } catch {
+            return ""
+        }
+    }
+
+    $statePath = Join-Path $FeatureDir 'workflow-state.json'
+    if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+        try {
+            $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+            $workflowModel = $state.workflow_model
+            $profile = ([string]$workflowModel.delivery_profile).Trim().ToLowerInvariant()
+            if (-not [string]::IsNullOrWhiteSpace($profile) -and $profile -ne "auto") {
+                return $profile
+            }
+        } catch {}
+    }
+
+    return ""
+}
+
+function Test-LeanDeliveryProfile {
+    param([string]$Profile)
+    return ($Profile -in @("micro-fix", "standard-bugfix-lite"))
+}
+
 # Resolve specs/<feature-dir> by numeric/timestamp prefix.
 function Find-FeatureDirByPrefix {
     param(
@@ -369,6 +456,7 @@ function Get-FeaturePathsEnv {
         FEATURE_DIR   = $featureDir
         FEATURE_SPEC  = Join-Path $featureDir 'spec.md'
         IMPL_PLAN     = Join-Path $featureDir 'plan.md'
+        WORKPACK      = Join-Path $featureDir 'workpack.md'
         TASKS         = Join-Path $featureDir 'tasks.md'
         RESEARCH      = Join-Path $featureDir 'research.md'
         DATA_MODEL    = Join-Path $featureDir 'data-model.md'

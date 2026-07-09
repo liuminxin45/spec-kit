@@ -44,25 +44,25 @@ and packaged artifacts separate from durable source locations.
 | Build output | `<workspace-root>/<app-path>/<build-output>/` | repository build | Generated artifact; do not treat as durable source unless the repository explicitly marks it as source. |
 | Package artifact | `<workspace-root>/<app-path>/<package-output>/<artifact-name>` | repository package command | Release or install artifact. Validation evidence only unless explicitly documented otherwise. |
 | Runtime data root | `<runtime-root>/` | runtime environment | Runtime state, logs, caches, and installed resources. Read for evidence; do not commit as source. |
-| Optional plugin source root | `<workspace-root>/<plugin-source-repo>/<plugin-id>/` | plugin source repository | Use only when this workspace has plugin repositories and the task selects plugin gates. |
-| Optional host runtime root | `<host-app-root>/` | host application runtime | Use only when a selected host/runtime gate requires real host validation. |
+| Optional extension source root | `<workspace-root>/<extension-source-repo>/<extension-id>/` | extension source repository | Use only when this workspace has extension repositories and the task selects matching gates. |
+| Optional runtime root | `<runtime-root>/` | runtime environment | Use only when a selected runtime/inspection gate requires real target validation. |
 
-## Optional Host / CDP Defaults
+## Optional Runtime / Inspection Targets
 
-Fill this section only for projects with a real host application, browser,
-Electron, device, or other runtime target that can be inspected. Otherwise leave
-the rows as `N/A` and rely on normal build/test evidence.
+Fill this section only for projects with a real application, browser, service,
+hardware, or other runtime target that can be inspected. Otherwise leave the
+rows as `N/A` and rely on normal build/test evidence.
 
 | Fact | Team Default | AI Usage Notes |
 |------|--------------|----------------|
 | Runtime launch | `N/A` | Command to start the real validation runtime, if one exists. |
-| CDP or browser endpoint | `N/A` | Endpoint such as `http://127.0.0.1:<port>` when host/browser validation is available. |
-| CDP target inventory | `N/A` | If CDP is used, record `/json/list` page targets with `id/title/url/webSocketDebuggerUrl` before DOM or screenshot validation. |
-| Valid product target patterns | `N/A` | URL/title patterns that identify the real product surface. |
-| Rejected validation targets | `devtools://`, blank pages, unrelated browser targets | Never use unrelated targets as product UI evidence. |
+| Browser or inspection endpoint | `N/A` | Endpoint such as `http://127.0.0.1:<port>` when browser/runtime validation is available. |
+| Target inventory | `N/A` | If an inspection protocol is used, record target ids/titles/URLs before DOM, screenshot, or runtime validation. |
+| Valid product target patterns | `N/A` | URL/title/name patterns that identify the real product surface. |
+| Rejected validation targets | `N/A` | Never use unrelated targets as product evidence. |
 | Runtime validation priority | Real target first when supported; isolated preview only as fallback | Record the reason whenever a lower-fidelity fallback is used. |
 
-For expanded host/plugin/runtime examples, select the relevant gate pack with
+For expanded specialized runtime examples, select the relevant gate pack with
 `select-gates` and then load only the returned `ai/workflows/gates/*` file or
 optional knowledge guide. Do not rediscover fixed facts by broad source search
 unless a concrete mismatch appears.
@@ -72,10 +72,10 @@ unless a concrete mismatch appears.
 - This file is authoritative for repository purpose, path, and capability
   ownership.
 - Use the Project Path Categories section before scanning source when a task
-  needs build output, package artifacts, install artifacts, runtime directories,
-  or plugin source.
+   needs build output, package artifacts, install artifacts, runtime directories,
+   or extension source.
 - Keep long-term path knowledge relative to `<workspace-root>`, repository
-  names, `<app-path>`, `<runtime-root>`, `<host-app-root>`, `<plugin-id>`,
+  names, `<app-path>`, `<runtime-root>`, `<extension-id>`,
   `<artifact-name>`, and similar placeholders. Do not write machine-specific
   absolute paths here.
 - Do not infer repository purpose by scanning source trees.

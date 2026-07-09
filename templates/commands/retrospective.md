@@ -1,7 +1,7 @@
 ---
-description: Record the completed Spec Kit workflow before commit without auto-promoting lessons.
+description: Record an opt-in Spec Kit workflow retrospective without auto-promoting lessons.
 scripts:
-  ps: scripts/powershell/check-prerequisites.ps1 -Json -IncludeTasks
+  ps: scripts/powershell/check-prerequisites.ps1 -Json -Stage retrospective -IncludeTasks
   observer_packet_ps: scripts/powershell/collect-workflow-observer-packet.ps1 -Json -FeatureDir <feature-dir>
 ---
 
@@ -24,9 +24,10 @@ Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md
 
 ## Purpose
 
-After final user acceptance and before `speckit.commit`, create a lightweight
-durable record of the current Spec Kit workflow. This 留痕 stage runs after
-用户验收通过 and is mandatory for standard/full Spec Kit delivery before commit.
+When explicitly selected after final user acceptance / 用户验收通过, create a lightweight
+durable record of the current Spec Kit workflow. This 留痕 stage is opt-in
+process governance; it is not required for normal delivery closure or
+`speckit.commit` unless strict governance was explicitly selected.
 The default output is concise traceability: 关键用户输入, AI 输出与动作链, 验证证据,
 最终状态, and meaningful errors when present. Expand into detailed error/rework
 analysis only when the run had repeated failure, a new pitfall, a new rule, a
@@ -49,10 +50,10 @@ promote lessons or knowledge into long-term policy.
 ## Execution Steps
 
 1. Run the prerequisite script and parse `FEATURE_DIR` and `AVAILABLE_DOCS`.
-2. Load available feature artifacts: `intake.md`, `spec.md`, `plan.md`,
-   `tasks.md`, `progress.md`, `review.md`, `lessons.md`, `validation.md`,
+2. Load available feature artifacts: `intake.md`, `workpack.md`, `spec.md`,
+   `plan.md`, `tasks.md`, `progress.md`, `review.md`, `lessons.md`, `validation.md`,
    `implementation-summary.md`, `evidence.md`, `fact-pack.md`, `acceptance.md`, `acceptance-checklist.md`,
-   `checklists/`, and `FEATURE_DIR/cdp-screenshots/screenshots-index.md` when
+   `checklists/`, and screenshot indexes referenced by selected gates when
    present.
 3. Confirm final acceptance has explicit evidence.
    - For standard/full workflows, require acceptance plus quick acceptance when
@@ -76,8 +77,8 @@ promote lessons or knowledge into long-term policy.
     - Quality assessment: task output quality, workflow quality, AI execution
       quality, remaining risk, and whether the system had enough evidence.
     - Rubric readiness: list evidence paths needed for final post-commit
-      Rubric scoring, including AI Self-Acceptance, API/E2E plan, plugin
-     `.plugin` package evidence when applicable, CDP/runtime evidence when
+      Rubric scoring, including AI Self-Acceptance, API/E2E plan, selected
+     gate-pack evidence when applicable, runtime evidence when
      applicable, `implementation-summary.md`, and workflow compliance risks.
      Do not output final Rubric scores in retrospective.
    - `Accepted Gaps`: owner/user-accepted validation gaps, unsupported
@@ -137,7 +138,7 @@ promote lessons or knowledge into long-term policy.
    - If no stable reusable project knowledge exists, write
      `status: no-candidates`.
 9. Run `collect-workflow-observer-packet` to produce
-   `FEATURE_DIR/workflow-observer-packet.json` for the next
+   `FEATURE_DIR/workflow-observer-packet.json` for a possible later
    `speckit.workflow-observer` stage. Do not write `workflow-observation.md`
    in this stage unless the workflow-observer command is being executed inline.
 10. Update `FEATURE_DIR/workflow-state.json`: set `retrospective.status` to
@@ -150,9 +151,11 @@ promote lessons or knowledge into long-term policy.
 12. Update `review.md` when present so the human navigation page links to
    `workflow-record.md`, `improvement-candidates.md`, and
    `knowledge-candidates.md`.
-13. Continue to `speckit.workflow-observer`. Only after workflow-observer,
-    continue to `speckit.promote-lessons` or `speckit.promote-knowledge` when
-    there are human-approved candidates; otherwise continue to `speckit.commit`.
+13. Continue to `speckit.workflow-observer` only when that opt-in stage was
+    explicitly selected. Continue to `speckit.promote-lessons` or
+    `speckit.promote-knowledge` only when there are human-approved candidates
+    and the user selected promotion; otherwise the usual next opt-in stage is
+    `speckit.commit` when the user requested a commit.
 
 ## Workflow Record Template
 
@@ -177,7 +180,7 @@ promote lessons or knowledge into long-term policy.
 - 输出:
 - 修改文件:
 - 验证命令:
-- CDP截图目录:
+- Runtime/browser screenshot directory:
 - 结果:
 ## 4. 错误、返工与状态变化
 - 现象:
@@ -345,5 +348,5 @@ Report in Chinese:
 - Confirmation that this stage did not modify spec-kit, memory, team
   governance, long-term knowledge, product code, git history, branches, or
   remotes.
-- Required next stage: `speckit.workflow-observer` /
-  `$speckit-workflow-observer`.
+- Required next stage: explicitly selected opt-in follow-up; usually
+  `speckit.commit` / `$speckit-commit` when the user requested a commit.

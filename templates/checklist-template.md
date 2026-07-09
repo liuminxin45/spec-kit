@@ -26,13 +26,15 @@
 - 规则来源：生成时必须读取 `.specify/checklist-rules/common.yml`，并按
   `.specify/feature.json` 的 `task_type` 选择 `new-feature.yml`、`migration.yml`
   或 `bugfix.yml`；涉及 CLI、脚本、生成物或文档工具时，同时读取 `tooling.yml`。
+- Gate 来源：专项证据只来自 `select-gates` 返回的 selected gate packs，
+  不写入默认清单。
 - 证据原则：每个勾选、未勾选或 `N/A` 判断都必须能追溯到 `spec.md`、
-  `intake.md`、`.specify/feature.json`、`.specify/memory/constitution.md` 或
-  被规格点名的项目文件。
+  `intake.md`、`.specify/feature.json`、`.specify/memory/constitution.md`、
+  selected gate packs 或被规格点名的项目文件。
 - 弹性原则：可以补充任务专属检查项和说明，但不得删除适用的安全、兼容、
   验证或本地 Spec 分支检查项。`N/A` 必须说明原因，未勾选项必须说明缺口。
 - 质量门：生成后应运行 `.specify/scripts/powershell/validate-checklist.ps1`
-  `CHK`、无原因 `N/A`、无说明未勾选项等问题。
+  检查 `CHK`、无原因 `N/A`、无说明未勾选项等问题。
 
 ## 需求质量
 
@@ -45,120 +47,56 @@
 
 ## 工程边界
 
-- [ ] CHK006 已识别影响模块和 ownership boundaries。
-- [ ] CHK007 如相关，已覆盖 Public API、SDK、plugin、UI state 或 script contracts。
-- [ ] CHK008 已记录兼容性和迁移风险，或明确标记为 `N/A`。
-- [ ] CHK008A 如涉及 UI 状态、UI interaction、operation availability 或操作权限，`spec.md`/`plan.md` 已明确
-  `forwarding bridge` 仅做 API forwarding bridge，不实现业务逻辑；非 UI 专属 runtime/
-  permission/capability 事实来自 `runtime/domain owner`；仅用于 UI 展示的结构、顺序和
-  visible/enabled 组织位于 frontend plugin。
-- [ ] CHK008B 如涉及 UI interaction/action availability，已覆盖 frontend-owned interaction/action id、顺序、可见性、
-  可用性、action id、依赖的 `runtime/domain owner` permission/status/capability 来源和刷新时机。
-- [ ] CHK008C 如为 Qt UI interaction 或 operation availability 迁移，已列出 Qt 源行为覆盖清单，
-  覆盖对象/设备类型、设备状态、UI element/action 顺序、visible/enabled 规则、action handler 和目标契约来源；
-  可使用表格、分组清单、决策表、状态机说明、fixture matrix 或按 Qt 函数分段的规则清单。
-
-## 运行时与数据完整性
-
-- [ ] CHK009 除非明确存在 simulation boundary，否则 device/runtime/cache/handle/
-  permission behavior 基于真实状态。
-- [ ] CHK010 如相关，已记录 encoding 和 localization boundaries。
-- [ ] CHK010A 如相关，已确认 `forwarding bridge` 未实现业务规则；frontend plugin 未用
-  label/string 推断 runtime/permission 事实、未长期缓存 device/runtime/permission
-  业务状态。
-
-## 身份 / 状态 / API 边界
-
-- [ ] CHK010D 跨 `runtime/domain owner` facade、`forwarding bridge`、N-API/JSON/RPC、JS/UI 的设备身份
-  只使用 UUID decimal string；未新增 `deviceIndex`、`deviceId`、`handleId`、
-  `virtualDeviceId` 等平行身份。
-- [ ] CHK010E UUID 生成入口唯一：`device::identity::generateUUID()`；`DeviceManager`、
-  `SdkService`、UI 只使用身份，不实现生成规则。
-- [ ] CHK010F SDK native id、virtual id、handle 仅留在底层内部，未泄漏到 runtime libraries facade、
-  service layer、JS 或 UI。
-- [ ] CHK010G 前端业务操作只读 `node.uuid`；未使用 `node.id`、`entityId`、
-  `metadata.uuid` 等兜底操作设备。
-- [ ] CHK010H `forwarding bridge` 未缓存设备列表、连接状态、采集状态或 runtime state；
-  事件仅触发刷新，刷新后重新获取 `runtime/domain owner` snapshot/runtime facts。
-- [ ] CHK010I 功能等价旧 API 已删除或迁移；若暂时保留，已有 owner-approved temporary gap。
-- [ ] CHK010J 调试 API、测试 facade、临时 SDK 直通能力未进入生产 service layer exports。
-- [ ] CHK010K 字段命名表达真实语义，例如 `uuid`、`deviceUuids`、`nodeId`、
-  `listIndex`；未使用 `deviceId` 等含混词作为跨层身份。
-- [ ] CHK010L 虚拟设备和真实设备在 SDK 外部都表现为同一套 UUID 语义。
-- [ ] CHK010M `build/`、`export/`、`plugin-out/` 等构建产物未参与接口判断、
-  diff 判断或安装包来源判断。
-- [ ] CHK010N 如涉及 frontend/native plugin 修改，变更已落到仓库源码；未把
-  `dist/`、`build/`、`export/`、`plugin-out/`、`app-data/plugins/**`、
-  host-served `frontend/plugins/**` 等已安装运行目录或构建产物作为长期修复位置。
-
-## 结构与文件职责
-
+- [ ] CHK006 已识别影响模块、仓库和 ownership boundaries。
+- [ ] CHK007 如相关，已覆盖 Public API、service/runtime/UI state、data model、
+  script contracts 或 external-system contracts。
+- [ ] CHK008 已记录兼容性、迁移和下游影响，或明确标记为 `N/A`。
+- [ ] CHK009 权威状态、身份、权限、缓存和刷新来源已明确；adapter/bridge 层没有
+  静默拥有业务规则或源事实。
+- [ ] CHK010 已记录 encoding、localization、serialization 和 generated-output
+  boundaries。
+- [ ] CHK010A 改动落在仓库源码；没有把生成输出、缓存、安装目录或构建产物作为长期修复位置。
 - [ ] CHK010B 新增或扩展接口层/数据层前，已搜索既有目录和相邻模块。
-- [ ] CHK010C contract、DTO、permission/availability model、cache adapter、serialization 和 UI
-  adapter 已按职责落到合适文件；若没有合适文件，已规划新增职责清晰的文件。
+- [ ] CHK010C contract、DTO、availability model、cache adapter、serialization
+  和 UI adapter 已按职责落到合适文件；若没有合适文件，已规划新增职责清晰的文件。
+- [ ] CHK010D 等价旧 API、debug/test API、临时 facade 或兼容入口已删除、迁移，
+  或有 owner-approved temporary gap。
+- [ ] CHK010E 字段命名表达真实语义；未新增含混或平行身份/状态字段。
+- [ ] CHK010F selected gate packs 中列出的专项边界已被纳入检查项或明确 `N/A`。
 
 ## 分流专项就绪度
 
-- [ ] CHK011 `migration` 已说明 Qt 源行为和平迁等价预期，或记录 owner-approved `N/A`。
+- [ ] CHK011 `migration` 已说明源行为、等价预期和迁移风险，或记录 owner-approved `N/A`。
 - [ ] CHK012 `bugfix` 已包含实际行为、预期行为、复现路径和回归预期。
 - [ ] CHK013 `new-feature` 已说明为什么不是直接迁移，并给出验收信号。
-- [ ] CHK014 UI 相关 `migration` 或 `new-feature` 已列出所需 UI 设计/来源目录，
-  或记录明确 `N/A` 原因。
-- [ ] CHK014G UI 开发、UI 变更、UI 修复、UX、图标、tooltip、按钮、菜单、
-  可见文案、样式和布局变更已完成 UI / UX / 文案依据追踪；每个新增或修改的
-  UI 元素、文案、图标、tooltip 样式和交互行为都有可靠来源（Qt UI/source/
-  delegate/QSS/resource、设计稿/截图、既有产品规范或明确 owner/user 决策）。
-  如缺失依据，已阻塞到 clarify / bounded investigation，没有凭空实现。
-- [ ] CHK014D UI parity、frontend visual 或 host-embedded UI 任务已覆盖静态参考源
-  （设计稿、Qt `.ui`/delegate/qss/source、截图）、dynamic states / 动态状态（hover、selected、
-  disabled、expanded/collapsed、loading、empty、many-item、scrollbar appear/disappear）、
-  几何约束（固定尺寸、padding/margin、line-height、overflow、flex/grid grow-shrink、
-  scroll owner、clipping/compression 边界）和真实 host route/page。
-- [ ] CHK014E 如涉及裁剪、空白、挤压、滚动条影响外部 UI、嵌入式布局或首轮 CSS 修复失败，
-  已要求 runtime DOM / computed style / box metrics 证据，或已进入 bounded UI runtime investigation。
-- [ ] CHK014H Host-embedded frontend UI 如修改高度、flex、overflow、底部间距、详情栏/信息栏，
-  已在真实 host application 宿主通过 CDP 记录 plugin root、shell、main panel、detail/footer panel、
-  scroll owner、last visible row/control 的 top/bottom/height；没有使用裸 `100vh` 或单插件预览高度
-  作为嵌入式裁切问题的唯一依据。
-- [ ] CHK014F 如涉及 UI parity、截图对齐或 0px 级视觉修复，`plan.md` 已包含 UI element traversal
-  inventory / 0px alignment matrix：baseline anchors、从外到内的 affected elements、dynamic states、
-  expected geometry/style、current runtime evidence、delta 和 batch patch strategy，避免逐症状猜 CSS。
+- [ ] CHK014 UI/UX/copy 相关工作已列出可靠依据；如依据缺失，已阻塞到 clarify /
+  bounded investigation，没有凭空实现。
 - [ ] CHK014A `delivery_profile` 与影响面匹配；`micro-fix` 仅用于单仓、小范围、
-  内部、根因已证实、有本地验证且不涉及状态/权限/API/身份/跨层风险的改动。
+  内部、根因已证实、有本地验证且不涉及 public API、身份、权限、外部系统或跨层风险的改动。
 - [ ] CHK014B Bugfix 进入实现前已有 `Root Cause Evidence`：Symptom、Call Path、
   Evidence、Excluded Alternatives、Counterexample、Blast Radius、Validation Mapping
   和 Confidence。
 - [ ] CHK014C 计划和任务没有把未证实方案提前写死；核心路径 known gap 未被当作 PASS。
+- [ ] CHK014D 如涉及 UI parity、截图对齐或 0px 级视觉修复，`plan.md` 已包含
+  UI element traversal inventory / 0px alignment matrix，并覆盖 dynamic states、
+  computed style 和 box metrics（如运行时证据可用）。
 
 ## 验证
 
-- [ ] CHK015 已描述 build、test、smoke、manual、virtual-device 或 real-device
-  validation。
+- [ ] CHK015 已描述 build、test、smoke、manual 或 selected-gate validation。
 - [ ] CHK016 每个已验证行为都有计划补充 unit test、regression test、fixture、
   contract test、smoke case，或明确 `N/A` 原因。
 - [ ] CHK017 test-case updates 后会重新运行受影响测试。
-- [ ] CHK018 无法执行的验证已记录为 known gap。
+- [ ] CHK018 无法执行的验证已记录为 known gap，并区分 agent 可修复缺口和外部 blocker。
 - [ ] CHK018A 搜索范围被限制在受影响仓库和已知目录；没有默认扫描整个
   `workspace_root`，简单本地查找没有交给 explorer/subagent。
-- [ ] CHK018B UI parity 或 host-embedded UI 验证优先在真实宿主页/路由执行；
-  已覆盖大量条目、滚动条出现/消失、动态状态和 sibling/header/footer 不被压缩或重排。
-- [ ] CHK018C Host-embedded frontend plugin 源码改动已计划并验证固定链路：
-  source edit -> frontend build -> direct runtime replacement -> real host CDP verification；
-  已记录 build 命令/结果、runtime 替换目录（runtime replacement directory）、
-  removed stale count、plugin id 和真实 target 加载的资源。
-- [ ] CHK018D Native plugin 源码改动没有套用 frontend runtime 热替换；已要求 `.plugin`
-  构建产物路径、安装/重启验收路径，或记录 native 无法热更新的原因。
-- [ ] CHK018E host CDP 验证已先列出 `/json/list` page targets，并记录
-  `id/title/url/webSocketDebuggerUrl`、选中 target id/URL；产品 UI 验证没有使用
-  Plugin Workbench、`base-win.html`、`devtools://`、blank 或无关 target。
-- [ ] CHK018F Qt-to-frontend UI parity 已先查
-  `.specify/memory/qt-source-behavior-map.md` 或 `ai/knowledge/qt-source-behavior-map.md`；
-  缺失/过期条目已转为有界源码证据或明确 blocker，没有默认全工作区搜索。
+- [ ] CHK018B 如 selected gate packs 要求运行时、浏览器、包或外部系统证据，
+  已列出对应命令、证据路径和 PASS/FAIL/BLOCKED 条件。
 
 ## 本地 Spec 分支工作流
 
 - [ ] CHK019 该能力使用本地 Spec branch，不需要 remote push、remote tracking
-  或 GitHub issue generation。
+  或外部 issue generation。
 - [ ] CHK020 多仓任务已识别每个受影响仓库，并要求它们使用同名本地 Spec branch，
   完成前 cherry-pick 回创建 spec 分支时记录的入口分支。
 - [ ] CHK021 分支 cherry-pick 完成动作必须在 agent 执行 completion command 前取得

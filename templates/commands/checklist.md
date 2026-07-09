@@ -1,7 +1,7 @@
 ---
 description: Generate a focused quality checklist for the active capability.
 scripts:
-  ps: scripts/powershell/check-prerequisites.ps1 -Json
+  ps: scripts/powershell/check-prerequisites.ps1 -Json -Stage checklist
 ---
 
 ## User Input
@@ -80,22 +80,16 @@ Choose only items relevant to the feature:
 
 - Requirement clarity and independent capability scenarios.
 - Intake routing: migration, bugfix, new-feature, or needs-routing.
-- Interface and compatibility boundaries.
-- Affected modules and file ownership.
-- SDK, native plugin/bridge/adaptor bridge, host application, or frontend plugin contracts.
-- Runtime/device state, permissions, handles, cache, and refresh behavior.
-- Identity / State / API Boundary: UUID decimal string is the only
-  cross-boundary device identity; `device::identity::generateUUID()` is the
-  only UUID generation owner; SDK native IDs/handles remain bottom-layer
-  internals; frontend business operations use `node.uuid`; events trigger
-  refresh but never replace `owning runtime/domain repository` as the truth source.
-- UI/service/runtime layering: `bridge/adaptor` only forwards APIs; `owning runtime/domain repository`
-  provides non-UI runtime/permission/capability facts; frontend plugin owns
-  UI-display-specific structure, order, visibility, availability
-  presentation, and action entry composition.
-- Interface/data file ownership and avoidance of single-file contract/data
-  layer growth.
-- Encoding and localization boundaries.
+- Interface, data, compatibility, and external-system boundaries.
+- Affected modules, file ownership, and generated-output boundaries.
+- Runtime/service/UI layering and authoritative state ownership.
+- Adapter/bridge boundaries: forwarding/integration layers must not silently own
+  business rules, permission/status truth, or cached source-of-truth state.
+- Identity, permission, status, and naming semantics when behavior crosses
+  module, process, service, UI, or repository boundaries.
+- Interface/data file ownership and avoidance of single-file contract/data layer
+  growth.
+- Encoding, localization, and migration boundaries.
 - Validation coverage and known gaps.
 - Test-case plan review status: API/E2E/interface/regression/fixture/smoke
   rows are traced to scenarios, requirements, contracts, or explicit N/A
@@ -112,35 +106,34 @@ Choose only items relevant to the feature:
   Confidence.
 - Bugfix Root-Fix Decision Gate: Root fix, Mitigation, Compatibility fallback,
   and applicable Containment candidates are compared before implementation.
-- Semantic safety for fallback/status/permission/device behavior. A known gap
-  on the exact changed core behavior is blocking, not a pass.
+- Semantic safety for fallback/status/permission behavior. A known gap on the
+  exact changed core behavior is blocking, not a pass.
 - Delivery profile correctness: `micro-fix` must be single-repo, small,
   internal, evidenced, locally validated, and free of status/permission/API/
   identity/cross-layer risk.
 - Unit/regression test-case update strategy after successful validation.
 - Migration parity, bugfix repro/regression, or new-feature acceptance.
-- Qt source behavior coverage for UI-interaction or operation-availability
-  migration, including device type/status dimensions and visible/enabled rules.
-  A single fixed table is not required when grouping, decision tables,
-  state-machine notes, fixture matrices, or per-Qt-function rule lists are
-  clearer.
+- Source-behavior coverage for migration or parity work. A single fixed table
+  is not required when grouping, decision tables, state-machine notes, fixture
+  matrices, or per-source-function rule lists are clearer.
 - UI design/source directory map for UI-related migration or new-feature.
-- UI parity runtime coverage for frontend visual or host-embedded UI work:
-  static visual references, dynamic states, exact geometry constraints,
-  runtime DOM / computed style / box metrics evidence, scroll owner, host page
-  validation, many-item behavior, and scrollbar appear/disappear stability.
+- UI parity runtime coverage for UI work: static visual references, dynamic
+  states, exact geometry constraints, runtime DOM / computed style / box metrics
+  evidence when available, scroll owner, many-item behavior, and scrollbar
+  appear/disappear stability.
 - Migration, rollback, and downstream impact.
-- Local-only spec branch coverage and absence of remote push / GitHub issue
+- Local-only spec branch coverage and absence of remote push / external issue
   workflow coupling.
 - Implementation Slices completeness: target, 允许写入范围, 禁止范围, validation
   command or manual check, workflow-state/implementation-summary update, and
   停止条件.
-- `implementation-summary.md`, `validation.md`, and `workflow-state.json`
-  resume/closure contract; `review.md`, `progress.md`, and `lessons.md` are
-  optional.
-- Default closure path: validation evidence, implementation summary, and user
-  acceptance. Simplify/test-hardening/retrospective/commit/complete-branch are
-  opt-in or strict/release paths.
+- Lean closure in `workpack.md` `Outcome`, strict/non-lean closure in
+  `implementation-summary.md`, `validation.md`, and `workflow-state.json`;
+  `review.md`, `progress.md`, and `lessons.md` are optional.
+- Default closure path: validation evidence, lean Outcome or strict
+  implementation summary, and user acceptance.
+  Simplify/test-hardening/retrospective/commit/complete-branch are opt-in or
+  strict/release paths.
 
 ## Output Rules
 
@@ -169,27 +162,22 @@ Choose only items relevant to the feature:
 - Treat `needs-routing`, missing migration source behavior, or missing required
   UI design/source directories as blocking unless an explicit N/A reason is
   recorded.
-- Treat missing Qt source behavior coverage for UI-interaction or
-  operation-availability migration as blocking unless an explicit owner-approved
-  N/A reason is recorded.
 - Treat missing UI parity runtime evidence as blocking when the task changes
-  host-embedded layout, fixed sizes, clipping, scrollbars, blank areas, or
-  flex/grid parent-child behavior. Static design files alone are not enough for
-  these cases.
-- Treat plugin changes made only in installed runtime plugin directories or
-  built artifacts such as `app-data/plugins/**`, `frontend/plugins/**`,
-  `dist/`, `build/`, `export/`, or `plugin-out/` as blocking unless the same
-  change is ported to repository source before acceptance/commit.
-- Treat parallel cross-boundary device identities, service-side device/runtime
-  caches, UUID generation outside `device::identity::generateUUID()`, SDK
-  native ID/handle leakage, frontend operation fallbacks such as `node.id`,
-  equivalent legacy production APIs, or debug/test APIs in production service
-  exports as blocking unless an explicit owner-approved gap is recorded.
+  layout, fixed sizes, clipping, scrollbars, blank areas, or flex/grid
+  parent-child behavior. Static design files alone are not enough for these
+  cases.
+- Treat changes made only in generated outputs, installed runtime directories,
+  caches, or built artifacts as blocking unless the same change is ported to
+  repository source before acceptance/commit.
+- Treat parallel cross-boundary identities, service-side authoritative-state
+  caches, ambiguous operation identifiers, equivalent legacy production APIs, or
+  debug/test APIs in production surfaces as blocking unless an explicit
+  owner-approved gap is recorded.
 - Treat missing `speckit.fact-layer` evidence as blocking when the work is a
-  second same-class fix, a UI parity patch failed once, DOM/CSS/layout ownership
-  is unclear, scrollbar/clipping/compression behavior is involved, device state
-  mismatches service/runtime expectation, permission/connection/acquisition behavior is
-  inconsistent, virtual-device behavior is unclear, or the rebuilt/reinstalled
+   second same-class fix, a UI parity patch failed once, DOM/CSS/layout ownership
+  is unclear, scrollbar/clipping/compression behavior is involved,
+  external-state behavior mismatches service/runtime expectation,
+  permission/connection behavior is inconsistent, or the rebuilt/reinstalled
   result is unchanged.
 - For required fact-layer evidence, verify `fact-pack.md`, latest log discovery
   from repository-map or selected gate packs, plus chrome-devtools runtime DOM,

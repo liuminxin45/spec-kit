@@ -23,9 +23,10 @@ Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md
 
 Run the AI self-acceptance loop after code changes when `acceptance-rubric.md`
 exists or a selected high-risk gate requires it. This is a judgeable gate:
-collect evidence, score `acceptance-rubric.md`, write `validation.md`, and
-return `PASS`, `FAIL`, or `BLOCKED`. Human acceptance starts after required
-validation and implementation-summary closure are complete.
+collect evidence, score `acceptance-rubric.md`, write lean `workpack.md`
+`Outcome` or strict `validation.md`, and return `PASS`, `FAIL`, or `BLOCKED`.
+Human acceptance starts after lean Outcome or strict implementation-summary
+closure is complete.
 
 ## Required Inputs
 
@@ -33,8 +34,8 @@ validation and implementation-summary closure are complete.
 - `acceptance-rubric.md`
 - `quality-vision.md` for UI/UX work
 - selected gate packs from `select-gates`
-- `validation.md`, `implementation-summary.md`, `evidence.md`, and
-  `fact-pack.md` when present
+- `workpack.md` `Outcome`, `validation.md`, `implementation-summary.md`,
+  `evidence.md`, and `fact-pack.md` when present
 
 ## Evidence Menu
 
@@ -43,14 +44,13 @@ surface:
 
 - build/test results and regression tests
 - API/network payload and response checks
-- real host CDP `/json/list`, selected target id/title/url/webSocketDebuggerUrl
-- key-path CDP screenshots saved under `FEATURE_DIR/cdp-screenshots/`,
-  screenshots-index.md, visual comparison, DOM, console, network, computed
+- selected gate-pack runtime target inventory when applicable
+- key-path screenshots, screenshots-index.md, visual comparison, DOM, console, network, computed
   style, box metrics, scrollbar/clipping/overflow geometry
-- source edit -> build -> runtime replacement -> host verification evidence
-- native build/export, runtime sync, proto/native export validation
-- latest service/runtime logs for runtime/device issues
-- device/host smoke when local device, host, and permissions are available
+- source edit -> build -> runtime/deployment verification evidence
+- build/export, runtime sync, protocol/export validation when selected gates require it
+- latest service/runtime logs for runtime/external-system issues
+- target-environment smoke when local resources and permissions are available
 
 ## Judge Steps
 
@@ -60,26 +60,27 @@ surface:
 3. For every rubric row, assign `PASS`, `FAIL`, `BLOCKED`, or `N/A` and cite
    concrete evidence.
 4. Fail immediately when any `Essential` row fails or any `Pitfall` triggers.
-5. Treat missing UI baseline, wrong CDP target, missing key-path screenshot for
-   UI-visible CDP validation, stale runtime artifact, uninspected console/log
+5. Treat missing UI baseline, wrong runtime target, missing key-path screenshot for
+   UI-visible validation, stale runtime artifact, uninspected console/log
    errors, or unrun feasible smoke as `FAIL`, not a human-acceptance item.
 6. For bugfix work, fail when Root-Fix Decision Gate is missing, final fix type
    is absent, a scale-growth failure path is still present but labeled root
    fix, or cleanup/release/reset/retry/fallback/limiting is treated as root fix
    without evidence that the failure mechanism is eliminated.
 7. Use `BLOCKED` only for external facts the agent cannot fix or obtain:
-   unavailable device, missing permission, unknown unsafe process owner, missing
+   unavailable external resource, missing permission, unknown unsafe process owner, missing
    owner decision, or unavailable tool after recovery attempts.
-8. Write `validation.md` `AI Self-Acceptance` / `AI Acceptance Result` with the
-   rubric row results, blockers, evidence links, and next action.
+8. Write lean `workpack.md` `Outcome` or strict `validation.md`
+   `AI Self-Acceptance` / `AI Acceptance Result` with the rubric row results,
+   blockers, evidence links, and next action.
 9. Do not output final strict/release Rubric scores here. Record criteria
    coverage and triggered pitfalls only; `speckit.rubric-score` is an opt-in
    strict/release stage.
 
 ## Loop Contract
 
-- `PASS`: continue to `speckit.acceptance` after `implementation-summary.md`
-  and `validation.md` are current.
+- `PASS`: continue to `speckit.acceptance` after lean `workpack.md` `Outcome`
+  or strict `implementation-summary.md` and `validation.md` are current.
 - `FAIL`: return to `speckit-implement` or `speckit-fact-layer`; patch source,
   rebuild/sync when relevant, and rerun this skill.
 - `BLOCKED`: stop with concrete blocker evidence and `next_required_human_action`.
@@ -90,7 +91,7 @@ Report in Chinese:
 
 - AI Self-Acceptance status: `PASS | FAIL | BLOCKED`.
 - Rubric failures or triggered pitfalls.
-- Evidence collected, including CDP target, screenshot directory, and logs when
+- Evidence collected, including runtime target, screenshot directory, and logs when
   used.
 - Rubric criteria coverage and explicit note that final strict/release scoring
   is opt-in.

@@ -41,7 +41,7 @@ Use 0-100 for every dimension and compute the weighted total:
 | Dimension | Weight | Required Evidence |
 | --- | ---: | --- |
 | L1 功能与需求闭合 | 0.30 | Requirements, acceptance items, user confirmation, and scoped source changes are closed. |
-| L2 验证与证据 | 0.25 | Build/test/API/E2E/CDP/log/runtime/plugin package evidence is sufficient or has true blockers. |
+| L2 验证与证据 | 0.25 | Build/test/API/E2E/log/runtime/selected gate-pack evidence is sufficient or has true blockers. |
 | L3 工作流阶段合规 | 0.25 | Selected stage order, required lean artifacts, optional governance choices, self-check, and Rubric timing are compliant. |
 | L4 交付与仓库状态 | 0.10 | Validation/acceptance state, optional commit/amend state, dirty classification, message validation, and complete-branch readiness are safe. |
 | L5 上下文与自动化治理 | 0.10 | Minimal context, selected knowledge/skill/gates, scripts first, and no temporary guessing. |
@@ -50,8 +50,8 @@ Hard gates:
 
 - `AI Self-Acceptance = PASS`.
 - API/E2E plan exists, or E2E has explicit `N/A` reason.
-- Applicable plugin changes have `.plugin` build/package evidence.
-- CDP/host/runtime gates have selected target, screenshot/DOM/log evidence, or
+- Applicable selected gate packs have required build/package/runtime evidence.
+- Runtime/UI gates have selected target, screenshot/DOM/log evidence, or
   true blocker.
 - Commit message validation passed when commit is selected.
 - Post-commit self-check completed when strict release selected it.

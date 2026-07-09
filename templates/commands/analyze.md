@@ -1,7 +1,7 @@
 ---
 description: Analyze spec.md, plan.md, and optional tasks.md for consistency before implementation.
 scripts:
-  ps: scripts/powershell/check-prerequisites.ps1 -Json -IncludeTasks
+  ps: scripts/powershell/check-prerequisites.ps1 -Json -Stage analyze -IncludeTasks
 ---
 
 ## User Input
@@ -113,29 +113,18 @@ investigation scope is bounded and whether implementation is still blocked.
      current call path and failure mode.
    - Plans that use a `Known Gap` to pass the exact core behavior changed by
      the fix.
-   - Fallback/status/permission changes that affect real devices or public
-     behavior without a virtual-only guard, compatibility proof, or explicit
-     high-risk decision.
+   - Fallback/status/permission changes that affect public behavior or external
+     systems without a guard, compatibility proof, or explicit high-risk
+     decision.
    - Compatibility risks without tasks.
-   - Device/runtime/encoding/UI display boundaries missing from plan or tasks.
-   - `bridge/adaptor` implementing business logic instead of forwarding, UI
-     label/string-based runtime/permission inference, fake device facts, or
-     missing `owning runtime/domain repository` runtime/permission/capability facts.
-   - Cross-boundary device identity that is not UUID decimal string, or new
-     parallel identity fields such as `deviceIndex`, `deviceId`, `handleId`, or
-     `virtualDeviceId`.
-   - UUID generation outside `device::identity::generateUUID()`.
-   - SDK native id, virtual id, or handle leaking beyond bottom-layer SDK/service
-     internals.
-   - Frontend business operations using `node.id`, `entityId`, `metadata.uuid`,
-     or other fallbacks instead of `node.uuid`.
-   - `bridge/adaptor` caching device lists, connection/acquisition status, or
-     runtime state.
-   - Events replacing the truth source instead of triggering refresh from
-     `owning runtime/domain repository` snapshot/runtime facts.
-   - Functionally equivalent old APIs, debug/test APIs in production service
-     exports, ambiguous identity names, or build artifacts influencing interface
-     or package-source judgment.
+   - Runtime, encoding, UI display, service, data, or external-system boundaries
+     missing from plan or tasks.
+   - Adapter/bridge layers implementing business rules, caching authoritative
+     state, or inferring permissions/status from presentation labels instead of
+     named owner facts.
+   - Parallel identity/status fields, ambiguous names, equivalent legacy APIs,
+     debug/test APIs in production surfaces, or generated artifacts influencing
+     source/interface judgment.
    - Interface/data-layer work concentrated into an oversized file instead of
      following existing ownership or adding focused files.
    - Validation gaps.
@@ -147,11 +136,9 @@ investigation scope is bounded and whether implementation is still blocked.
      that are not self-contained enough for AI self-acceptance.
    - Missing `AI Self-Acceptance Contract` in `plan.md` for code-changing work.
    - Missing test-case update or re-run tasks for validated behavior.
-   - Missing migration parity tasks for source Qt behavior.
-   - UI-interaction or operation-availability migration that lacks Qt source
-     behavior coverage, or has coverage items without matching `owning runtime/domain repository`
-     facts tasks, `bridge/adaptor` forwarding tasks, frontend display tasks,
-     validation, or owner-approved gaps.
+   - Missing source-behavior parity tasks for migration, or coverage items
+     without matching owner-fact tasks, adapter/bridge forwarding tasks, UI
+     display tasks, validation, or owner-approved gaps.
    - Missing bugfix repro or regression tasks.
    - Missing new-feature acceptance or compatibility tasks.
    - Missing UI design/source directory map for UI-related migration or

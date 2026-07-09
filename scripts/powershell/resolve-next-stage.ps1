@@ -41,6 +41,49 @@ function Has-Artifact {
     return (Test-Path -LiteralPath (Join-Path $FeatureDir $Name) -PathType Leaf)
 }
 
+function Test-LeanProfileName {
+    param([string]$Profile)
+    return (([string]$Profile).ToLowerInvariant() -in @("micro-fix", "standard-bugfix-lite"))
+}
+
+function Get-LabeledMarkdownValue {
+    param([string]$Text, [string]$Label)
+    $escaped = [regex]::Escape($Label)
+    $match = [regex]::Match($Text, "(?im)^\s*(?:[-*]\s*)?$escaped\s*:\s*(.+?)\s*$")
+    if ($match.Success) { return $match.Groups[1].Value.Trim() }
+    return ""
+}
+
+function Test-MeaningfulMarkdownValue {
+    param([string]$Value, [switch]$AllowNa)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    $trimmed = $Value.Trim()
+    if ($trimmed -in @("TBD", "TODO", "-", "?", "[TODO]", "[TBD]", "pending")) { return $false }
+    if (-not $AllowNa -and $trimmed -match "^(?i:n/?a|none|无|暂无|不适用)$") { return $false }
+    return $true
+}
+
+function Test-WorkpackOutcomeComplete {
+    if (-not (Has-Artifact "workpack.md")) { return $false }
+    $path = Join-Path $FeatureDir "workpack.md"
+    $text = Get-Content -LiteralPath $path -Raw -ErrorAction SilentlyContinue
+    if ($text -notmatch "(?im)^\s*##\s+Outcome\s*$") { return $false }
+    $finalStatus = (Get-LabeledMarkdownValue -Text $text -Label "Final status").ToLowerInvariant()
+    $finalFixType = (Get-LabeledMarkdownValue -Text $text -Label "Final fix type").ToLowerInvariant()
+    $eliminated = (Get-LabeledMarkdownValue -Text $text -Label "Eliminated failure mechanism").ToLowerInvariant()
+    $validationResult = Get-LabeledMarkdownValue -Text $text -Label "Validation result"
+    $validationEvidence = Get-LabeledMarkdownValue -Text $text -Label "Validation evidence"
+    $compatibilityImpact = Get-LabeledMarkdownValue -Text $text -Label "Compatibility impact"
+    if ($finalStatus -notin @("completed", "complete", "passed", "ok", "done")) { return $false }
+    if ($finalFixType -notin @("root fix", "mitigation", "containment", "compatibility fallback")) { return $false }
+    if ($eliminated -notin @("yes", "no", "partial")) { return $false }
+    if ($finalFixType -eq "root fix" -and $eliminated -ne "yes") { return $false }
+    if (-not (Test-MeaningfulMarkdownValue -Value $validationResult)) { return $false }
+    if (-not (Test-MeaningfulMarkdownValue -Value $validationEvidence -AllowNa)) { return $false }
+    if (-not (Test-MeaningfulMarkdownValue -Value $compatibilityImpact -AllowNa)) { return $false }
+    return $true
+}
+
 function Get-Status {
     param($State, [string]$Name)
     $node = Get-Prop $State $Name
@@ -114,11 +157,18 @@ function Get-ClosureDecision {
         return $null
     }
 
-    if (-not (Has-Artifact "validation.md")) {
-        return Set-Decision "implement" "speckit.implement" @("validation.md")
-    }
-    if (-not (Has-Artifact "implementation-summary.md")) {
-        return Set-Decision "implement" "speckit.implement" @("implementation-summary.md")
+    $strictClosure = ($commitDone -or $postDone -or $rubricDone -or $commitRequested -or $postRequested -or $rubricRequested -or $completeRequested)
+    if ((Test-LeanProfileName $profile) -and (-not $strictClosure)) {
+        if (-not (Test-WorkpackOutcomeComplete)) {
+            return Set-Decision "implement" "speckit.implement" @("workpack.md Outcome")
+        }
+    } else {
+        if (-not (Has-Artifact "validation.md")) {
+            return Set-Decision "implement" "speckit.implement" @("validation.md")
+        }
+        if (-not (Has-Artifact "implementation-summary.md")) {
+            return Set-Decision "implement" "speckit.implement" @("implementation-summary.md")
+        }
     }
 
     if (($commitRequested -or $completeRequested) -and -not $accepted) {
@@ -186,7 +236,7 @@ $riskFlags = @()
 if ($feature -and (Get-Prop $feature "risk_flags")) {
     $riskFlags = @((Get-Prop $feature "risk_flags") | ForEach-Object { [string]$_ })
 }
-$needsChecklist = ($riskLevel -in @("high", "blocked")) -or (@($riskFlags | Where-Object { $_ -in @("ui-parity", "host-embedded-ui", "cross-repo-validation", "cross-repo", "public-api", "real-device") }).Count -gt 0)
+$needsChecklist = ($riskLevel -in @("high", "blocked")) -or (@($riskFlags | Where-Object { $_ -in @("ui-parity", "host-embedded-ui", "cross-repo-validation", "cross-repo", "public-api", "real-device", "external-system") }).Count -gt 0)
 
 $blockers = @()
 if ([string]::IsNullOrWhiteSpace($FeatureDir) -or -not (Test-Path -LiteralPath $FeatureDir -PathType Container)) {
@@ -211,10 +261,8 @@ if ([string]::IsNullOrWhiteSpace($FeatureDir) -or -not (Test-Path -LiteralPath $
     } elseif ($profile -eq "micro-fix") {
         if (-not (Has-Artifact "workpack.md")) {
             $decision = Set-Decision "intake" "speckit.plan" @("workpack.md")
-        } elseif (-not (Has-Artifact "validation.md")) {
-            $decision = Set-Decision "plan" "speckit.implement" @("validation.md")
-        } elseif (-not (Has-Artifact "implementation-summary.md")) {
-            $decision = Set-Decision "implement" "speckit.implement" @("implementation-summary.md")
+        } elseif (-not (Test-WorkpackOutcomeComplete)) {
+            $decision = Set-Decision "plan" "speckit.implement" @("workpack.md Outcome")
         } elseif (-not (Test-AcceptancePrepared $state)) {
             $decision = Set-Decision "implement" "speckit.acceptance"
         } else {
@@ -223,10 +271,8 @@ if ([string]::IsNullOrWhiteSpace($FeatureDir) -or -not (Test-Path -LiteralPath $
     } elseif ($profile -eq "standard-bugfix-lite") {
         if (-not (Has-Artifact "workpack.md")) {
             $decision = Set-Decision "specify" "speckit.plan" @("workpack.md")
-        } elseif (-not (Has-Artifact "validation.md")) {
-            $decision = Set-Decision "plan" "speckit.implement" @("validation.md")
-        } elseif (-not (Has-Artifact "implementation-summary.md")) {
-            $decision = Set-Decision "implement" "speckit.implement" @("implementation-summary.md")
+        } elseif (-not (Test-WorkpackOutcomeComplete)) {
+            $decision = Set-Decision "plan" "speckit.implement" @("workpack.md Outcome")
         } elseif (-not (Test-AcceptancePrepared $state)) {
             $decision = Set-Decision "implement" "speckit.acceptance"
         } else {
@@ -237,15 +283,16 @@ if ([string]::IsNullOrWhiteSpace($FeatureDir) -or -not (Test-Path -LiteralPath $
             $decision = Set-Decision "intake" "speckit.specify" @("spec.md")
         } elseif (-not (Has-Artifact "plan.md")) {
             $decision = Set-Decision "specify" "speckit.plan" @("plan.md")
-        } elseif ($profile -eq "full-sdd" -and -not (Has-Artifact "tasks.md")) {
-            $decision = Set-Decision "plan" "speckit.tasks" @("tasks.md")
-        } elseif ($profile -eq "full-sdd" -and -not (Has-Artifact "analysis.md")) {
-            $decision = Set-Decision "plan" "speckit.analyze" @("analysis.md")
         } elseif (($profile -eq "full-sdd" -or $needsChecklist) -and -not (Has-Artifact "checklists/implementation-readiness.md")) {
-            $decision = Set-Decision "analyze" "speckit.checklist" @("checklists/implementation-readiness.md")
+            $decision = Set-Decision "plan" "speckit.checklist" @("checklists/implementation-readiness.md")
+        } elseif ($profile -eq "full-sdd" -and -not (Has-Artifact "tasks.md")) {
+            $decision = Set-Decision "checklist" "speckit.tasks" @("tasks.md")
+        } elseif (($profile -eq "full-sdd" -or $needsChecklist) -and -not (Has-Artifact "analysis.md")) {
+            $currentBeforeAnalyze = if ($profile -eq "full-sdd") { "tasks" } else { "checklist" }
+            $decision = Set-Decision $currentBeforeAnalyze "speckit.analyze" @("analysis.md")
         } elseif (-not (Has-Artifact "validation.md")) {
             $currentBeforeImplement = if ($profile -eq "full-sdd" -or $needsChecklist) {
-                "checklist"
+                "analyze"
             } elseif (Has-Artifact "analysis.md") {
                 "analyze"
             } else {

@@ -5,10 +5,8 @@
 
 ## L2 Artifact Contract
 
-Required L2 sections: `人类审核摘要`, `概览`, `分流对齐`, `AI Context Contract`,
-`Root Cause Evidence`, `Root-Fix Decision Gate`, `技术上下文`, `影响模块与边界`,
-`Quality Vision Link`, `测试用例计划`, `Acceptance Rubric Link`,
-`Implementation Slices`, `验证计划`, `AI Self-Acceptance Contract`.
+Required L2 sections: `人类审核摘要`, `概览`, `分流对齐`, `AI Context Contract`, `Root Cause Evidence`, `Root-Fix Decision Gate`, `技术上下文`, `影响模块与边界`,
+`Quality Vision Link`, `测试用例计划`, `Acceptance Rubric Link`, `Implementation Slices`, `验证计划`, `AI Self-Acceptance Contract`.
 
 Keep this plan as a decision map. Put detailed runtime facts in `fact-pack.md`,
 raw command evidence in `evidence.md`, and durable facts in code or selected
@@ -130,7 +128,7 @@ here.
 
 ## Source Behavior Execution Map
 
-Required for UI/service/SDK or real-device state migrations; otherwise `N/A`.
+Required for UI/service/SDK or target-environment state migrations; otherwise `N/A`.
 
 | Source UI Behavior | Native/service/API Path | State/DTO/API Fact | Frontend Runtime Proof |
 |--------------------|---------------------|--------------------|------------------------|
@@ -140,7 +138,7 @@ Required for UI/service/SDK or real-device state migrations; otherwise `N/A`.
 
 Required only for visible UI/UX/copy/style changes; otherwise `N/A`. For parity
 or layout repair, cite selected gates plus runtime DOM/computed-style/box facts.
-UI parity or host-embedded UI work must cover dynamic states, host validation,
+UI parity or embedded UI work must cover dynamic states, target validation,
 scrollbar, clipping, compression, and runtime DOM / computed style / box metrics.
 
 | Visible Change | Evidence Source | Target Selector/Component | Status |
@@ -208,13 +206,3 @@ Record only used optional artifacts: `research.md`, `data-model.md`,
 - PASS condition:
 - FAIL loop target: `speckit-implement` / `speckit-fact-layer`
 - BLOCKED condition:
-
-## 项目结构说明
-
-- Existing files reused / new focused files / generated artifacts excluded:
-
-## 复杂度跟踪
-
-Record only deviations from existing patterns.
-
-- N/A

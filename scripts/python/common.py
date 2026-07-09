@@ -226,6 +226,69 @@ def read_feature_json(repo_root: Path) -> dict[str, Any] | None:
     return data
 
 
+def _resolve_spec_kit_path(value: str, repo_root: Path) -> Path | None:
+    if not value.strip():
+        return None
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        candidate = repo_root / candidate
+    return candidate.resolve(strict=False)
+
+
+def _same_spec_kit_path(left: str | Path, right: str | Path, repo_root: Path) -> bool:
+    left_path = _resolve_spec_kit_path(str(left), repo_root)
+    right_path = _resolve_spec_kit_path(str(right), repo_root)
+    if left_path is None or right_path is None:
+        return False
+    if os.name == "nt":
+        return os.path.normcase(str(left_path)) == os.path.normcase(str(right_path))
+    return str(left_path) == str(right_path)
+
+
+def _read_feature_json_for_profile(repo_root: Path) -> dict[str, Any] | None:
+    path = repo_root / ".specify" / "feature.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def get_feature_delivery_profile(repo_root: Path, feature_dir: Path, explicit_profile: str = "") -> str:
+    if explicit_profile.strip():
+        explicit = explicit_profile.strip().lower()
+        return "" if explicit == "auto" else explicit
+
+    feature_config = _read_feature_json_for_profile(repo_root)
+    if feature_config is not None:
+        configured_dir = str(feature_config.get("feature_directory") or "")
+        matches_feature_dir = not configured_dir or _same_spec_kit_path(configured_dir, feature_dir, repo_root)
+        if matches_feature_dir:
+            profile = str(feature_config.get("delivery_profile") or "")
+            if profile.strip() and profile.strip().lower() != "auto":
+                return profile.strip().lower()
+
+    state_path = feature_dir / "workflow-state.json"
+    if state_path.is_file():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            state = {}
+        workflow_model = state.get("workflow_model") if isinstance(state, dict) else {}
+        if isinstance(workflow_model, dict):
+            profile = str(workflow_model.get("delivery_profile") or "")
+            if profile.strip() and profile.strip().lower() != "auto":
+                return profile.strip().lower()
+
+    return ""
+
+
+def is_lean_delivery_profile(profile: str) -> bool:
+    return profile in {"micro-fix", "standard-bugfix-lite"}
+
+
 def _feature_dir_by_prefix(repo_root: Path, branch: str) -> Path:
     specs_dir = repo_root / "specs"
     branch_name = effective_branch_name(branch)
@@ -258,6 +321,7 @@ class FeaturePaths:
     feature_dir: Path
     feature_spec: Path
     impl_plan: Path
+    workpack: Path
     tasks: Path
     research: Path
     data_model: Path
@@ -309,6 +373,7 @@ def get_feature_paths(*, no_persist: bool = False, script_file: Path | None = No
         feature_dir=feature_dir,
         feature_spec=feature_dir / "spec.md",
         impl_plan=feature_dir / "plan.md",
+        workpack=feature_dir / "workpack.md",
         tasks=feature_dir / "tasks.md",
         research=feature_dir / "research.md",
         data_model=feature_dir / "data-model.md",

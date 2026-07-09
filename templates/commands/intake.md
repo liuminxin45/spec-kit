@@ -24,12 +24,11 @@ Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md
 Create an intake record before writing `spec.md`. The intake decides whether
 the work is primarily:
 
-- `migration`: moving existing Qt behavior into owning runtime/domain repository,
-  host application, native plugin/bridge/adaptor bridge, or frontend plugin surfaces.
+- `migration`: moving existing behavior from one implementation, platform,
+  integration, or UI surface to another while preserving expected behavior.
 - `bugfix`: correcting existing migrated behavior, runtime state, crash,
   contract mismatch, UI inconsistency, or tooling behavior.
-- `new-feature`: adding a capability that is not a direct Qt behavior
-  migration.
+- `new-feature`: adding a capability that is not primarily behavior migration.
 
 If the request cannot be classified confidently, set `task_type` to
 `needs-routing` and ask for clarification before continuing.
@@ -38,8 +37,8 @@ Also assign delivery risk and workflow weight when enough evidence exists:
 
 - `low`: tooling/docs/test-only or small local change.
 - `medium`: single-repository change with local validation coverage.
-- `high`: public API, device identity, service/runtime/UI boundary, cross-repo, real
-  device, or migration parity risk.
+- `high`: public API, identity, service/runtime/UI boundary, cross-repo,
+  external-system, or migration parity risk.
 - `blocked`: missing source behavior, missing design input, missing validation
   condition, or contradictory requirement.
 
@@ -47,19 +46,19 @@ Also assign `delivery_profile`:
 
 - `micro-fix`: single-repository, normally 1-2 changed files, internal
   implementation change, root cause already evidenced, local validation
-  available, and no public API, device identity, permission/status semantics,
-  real-device behavior, cross-layer, or cross-repo risk.
+  available, and no public API, identity, permission/status semantics,
+  external-system behavior, cross-layer, or cross-repo risk.
 - `standard-bugfix-lite`: single-repository low/medium-risk bugfix, normally
   1-3 changed files, root cause sufficiently evidenced, one implementation
   slice, local validation available, and no public API, identity,
-  permission/status, cross-repo, real-device, or optional host/plugin/native
-  delivery-chain gate.
+  permission/status, cross-repo, external-system, or selected gate-pack
+  requirement.
 - `standard-bugfix`: compact bugfix that still touches runtime state,
-  permissions, device behavior, compatibility, regression risk, or other
+  permissions, external-system behavior, compatibility, regression risk, or other
   semantic surfaces where a small patch can still be wrong.
 - `full-sdd`: migration, new feature, public API, cross-repo work,
-  UI/service/runtime boundary, device identity, real-device semantics, or broad
-  behavioral change.
+  UI/service/runtime boundary, identity semantics, external-system semantics, or
+  broad behavioral change.
 - `blocked-investigation`: root cause, source behavior, design input,
   validation condition, or requirements are missing/contradictory. Do bounded
   investigation before planning implementation.
@@ -131,12 +130,12 @@ Also assign `delivery_profile`:
        "commit",
        "complete-branch"
      ],
-     "source_qt_paths": [],
+      "source_behavior_paths": [],
      "target_modules": [],
      "ui_design_dirs": {
-       "source_qt_ui": [],
+        "source_ui": [],
        "design_exports": [],
-       "target_frontend": [],
+        "target_ui": [],
        "assets": [],
        "screenshots": []
      }
@@ -146,42 +145,41 @@ Also assign `delivery_profile`:
 5. Apply type-specific intake rules.
 
    For `migration`:
-   - Identify the Qt source feature, source paths, classes, functions, `.ui`
-     files, QSS/style assets, icons, screenshots, or behavioral references.
+   - Identify source behavior, source paths, classes, functions, design/source
+     assets, screenshots, or behavioral references.
    - Identify target modules and expected compatibility boundaries.
-   - If the migration involves device identity, runtime state, RPC/N-API,
+   - If the migration involves identity, runtime state, RPC/API,
      JS/UI, or public API boundaries, record whether the request can satisfy
-     Identity / State / API Boundary before planning: UUID decimal string is
-     the only cross-boundary device identity, UUID creation is owned by
-     `device::identity::generateUUID()`, SDK native IDs/handles remain
-     bottom-layer internals, `bridge/adaptor` does not cache or calculate
-     runtime truth, frontend operations use `node.uuid`, and events only
-     trigger refresh from `owning runtime/domain repository`.
+     Identity / State / API Boundary before planning: each business entity has
+     one canonical identity owner and format, native/external handles remain
+     local implementation details, adapter layers do not cache or calculate
+     runtime truth, frontend operations use domain identities, and events only
+     trigger refresh from the owning domain/runtime layer.
    - If the migration involves UI state, UI interactions, operation availability,
-     or device runtime display, record the layer split before planning:
-     `bridge/adaptor` is forwarding bridge only; runtime/status/permission/
-     capability facts belong in `owning runtime/domain repository`; UI-display-specific
-     composition belongs in the frontend plugin.
+     or runtime display, record the layer split before planning: adapter layers
+     are forwarding/integration boundaries only; runtime/status/permission/
+     capability facts belong in the owning domain/runtime layer; UI-display-specific
+     composition belongs in the frontend/presentation layer.
    - If the migration involves UI interactions or operation availability, build
-     a Qt source behavior coverage list before planning. It must include:
-     source path/function, object or device type, device state/condition,
+     a source behavior coverage list before planning. It must include:
+     source path/function, object/entity type, state/condition,
      UI element order or action order, visible/enabled rules, action handler,
      keep/change/gap notes, and target layer/contract source. Prefer a table for
-     simple cases, but allow grouping by device type, decision tables, state
-     machine notes, fixture matrices, or per-Qt-function rule lists. Do not
-     replace it with a vague "refer to Qt" note.
+     simple cases, but allow grouping by entity type, decision tables, state
+     machine notes, fixture matrices, or per-source-function rule lists. Do not
+     replace it with a vague "refer to the old implementation" note.
    - If UI is involved, organize UI design/source directories:
-     - Original Qt UI/source directory.
+     - Original UI/source directory.
      - Design export or mockup directory.
-     - Target frontend/plugin directory.
+     - Target UI/frontend directory.
      - Shared assets/icons/screenshots directory.
      - Gaps that must be supplied before planning.
 
    For `bugfix`:
    - Capture actual behavior, expected behavior, repro path, affected layer,
      suspected boundary, and regression-test expectation.
-   - If the bug touches device/runtime status, permission, identity, cache,
-     real hardware behavior, UI operation availability, or public contracts,
+   - If the bug touches runtime status, permission, identity, cache,
+     external-system behavior, UI operation availability, or public contracts,
      it cannot be `micro-fix` unless the fix is strictly virtual/simulated or
      otherwise guarded and proven.
    - Record whether root cause is known or only suspected. Known root cause
@@ -191,32 +189,31 @@ Also assign `delivery_profile`:
    - Explain why the work is not a direct migration.
    - Identify new capability intent, affected contracts, acceptance signal, and
      compatibility risk.
-   - If the new feature involves device identity, runtime state, RPC/N-API,
+   - If the new feature involves identity, runtime state, RPC/API,
      JS/UI, or public API boundaries, record the Identity / State / API
-     Boundary: UUID decimal string only across runtime facade/service/N-API/JSON/RPC/
-     JS/UI, single `device::identity::generateUUID()` owner, SDK native IDs and
-     handles internal only, `bridge/adaptor` forwarding-only with no runtime
-     cache, frontend operations using `node.uuid`, event-triggered refresh from
-     `owning runtime/domain repository`, legacy API cleanup, and debug/test API isolation.
+     Boundary: one canonical cross-boundary identity, native/external handles
+     internal only, adapter layers forwarding-only with no runtime cache,
+     frontend operations using domain identities, event-triggered refresh from
+     the owning domain/runtime layer, legacy API cleanup, and debug/test API isolation.
    - If the new feature involves UI state, UI interactions, operation
-     availability, or device runtime display, record the required layer split:
-     `bridge/adaptor` forwarding bridge API, `owning runtime/domain repository` runtime/business
-     facts, and frontend-only display composition.
+      availability, or runtime display, record the required layer split:
+      forwarding/adapter API, owning domain/runtime facts, and frontend-only
+      display composition.
    - If UI is involved, organize UI design/source directories:
      - Product design/mockup/export directory.
-     - Target frontend/plugin directory.
+      - Target UI/frontend directory.
      - Shared assets/icons/screenshots directory.
      - Missing design artifacts or approval gaps.
 
 6. Stop before `specify` when:
    - `task_type` is `needs-routing`.
-   - A migration lacks any Qt source behavior reference.
-   - Device identity/runtime/API work lacks an Identity / State / API Boundary
+   - A migration lacks any source behavior reference.
+   - Identity/runtime/API work lacks an Identity / State / API Boundary
      record or proposes parallel cross-boundary identities, service-owned runtime
-     caches, SDK ID/handle leakage, frontend identity fallbacks, or production
+     caches, native/external handle leakage, frontend identity fallbacks, or production
      debug/test exports without an owner-approved gap.
-   - A UI-interaction or operation-availability migration lacks a Qt source
-     behavior coverage list covering the device type/status dimensions that
+   - A UI-interaction or operation-availability migration lacks a source
+     behavior coverage list covering the entity/status dimensions that
      affect visible/enabled UI behavior.
    - A UI migration/new-feature depends on design files but no design/source
      directory or explicit N/A reason is recorded.
@@ -243,11 +240,11 @@ Report in Chinese:
 - Intake path.
 - Task type and confidence.
 - Risk level and whether it blocks the next stage.
-- Source Qt paths, bug repro, or new-feature rationale.
-- Qt source behavior coverage status for UI-interaction or operation-availability
+- Source behavior paths, bug repro, or new-feature rationale.
+- Source behavior coverage status for UI-interaction or operation-availability
   migration, or explicit N/A.
 - UI design/source directories for migration or new-feature, or explicit N/A.
-- Identity / State / API Boundary status for device identity/runtime/API work,
+- Identity / State / API Boundary status for identity/runtime/API work,
   or explicit N/A.
 - Clarifications required before specification.
 - Required next stage: `speckit.specify` / `$speckit-specify`. If intake

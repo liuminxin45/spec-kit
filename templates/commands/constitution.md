@@ -22,8 +22,8 @@ Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md
 ## Purpose
 
 Create or update `.specify/memory/constitution.md` as the stable engineering
-contract for owning runtime/domain repository, host application, native plugin/bridge/adaptor bridge, SDK integration,
-frontend plugin, and migration work.
+contract for domain/runtime ownership, integration boundaries, UI/service
+layering, compatibility, validation, and migration work.
 
 The constitution should describe principles and decision rules. Do not turn it
 into a full project directory map. Project structure belongs in `plan.md` under
@@ -62,14 +62,14 @@ Use these defaults unless the user explicitly overrides them:
    - Avoid unrelated refactors, formatting churn, or metadata churn.
 
 2. Existing patterns first
-   - Read nearby code, scripts, build files, and existing plugin conventions
+   - Read nearby code, scripts, build files, and existing integration conventions
      before inventing a new abstraction.
    - Match existing naming, ownership boundaries, and error handling style.
 
 3. Interface compatibility first
-   - Treat public SDK headers, native plugin/bridge/adaptor bridge contracts, plugin APIs, frontend
-     extension contracts, and serialized status fields as compatibility
-     boundaries.
+   - Treat public APIs, SDK headers, CLI/script interfaces, integration
+     contracts, frontend extension contracts, and serialized status fields as
+     compatibility boundaries.
    - Any breaking change must be explicit, justified, and accompanied by an
      impact and migration note.
 
@@ -77,58 +77,51 @@ Use these defaults unless the user explicitly overrides them:
    - Prefer concrete build, unit, smoke, runtime, or device validation evidence.
    - If verification cannot be run, record the gap and the exact follow-up.
 
-5. Device and runtime truth
-   - Do not fake SDK, camera, transport, status, permission, or handle state.
-   - Preserve real device names, real SDK/cache status, and real operation
-     permissions unless the spec explicitly defines a simulation boundary.
+5. Runtime truth
+   - Do not fake external-system, cache, transport, status, permission, or
+     handle state.
+   - Preserve real runtime facts and operation permissions unless the spec
+     explicitly defines a simulation boundary.
 
 6. UI display, service bridge, and runtime truth boundary
-   - `bridge/adaptor` is an API forwarding bridge only. It must not implement
-     business logic, device-state inference, permission/availability decisions,
-     UI behavior calculation, or durable business models.
-   - Non-UI-specific runtime facts, device/cache/handle/transport/permission
-     data, and reusable business rules belong in `owning runtime/domain repository`.
+   - A forwarding or adapter layer is a transport/integration boundary only. It
+     must not implement business logic, state inference,
+     permission/availability decisions, UI behavior calculation, or durable
+     business models.
+   - Non-UI-specific runtime facts, cache/handle/transport/permission data, and
+     reusable business rules belong in the owning domain/runtime layer.
    - Business-side code used only to display the current UI, such as UI
      interaction surface structure, ordering, visible/enabled presentation, and
-     action entry composition, belongs in the frontend plugin and must be based on
-     `owning runtime/domain repository` facts obtained through the bridge.
+     action entry composition, belongs in the frontend/presentation layer and
+     must be based on owning domain/runtime facts.
    - Frontend code must not infer runtime/permission truth from labels/strings,
-     fake device state, or persist device/runtime/permission business state as
-     truth.
+     fake state, or persist runtime/permission business state as truth.
 
 7. Identity, state, and API single ownership
-   - Across `owning runtime/domain repository` facade, `bridge/adaptor`, N-API/JSON/RPC, JS, and
-     UI, the only device identity is UUID decimal string. C++ internals may use
-     `uint64_t uuid`, but `deviceIndex`, `deviceId`, `handleId`,
-     `virtualDeviceId`, SDK native IDs, and SDK handles must not become public
-     or bridge/UI identities.
-   - UUID generation belongs only to `device::identity::generateUUID()`.
-     `DeviceManager`, `SdkService`, bridge code, and UI code consume that
-     identity; they do not define separate generation rules.
-   - SDK native IDs, virtual device IDs, and handles stay inside the lowest SDK
-     integration layer. Virtual and real devices expose the same UUID semantics
-     outside that layer.
-   - Frontend business operations use `node.uuid` only. `node.id` is a UI tree
-     node identity, not a device identity, and must not be used with
-     `entityId`, `metadata.uuid`, or similar fallbacks for device operations.
+   - Across domain/runtime facade, adapter, RPC/JSON, JS, and UI, each business
+     entity has one canonical identity owner and format.
+   - Public contracts must not introduce parallel identifiers for the same
+     entity.
+   - Identifier generation belongs to the owning domain layer; service, adapter,
+     and UI layers consume that identity instead of defining separate generation
+     rules.
+   - Native IDs, external handles, cache keys, list indices, and UI node IDs stay
+     inside their local layer unless the spec explicitly defines them as public
+     contract fields.
    - Events are refresh triggers only. After connect/disconnect/acquisition/
-     runtime events, UI refreshes from `bridge/adaptor`, and `bridge/adaptor`
-     forwards to `owning runtime/domain repository`; event payloads do not become a parallel truth
-     store.
+     runtime events, UI refreshes must return to the owning domain/runtime layer;
+     event payloads do not become a parallel truth store.
    - Functionally equivalent old APIs should be removed or migrated instead of
-     coexisting with the new production API. Debug/test facades and temporary
-     SDK passthroughs must stay in tests or scripts, not production service exports.
-   - Names must express real semantics: use `uuid`, `deviceUuids`, `nodeId`, or
-     `listIndex` as appropriate; avoid ambiguous `deviceId`.
-   - Generated artifacts such as `build/`, `export/`, and `plugin-out/` must
-     not affect interface ownership, package-source selection, or diff
-     judgment.
-   - Frontend/native plugin changes must be made in repository source files,
-     not installed runtime plugin directories or built artifacts. Installed
-     `app-data/plugins/**`, host-served `frontend/plugins/**`, `dist/`,
-     `build/`, `export/`, and `plugin-out/` outputs are validation/deployment
-     artifacts unless a repository explicitly treats them as source. Emergency
-     runtime artifact patches must be ported back to source before
+   coexisting with the new production API. Debug/test facades and temporary
+   SDK passthroughs must stay in tests or scripts, not production service exports.
+   - Names must express real semantics; avoid ambiguous identifiers that hide
+     whether a value is a business identity, UI node id, list index, cache key,
+     or external handle.
+   - Generated artifacts such as `dist/`, `build/`, and `export/` must not
+     affect interface ownership, package-source selection, or diff judgment.
+   - Product behavior changes must be made in repository source files, not
+     installed runtime directories, served runtime artifacts, or generated
+     outputs. Emergency artifact patches must be ported back to source before
      acceptance/commit and excluded from commits.
 
 8. Interface and data file ownership

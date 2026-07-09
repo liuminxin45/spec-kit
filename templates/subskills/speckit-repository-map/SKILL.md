@@ -10,14 +10,14 @@ Read `.specify/memory/repository-map.md` as the fixed workspace repository map.
 Rules:
 
 - Treat `.specify/memory/repository-map.md` as the source of truth for repository path, role, and capability ownership.
-- When plugin source/build/runtime path context is needed, read the Project Path
+- When source/build/runtime/deploy path context is needed, read the Project Path
   Categories section in `.specify/memory/repository-map.md` before scanning
-  source trees. Use `ai/knowledge/build-and-package-notes.md` only on demand
-  for expanded build/package path notes.
+  source trees. Use selected knowledge guides only on demand for expanded
+  build/package path notes.
 - Preserve path templates as relative placeholders such as `<workspace-root>`,
-  `<host-app-root>`, `<app-data-root>`, `<plugin-id>`, `<version>`, and
-  `<location>`. Do not convert them into machine-specific absolute paths in
-  specs, plans, tasks, or long-term memory.
+  `<app-root>`, `<runtime-root>`, `<package-id>`, `<version>`, and `<location>`.
+  Do not convert them into machine-specific absolute paths in specs, plans,
+  tasks, or long-term memory.
 - Do not infer repository purpose by scanning source trees.
 - In `specify`, select likely affected repositories from the fixed map and record uncertainty instead of guessing.
 - Inspect source files only after the affected repository is identified and only to confirm concrete identifiers such as API names, source paths, or source behavior references.

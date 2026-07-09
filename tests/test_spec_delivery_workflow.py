@@ -109,9 +109,9 @@ def test_workflow_uses_lean_default_chain_with_conditional_stages():
         "plan",
         "validation",
         "fact-layer",
+        "checklist",
         "tasks",
         "analyze",
-        "checklist",
         "implement",
         "acceptance",
         "human-acceptance",
@@ -176,11 +176,11 @@ def test_conditional_stage_descriptions_do_not_weaken_hard_gates():
     assert conditional["checklist"].startswith("Use for full-sdd/high-risk readiness")
     assert "standard-bugfix-lite" in combined_args
     assert "select-gates" in combined_args
-    assert "installed runtime plugin directories" in combined_args
+    assert "Durable fixes must target repository source" in combined_args
 
     stage_gate_policy = workflow_doc["stage_gate_policy"]
     assert stage_gate_policy["next_stage_routing"]["full-sdd"]["before_implement"].startswith(
-        "tasks -> analyze -> checklist"
+        "checklist -> tasks -> analyze"
     )
     assert stage_gate_policy["new_workflow_preflight"]["command"] == "preflight-new-workflow"
     assert stage_gate_policy["hard_implementation_preflight"]["command"] == "validate-feature-artifacts"
@@ -1098,7 +1098,7 @@ def test_new_command_templates_define_delivery_stages():
             "BLOCKED",
             "Root-Fix Decision Gate",
             "speckit.acceptance",
-            "CDP",
+            "runtime target",
             "console",
             "logs",
         ],
@@ -1151,7 +1151,7 @@ def test_new_command_templates_define_delivery_stages():
             "fact-pack-template.md",
             "configured log",
             "repository-map.md",
-            "chrome-devtools",
+            "browser/runtime inspection",
             "computed style",
             "box metrics",
         ],
@@ -1255,9 +1255,11 @@ def test_stage_handoffs_acceptance_retrospective_and_commit_are_rule_driven():
     simplify = compact_text(read_text("templates/commands/simplify.md"))
     retrospective = compact_text(read_text("templates/commands/retrospective.md"))
     commit = compact_text(read_text("templates/commands/commit.md"))
+    host_gate = read_text("templates/ai/workflows/gates/host-cdp.yml")
 
     task_routing = read_text("templates/ai/workflows/task-routing.md")
-    assert "Completion requires `validation.md` evidence and `implementation-summary.md`" in implement
+    assert "Lean completion requires a complete `workpack.md` `Outcome`" in implement
+    assert "Non-lean, handoff, commit, branch completion, or strict governance completion requires" in implement
     assert "Stage Continuation" in task_routing
     assert "Final Response Guard" in task_routing
     assert "inspect-workflow-closure" in task_routing
@@ -1265,14 +1267,15 @@ def test_stage_handoffs_acceptance_retrospective_and_commit_are_rule_driven():
     assert "automatic_stage_continuation" in yaml.safe_load(read_text("workflows/speckit/workflow.yml"))["stage_gate_policy"]
     assert "final_response_guard" in yaml.safe_load(read_text("workflows/speckit/workflow.yml"))["stage_gate_policy"]
     assert "execution_contract" in yaml.safe_load(read_text("workflows/speckit/workflow.yml"))["stage_gate_policy"]["automatic_stage_continuation"]
-    assert "Auto-continue only along required default stages" in task_routing
+    assert "A single slash-command or stage skill stops after its own stage" in task_routing
+    assert "only an explicit workflow-runner invocation may auto-continue" in task_routing
     assert "opt-in governance/branch mutation stage" in task_routing
     assert "next_required_human_action" in read_text("templates/checklist-template.md")
     assert "Do not mark acceptance as passed yourself" in acceptance
     assert "Required user action" in acceptance
     assert "Accepted Gaps" in retrospective
     assert "behavior-preserving" in simplify
-    assert "record N/A in `implementation-summary.md`" in simplify
+    assert "record N/A in lean `workpack.md` `Outcome`" in simplify
     assert "Stage and commit automatically" in commit
     assert "files intentionally left unstaged" in commit
     assert "Never force-add ignored directories" in commit
@@ -1285,8 +1288,8 @@ def test_stage_handoffs_acceptance_retrospective_and_commit_are_rule_driven():
     assert "最小决策证据包" in retrospective
     assert "nearly deterministic" in retrospective
     assert "retrospective.status" in retrospective
-    assert "ensure-host-cdp" in implement
-    assert "real product target" in implement
+    assert "selected gate packs" in implement
+    assert "ensure-host-cdp" in host_gate
     assert "post-commit self-check" not in workflow_args
     assert "rubric-score" not in workflow_args
 
@@ -1304,21 +1307,22 @@ def test_native_runtime_proto_and_ai_acceptance_gates_are_enforced():
     build_notes = read_text("templates/ai/knowledge/build-and-package-notes.md")
     native_bridge = read_text("templates/ai/knowledge/domains/native-plugin-bridge.md")
     cdp = read_text("templates/ai/knowledge/domains/electron-host-cdp.md")
+    native_gate = read_text("templates/ai/workflows/gates/native-bridge.yml")
 
-    for text in [implement, build_notes, native_bridge]:
+    for text in [build_notes, native_bridge, native_gate]:
         assert "sync-native-runtime-artifacts" in text
         assert "validate-rpc-proto-bundle" in text
 
-    assert "sync-native-runtime-artifacts" in implement
-    assert "Native Runtime Delivery Chain" in validation_template
+    assert "sync-native-runtime-artifacts" not in implement
+    assert "Integration / Generated-Artifact Evidence" in validation_template
     assert "AI Acceptance Result" in validation_template
-    assert "E-NATIVE-001" in evidence_template
-    assert "E-RPC-BUNDLE-001" in evidence_template
+    assert "E-INTEGRATION-001" in evidence_template
+    assert "E-PROTOCOL-BUNDLE-001" in evidence_template
     assert "Minimal Decision Evidence Pack For Advanced Models" in evidence_template
     assert "AI-owned implementation validation has passed" in acceptance
     assert "validation does not record PASS or a true external blocker" in acceptance
     assert "Root-Fix Decision Gate" in plan
-    assert "Qt parity" in routing
+    assert "specialized gate packs" in routing
     assert "safe process recovery" in cdp
     assert "Unknown owners are blockers" in build_notes
     assert "workflow_gate_selection" in stage_policy
@@ -1494,7 +1498,16 @@ def test_open_source_default_context_is_generic_and_self_contained():
         "templates/commands/bounded-investigation.md",
         "templates/commands/commit.md",
         "templates/commands/constitution.md",
+        "templates/constitution-template.md",
+        "templates/intake-template.md",
+        "templates/spec-template.md",
         "templates/fact-pack-template.md",
+        "templates/ai/rules/architecture-constraints.md",
+        "templates/ai/rules/engineering-principles.md",
+        "templates/ai/rules/ai-coding-rules.md",
+        "templates/ai/tools/mcp-servers.md",
+        "templates/ai/tools/mcp-usage-policy.md",
+        "templates/ai/tools/mcp-permissions.md",
     ]
     forbidden_terms = [
         "CoreRuntime",
@@ -1507,6 +1520,27 @@ def test_open_source_default_context_is_generic_and_self_contained():
         "PlatformLibs",
         "SDKLog",
         "ServiceBridgeLog",
+        "Qt",
+        "CDP",
+        "host application",
+        "host app",
+        "frontend plugin",
+        "native plugin",
+        "device::identity",
+        "node.uuid",
+        "node.id",
+        "deviceIndex",
+        "deviceId",
+        "deviceUuids",
+        "virtual-device",
+        "real-device",
+        "GigE",
+        "U3V",
+        "GenTL",
+        "app-data/plugins",
+        "frontend/plugins",
+        "plugin-out",
+        ".plugin",
     ]
 
     offenders = []
@@ -1521,40 +1555,48 @@ def test_open_source_default_context_is_generic_and_self_contained():
 
 def test_host_frontend_delivery_chain_and_cdp_target_gate_are_enforced():
     workflow_doc = load_workflow()
-    workflow_args = compact_text("\n".join(step["input"]["args"] for step in workflow_doc["steps"] if "input" in step))
     stage_policy = workflow_doc["stage_gate_policy"]
     implement = read_text("templates/commands/implement.md")
     validation = read_text("templates/commands/validation.md")
     validation_template = read_text("templates/ai/templates/validation-template.md")
     evidence_template = read_text("templates/ai/templates/evidence-template.md")
-    routing = read_text("templates/ai/workflows/task-routing.md")
     rules = read_text("templates/ai/rules/ai-coding-rules.md")
     checklist = read_text("templates/checklist-template.md")
     common_rules = read_text("checklist-rules/common.yml")
     build_notes = read_text("templates/ai/knowledge/build-and-package-notes.md")
     repo_map = read_text("templates/repository-map-template.md")
+    host_gate = read_text("templates/ai/workflows/gates/host-cdp.yml")
+    runtime_gate = read_text("templates/ai/workflows/gates/frontend-runtime-sync.yml")
+    package_gate = read_text("templates/ai/workflows/gates/plugin-package.yml")
 
-    for text in [implement, validation_template, rules, common_rules, build_notes, checklist]:
+    for text in [build_notes, runtime_gate]:
         assert "source edit -> frontend build -> direct runtime replacement -> real host CDP verification" in compact_text(text)
-    assert "final `.plugin` build/package evidence" in validation
-    assert "sync-ui-runtime-artifacts" in implement
-    assert "ensure-host-cdp" in implement
-    assert "ensure-host-cdp" in validation
-    assert "CDP host recovery ladder" in validation
-    assert "Completion requires `validation.md` evidence and `implementation-summary.md`" in implement
+    assert "source edit -> frontend build -> direct runtime replacement -> real host CDP verification" not in compact_text(validation_template)
+    for text in [implement, rules, common_rules, checklist]:
+        assert "source edit -> frontend build -> direct runtime replacement -> real host CDP verification" not in compact_text(text)
+    assert "selected gate-pack validation" in validation
+    assert "sync-ui-runtime-artifacts" in runtime_gate
+    assert "validate-plugin-package" in package_gate
+    assert "ensure-host-cdp" not in implement
+    assert "ensure-host-cdp" in host_gate
+    assert "ensure-host-cdp" not in validation
+    assert "CDP host recovery ladder" not in validation
+    assert "Lean completion requires a complete `workpack.md` `Outcome`" in implement
     assert "Runtime replacement removed stale count" in evidence_template
-    assert "runtime replacement directory" in checklist
+    assert "selected gate packs" in checklist
 
-    for text in [validation, rules, build_notes, checklist, common_rules]:
+    for text in [build_notes, host_gate]:
         assert "inspect-host-cdp-target" in text or "/json/list" in text
         assert "Plugin Workbench" in text
         assert "base-win.html" in text
         assert "devtools://" in text
 
-    for text in [validation, build_notes, checklist, common_rules]:
+    for text in [build_notes, host_gate]:
         assert "webSocketDebuggerUrl" in text
     assert stage_policy["workflow_gate_selection"]["command"] == "select-gates"
-    assert "wrong-target / insufficient" in validation
+    assert "specialized evidence details" in stage_policy["workflow_gate_selection"]["rule"]
+    assert "wrong-target / insufficient" not in validation
+    assert "wrong targets" in host_gate
 
 
 def test_host_cdp_validation_saves_key_path_screenshot_artifacts():
@@ -1571,32 +1613,21 @@ def test_host_cdp_validation_saves_key_path_screenshot_artifacts():
     routing = read_text("templates/ai/workflows/task-routing.md")
     agents = read_text("templates/agents-template.md")
 
-    for text in [gate, validation, cdp_knowledge]:
+    for text in [gate, cdp_knowledge]:
         assert "capture-cdp-screenshot" in text
 
-    for text in [
-        gate,
-        validation,
-        ai_self_acceptance,
-        retrospective,
-        evidence_template,
-        validation_template,
-        cdp_knowledge,
-    ]:
+    for text in [gate, cdp_knowledge]:
         assert "FEATURE_DIR/cdp-screenshots" in text
 
-    for text in [
-        gate,
-        validation,
-        ai_self_acceptance,
-        retrospective,
-        validation_template,
-        cdp_knowledge,
-    ]:
+    for text in [validation, ai_self_acceptance, retrospective, evidence_template, validation_template]:
+        assert "FEATURE_DIR/cdp-screenshots" not in text
+        assert "Screenshot directory" in text or "screenshot" in text.lower()
+
+    for text in [gate, cdp_knowledge]:
         assert "screenshots-index.md" in text
 
-    for text in [gate, validation, cdp_knowledge]:
-        assert "screenshot directory" in compact_text(text)
+    for text in [gate, validation, ai_self_acceptance, retrospective, validation_template, cdp_knowledge]:
+        assert "screenshot" in compact_text(text).lower()
 
     assert stage_policy["workflow_gate_selection"]["command"] == "select-gates"
 
@@ -1608,15 +1639,17 @@ def test_qt_source_behavior_map_is_installed_and_referenced_before_broad_search(
     rules = read_text("templates/ai/rules/ai-coding-rules.md")
     checklist = read_text("templates/checklist-template.md")
     common_rules = read_text("checklist-rules/common.yml")
+    qt_gate = read_text("templates/ai/workflows/gates/qt-parity.yml")
 
     assert "Qt Source Behavior Map" in qt_map
     assert "example device list / device tree" in qt_map
-    assert "qt-parity" in implement
-    assert "Qt parity" in routing
-    assert "selected Qt source behavior map" in rules
+    assert "qt-parity" not in implement
+    assert "specialized gate packs" in routing
+    assert "Gate-Pack Routed Evidence" in rules
+    assert "Qt behavior map" in qt_gate
     for text in [checklist, common_rules]:
-        assert "qt-source-behavior-map.md" in text
-    assert "before broad source search" in rules
+        assert "qt-source-behavior-map.md" not in text
+    assert "before broad source search" in qt_gate
 
 
 def test_promote_lessons_stage_applies_only_approved_candidates_when_requested():
@@ -1677,10 +1710,10 @@ def test_fact_layer_assets_and_rules_are_standardized():
 
     for text in [fact_command, fact_template, checklist, investigation]:
         text_lower = text.lower()
-        assert "chrome-devtools" in text_lower
         assert "computed style" in text_lower
         assert "box metrics" in text_lower
         assert "second same-class fix" in text_lower
+    assert "browser/runtime inspection" in fact_command
     assert "Chrome DevTools" in readme
 
     assert "collect-fact-layer.ps1" in fact_command
@@ -1700,14 +1733,14 @@ def test_stage_gate_policy_blocks_full_sdd_from_skipping_analysis_and_checklist(
 
     assert "stage_gates" in manifest
     full_sdd_gate = manifest["stage_gates"]["implement"]["full-sdd"]
-    assert full_sdd_gate["required_prior_stages"] == ["tasks", "analyze", "checklist"]
+    assert full_sdd_gate["required_prior_stages"] == ["checklist", "tasks", "analyze"]
     assert "analysis.md" in full_sdd_gate["required_artifacts"]
     assert "checklists/implementation-readiness.md" in full_sdd_gate["required_artifacts"]
     assert "analysis.md" in manifest["artifact_sets"]["full-sdd-implement"]
     assert "checklists/implementation-readiness.md" in manifest["artifact_sets"]["full-sdd-implement"]
 
-    assert "tasks -> analyze -> checklist" in workflow_doc["stage_gate_policy"]["next_stage_routing"]["full-sdd"]["before_implement"]
-    assert "tasks -> analyze -> checklist" in routing
+    assert "checklist -> tasks -> analyze" in workflow_doc["stage_gate_policy"]["next_stage_routing"]["full-sdd"]["before_implement"]
+    assert "checklist -> tasks -> analyze" in routing
     assert "full-sdd" in rules
     for text in [implement, analyze, checklist]:
         assert "analysis.md" in text
@@ -1833,9 +1866,9 @@ def test_fact_layer_collector_has_direct_cdp_target_fallback():
     assert "Runtime.evaluate" in powershell
     assert "directCdp" in powershell
     assert "selectedTarget" in powershell
-    assert "devtools.selectedTarget" in fact_command
-    assert "devtools.directCdp" in fact_command
-    assert "direct CDP fallback" in fact_template
+    assert "selected gate pack" in fact_command
+    assert "browser/runtime inspection" in fact_command
+    assert "direct browser/runtime inspection fallback" in fact_template
 
 
 def test_tasks_and_implement_templates_use_slice_progress_contracts():
@@ -2005,6 +2038,7 @@ def test_team_readme_describes_new_default_process_and_branch_policy():
 def test_ui_parity_runtime_rules_are_standardized():
     qt_gate = read_text("templates/ai/workflows/gates/qt-parity.yml")
     host_gate = read_text("templates/ai/workflows/gates/host-cdp.yml")
+    runtime_gate = read_text("templates/ai/workflows/gates/frontend-runtime-sync.yml")
     plan_template = read_text("templates/plan-template.md")
     spec_template = read_text("templates/spec-template.md")
     implement = read_text("templates/commands/implement.md")
@@ -2030,7 +2064,8 @@ def test_ui_parity_runtime_rules_are_standardized():
     assert "box metrics" in validation
 
     assert "runtime DOM/CSS/computed style/box metrics" in readme
-    assert "sync-ui-runtime-artifacts" in implement
+    assert "sync-ui-runtime-artifacts" not in implement
+    assert "sync-ui-runtime-artifacts" in runtime_gate
 
     assert "scrollbar" in plan_template.lower()
     assert "clipping" in plan_template.lower()
@@ -2038,8 +2073,7 @@ def test_ui_parity_runtime_rules_are_standardized():
     assert "UI Element Traversal Inventory / 0px Alignment Matrix" in plan_template
     assert "batch patch strategy" in plan_template.lower()
     assert "baseline anchors" in plan_template.lower()
-    assert "CHK014F" in checklist_template
-    assert "CHK014G" in checklist_template
+    assert "CHK014D" in checklist_template
     assert "UI element traversal inventory" in common_rules
     assert "Static design files" in " ".join(readme.split())
 
@@ -2048,13 +2082,14 @@ def test_ui_parity_runtime_rules_are_standardized():
     assert "UI / UX / 文案依据追踪" in spec_template
     assert "Do not invent UI shape" in ai_rules
     for phrase in [
-        "Qt UI/source/delegate/QSS/resource",
+        "source behavior",
         "Product design/mockup/export",
         "tooltip",
         "visible copy",
         "owner/user approval",
     ]:
         assert phrase in (plan_template + spec_template + checklist_template + ai_rules)
+    assert "Qt UI/source/delegate/QSS/resource" not in (plan_template + spec_template + ai_rules)
 
 
 def test_test_case_planning_is_skill_routed_and_human_negotiated():
@@ -2097,30 +2132,35 @@ def test_plugin_changes_must_target_source_not_runtime_artifacts():
     constitution_command = read_text("templates/commands/constitution.md")
     checklist_template = read_text("templates/checklist-template.md")
     common_rules = read_text("checklist-rules/common.yml")
+    package_gate = read_text("templates/ai/workflows/gates/plugin-package.yml")
     workflow_args = "\n".join(
         step["input"]["args"] for step in load_workflow()["steps"] if "input" in step
     )
 
-    for text in [implement, checklist, constitution_command, common_rules, workflow_args]:
+    for text in [implement, checklist, common_rules, workflow_args]:
         compact_text = " ".join(text.split()).lower()
         assert "repository source" in compact_text
-        assert "installed runtime plugin directories" in compact_text
+        assert "installed runtime directories" in compact_text or "installed/generated/runtime outputs" in compact_text
         assert "built artifacts" in compact_text or "build/export output" in compact_text
-    assert "installed runtime plugin directories" in commit
+        assert "app-data/plugins/**" not in text
+        assert "frontend/plugins/**" not in text
+    assert "installed runtime directories" in commit
     assert "generated build output" in commit
 
-    for text in [checklist, constitution, constitution_command, checklist_template]:
-        assert "app-data/plugins/**" in text
-        assert "frontend/plugins/**" in text
+    for text in [constitution, constitution_command]:
+        assert "app-data/plugins/**" not in text
+        assert "frontend/plugins/**" not in text
+        assert "installed runtime directories" in text or "已安装运行目录" in text
 
     compact_implement = " ".join(implement.split())
-    assert "never runtime/build/export output as the durable fix" in compact_implement
+    assert "Do not rely on generated outputs" in compact_implement
+    assert "validate-plugin-package" in package_gate
     assert "blocking" in checklist
     assert "Do not commit generated build output" in commit
-    assert "installed runtime plugin directories" in commit
+    assert "installed runtime directories" in commit
     assert "仓库源码" in constitution
     assert "验收/提交前必须回写到源码" in constitution
-    assert "CHK010N" in checklist_template
+    assert "CHK010A" in checklist_template
 
 
 def test_completion_scripts_keep_spec_branch_by_default():
@@ -2957,7 +2997,8 @@ def test_repository_map_template_is_fixed_ai_context():
         "<workspace-root>/<app-path>/",
         "<workspace-root>/<app-path>/<build-output>/",
         "<runtime-root>/",
-        "Optional Host / CDP Defaults",
+        "Optional Runtime / Inspection Targets",
+        "Target inventory",
         "Do not write machine-specific absolute paths here",
         "`app`",
         "`spec-kit`",
@@ -2978,9 +3019,14 @@ def test_plugin_path_knowledge_is_relative_and_discoverable():
 
     for text in [repository_map, build_notes, repository_map_skill, agents_template]:
         assert "<workspace-root>" in text
-        assert "<plugin-id>" in text
         assert "machine-specific absolute paths" in text
         assert not re.search(r"[A-Za-z]:\\", text)
+    assert "<extension-id>" in repository_map
+    assert "<plugin-id>" not in repository_map
+    assert "<plugin-id>" not in agents_template
+    assert "<plugin-id>" in build_notes
+    assert "<package-id>" in repository_map_skill
+    assert "<plugin-id>" not in repository_map_skill
 
     for phrase in [
         "Plugin Path Knowledge",
@@ -2999,7 +3045,7 @@ def test_plugin_path_knowledge_is_relative_and_discoverable():
     compact_skill = " ".join(repository_map_skill.split())
     assert "Project Path Categories" in compact_skill
     assert "path categories needed by the task" in compact_skill
-    assert "ai/knowledge/build-and-package-notes.md" in repository_map_skill
+    assert "selected knowledge guides" in repository_map_skill
     assert "Project Path Categories" in agents_template
 
 
@@ -3214,6 +3260,7 @@ def test_init_wrapper_configures_codex_mcp_without_agent_selector():
     assert "[switch]$ConfigureMcpAgent" in wrapper
     assert "$ConfigureMcpAgent -and -not $SkipMcpAgentConfig" in wrapper
     assert "McpChromeMode" in wrapper
+    assert "browser-slim" in wrapper
     assert "electron-slim" in wrapper
     assert "McpBrowserUrl" in wrapper
     assert "Chrome DevTools MCP modes" in wrapper_readme
@@ -3229,25 +3276,31 @@ def test_init_wrapper_configures_codex_mcp_without_agent_selector():
     assert "ai/tools/mcp-usage-policy.md" in mcp_script
 
 
-def test_host_cdp_defaults_are_in_generated_context_templates():
+def test_host_cdp_defaults_are_gate_routed_not_default_context():
     repository_map = read_text("templates/repository-map-template.md")
     build_notes = read_text("templates/ai/knowledge/build-and-package-notes.md")
     task_routing = read_text("templates/ai/workflows/task-routing.md")
+    host_gate = read_text("templates/ai/workflows/gates/host-cdp.yml")
     mcp_servers = read_text("templates/ai/tools/mcp-servers.md")
     mcp_policy = read_text("templates/ai/tools/mcp-usage-policy.md")
     implement = read_text("templates/commands/implement.md")
     acceptance = read_text("templates/commands/acceptance.md")
     fact_layer = read_text("templates/commands/fact-layer.md")
     validation = read_text("templates/commands/validation.md")
-    ps_fact_script = read_text("scripts/powershell/collect-fact-layer.ps1")
 
-    assert "Optional Host / CDP Defaults" in repository_map
-    assert "CDP or browser endpoint" in repository_map
+    assert "Optional Runtime / Inspection Targets" in repository_map
+    assert "Browser or inspection endpoint" in repository_map
     assert "N/A" in repository_map
 
-    for text in [build_notes, mcp_servers, mcp_policy, fact_layer, validation, ps_fact_script]:
+    for text in [build_notes]:
         assert "http://127.0.0.1:9222" in text
         assert "app-main-window" in text
+    assert "app-main-window" in host_gate
+
+    for text in [mcp_servers, mcp_policy, fact_layer, validation, implement, acceptance]:
+        assert "http://127.0.0.1:9222" not in text
+        assert "app-main-window" not in text
+        assert "Plugin Workbench|plugin-workbench.html" not in text
 
     assert "npm run debug" in build_notes
     assert "<workspace-root>/<host-app-path>/" in build_notes
@@ -3255,16 +3308,13 @@ def test_host_cdp_defaults_are_in_generated_context_templates():
     assert "Node inspector also starts on `5858`" in build_notes
     assert "Plugin Workbench|plugin-workbench.html" in build_notes
     assert "Plugin Workbench|plugin-workbench.html" in build_notes
-    assert "`plugin-host` DevTools /" in validation
-    assert "Workbench target override" in fact_layer
     assert "#/app-home/appHome" in build_notes
     assert "click the target app card such as" in build_notes
     assert "Page.captureScreenshot" in build_notes
-    assert "UTILITY_CHROME_REMOTE_DEBUGGING_PORT=9222" in mcp_servers
-    assert "CSS.forcePseudoState(['hover'])" in mcp_servers
+    assert "ensure-host-cdp" in host_gate
     assert "Codex TOML" in mcp_servers
-    assert "host CDP" in task_routing
-    assert "isolated plugin preview was used" in validation
+    assert "specialized gate packs" in task_routing
+    assert "selected gate-pack validation" in validation
 
 
 def compatible_node_env(tmp_path: Path) -> dict[str, str]:
@@ -3321,7 +3371,7 @@ def test_mcp_agent_config_script_writes_codex_toml_only(tmp_path):
     assert "[mcp_servers.chrome-devtools]" in codex
     assert f'command = "{expected_command}"' in codex
     assert (
-        'args = ["exec", "--yes", "--package=chrome-devtools-mcp@latest", "-c", "chrome-devtools-mcp --browserUrl http://127.0.0.1:9222 --slim"]'
+        'args = ["exec", "--yes", "--package=chrome-devtools-mcp@latest", "-c", "chrome-devtools-mcp --slim"]'
         in codex
     )
 
@@ -3346,12 +3396,44 @@ def test_mcp_agent_config_script_writes_codex_toml_only(tmp_path):
     assert rejected.returncode != 0
     assert "Cannot validate argument on parameter 'Agents'" in (rejected.stdout + rejected.stderr)
 
+    electron_home = tmp_path / "electron-default"
+    (electron_home / ".codex").mkdir(parents=True)
+    (electron_home / ".codex" / "config.toml").write_text("", encoding="utf-8")
+    subprocess.run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(script),
+            "-HomePath",
+            str(electron_home),
+            "-Agents",
+            "Codex",
+            "-ServerId",
+            "chrome-devtools",
+            "-Command",
+            "npm",
+            "-ChromeMode",
+            "electron-slim",
+        ],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+    electron_codex = (electron_home / ".codex" / "config.toml").read_text(encoding="utf-8")
+    assert "chrome-devtools-mcp --browserUrl http://127.0.0.1:9222 --slim" in electron_codex
+
 
 def test_mcp_agent_config_supports_chrome_connection_modes(tmp_path):
     script = REPO_ROOT / "scripts" / "powershell" / "configure-mcp-agents.ps1"
 
     cases = {
         "auto": "chrome-devtools-mcp",
+        "browser": "chrome-devtools-mcp --browserUrl http://127.0.0.1:9223",
+        "browser-slim": "chrome-devtools-mcp --browserUrl http://127.0.0.1:9223 --slim",
         "electron": "chrome-devtools-mcp --browserUrl http://127.0.0.1:9223",
         "electron-slim": "chrome-devtools-mcp --browserUrl http://127.0.0.1:9223 --slim",
     }

@@ -57,12 +57,12 @@ trace to scenarios, requirements, or explicit risk.
    - If the matrix is missing, stale, or does not include an affected
      repository, run `inspect-validation-capabilities`. For workspace refresh,
      run it with `-Workspace -OutputPath ai/knowledge/build/validation-capabilities.yml`.
-   - Run `select-gates` if UI runtime, native bridge, real device, Qt parity,
-     or host CDP validation may shape the test plan.
+   - Run `select-gates` if specialized runtime, UI, integration,
+     or external-system validation may shape the test plan.
    - Run `select-knowledge` only when repository-map and feature artifacts do
      not identify test locations or command families. Prefer selected guides
      such as validation matrix, repository guides, native bridge, frontend
-     runtime, or virtual-device/SDK tests.
+     runtime, or simulation/SDK tests.
    - API plan remains required for affected contracts or interfaces even when
      no executable API test command is detected.
    - E2E unsupported repositories may mark E2E `N/A` with the
@@ -76,7 +76,7 @@ trace to scenarios, requirements, or explicit risk.
       required: record a manual/interface/regression/API row with the best
       available command or validation path.
     - Include `e2e/interface-test` for cross-repo call paths, frontend-to-service,
-      service-to-runtime, host plugin route, or user-visible workflow behavior when
+      service-to-runtime, embedded route, or user-visible workflow behavior when
       affected.
       If the current repository does not support E2E, mark E2E `N/A` with the
       script-provided reason; do not use E2E absence to skip the API plan.

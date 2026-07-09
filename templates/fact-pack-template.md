@@ -15,7 +15,7 @@
 - Chrome debugging URL:
 - chrome-devtools target:
 - chrome-devtools selected target:
-- direct CDP fallback:
+- direct browser/runtime inspection fallback:
 
 ## 3. 运行态事实
 - DevTools MCP available:
@@ -39,7 +39,7 @@
 
 ## 5. 源码与产物事实
 - Repository source files:
-- Installed runtime plugin path checked:
+- Installed runtime path checked:
 - Build artifact path checked:
 - UI hot deploy source output:
 - UI hot deploy runtime target:

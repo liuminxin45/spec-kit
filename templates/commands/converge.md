@@ -24,7 +24,7 @@ Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md
 
 ## Purpose
 
-`converge` is opt-in. Use it for full-sdd/high-risk work when a separate promised-vs-delivered reconciliation is worth the context cost. Lean bugfixes should close this in `implementation-summary.md`.
+`converge` is opt-in. Use it for full-sdd/high-risk work when a separate promised-vs-delivered reconciliation is worth the context cost. Lean bugfixes should close this in `workpack.md` `Outcome`.
 
 ## Required Inputs
 

@@ -1,7 +1,7 @@
 ---
 description: Promote human-approved retrospective lessons into Spec Kit tools, memory, or team documentation.
 scripts:
-  ps: scripts/powershell/check-prerequisites.ps1 -Json -IncludeTasks
+  ps: scripts/powershell/check-prerequisites.ps1 -Json -Stage promote-lessons -IncludeTasks
 ---
 
 ## User Input

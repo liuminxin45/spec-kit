@@ -23,7 +23,7 @@
 
 Required for visual/UI parity unless explicitly owner-approved `N/A`.
 
-| Baseline | Path / URL / Qt Source / Design Source | Required For | Status |
+| Baseline | Path / URL / Source Behavior / Design Source | Required For | Status |
 |----------|-----------------------------------------|--------------|--------|
 |  |  |  | ready / missing / owner-approved-n/a |
 

@@ -22,9 +22,9 @@ Apply the central Stage Continuation Contract from `ai/workflows/task-routing.md
 ## Purpose
 
 Use this command when `.specify/feature.json` selects `delivery_profile: micro-fix`.
-It replaces the heavy `spec -> plan -> tasks -> analyze -> checklist` chain with one compact `workpack.md`.
+It replaces the heavy `spec -> plan -> checklist -> tasks -> analyze` chain with one compact `workpack.md`.
 
-Upgrade out of `micro-fix` when the fix touches public API, device identity, runtime status, permission semantics, real-device behavior, UI/service/runtime boundaries, cross-repo behavior, or lacks local validation.
+Upgrade out of `micro-fix` when the fix touches public API, identity, runtime status, permission semantics, external-system behavior, UI/service/runtime boundaries, cross-repo behavior, or lacks local validation.
 
 ## Required Micro-Fix Contract
 

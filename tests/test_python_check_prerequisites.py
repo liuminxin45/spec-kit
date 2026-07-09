@@ -120,3 +120,140 @@ def test_python_check_prerequisites_supports_spec_only_and_paths_only_has_no_sta
     payload = _json_from_stdout(spec_only.stdout)
     assert Path(payload["FEATURE_SPEC"]).resolve() == (feature / "spec.md").resolve()
     assert payload["AVAILABLE_DOCS"] == []
+
+
+def test_lean_setup_plan_and_prerequisites_use_workpack_without_plan(tmp_path):
+    project = tmp_path / "project"
+    feature = project / "specs" / "001-demo"
+    templates = project / ".specify" / "templates"
+    templates.mkdir(parents=True)
+    feature.mkdir(parents=True)
+    (templates / "workpack-template.md").write_text("# Workpack\n\n## Root Cause\n", encoding="utf-8")
+    (templates / "plan-template.md").write_text("# Plan\n", encoding="utf-8")
+    (project / ".specify" / "feature.json").write_text(
+        json.dumps(
+            {
+                "feature_directory": str(feature),
+                "delivery_profile": "standard-bugfix-lite",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    setup = _run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(REPO_ROOT / "scripts" / "powershell" / "setup-plan.ps1"),
+            "-Json",
+        ],
+        cwd=project,
+    )
+
+    assert setup.returncode == 0, setup.stdout + setup.stderr
+    setup_payload = _json_from_stdout(setup.stdout)
+    assert setup_payload["ARTIFACT_KIND"] == "workpack"
+    assert Path(setup_payload["ARTIFACT"]).resolve() == (feature / "workpack.md").resolve()
+    assert (feature / "workpack.md").is_file()
+    assert not (feature / "plan.md").exists()
+
+    ps = _run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(REPO_ROOT / "scripts" / "powershell" / "check-prerequisites.ps1"),
+            "-Json",
+            "-Stage",
+            "implement",
+            "-IncludeTasks",
+        ],
+        cwd=project,
+    )
+    py = _run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "python" / "check_prerequisites.py"),
+            "--json",
+            "--stage",
+            "implement",
+            "--include-tasks",
+        ],
+        cwd=project,
+    )
+
+    assert ps.returncode == 0, ps.stdout + ps.stderr
+    assert py.returncode == 0, py.stdout + py.stderr
+    ps_payload = _json_from_stdout(ps.stdout)
+    py_payload = _json_from_stdout(py.stdout)
+    assert ps_payload["PLANNING_ARTIFACT"] == "workpack.md"
+    assert py_payload["PLANNING_ARTIFACT"] == "workpack.md"
+    assert "workpack.md" in ps_payload["AVAILABLE_DOCS"]
+    assert py_payload["AVAILABLE_DOCS"] == ps_payload["AVAILABLE_DOCS"]
+
+    analyze = _run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(REPO_ROOT / "scripts" / "powershell" / "check-prerequisites.ps1"),
+            "-Json",
+            "-Stage",
+            "analyze",
+        ],
+        cwd=project,
+    )
+    assert analyze.returncode != 0
+    assert "plan.md not found" in analyze.stdout
+
+
+def test_prerequisites_ignore_stale_feature_json_profile_and_use_workflow_state(tmp_path):
+    project = tmp_path / "project"
+    feature = project / "specs" / "002-current"
+    stale_feature = project / "specs" / "001-stale"
+    (project / ".specify").mkdir(parents=True)
+    feature.mkdir(parents=True)
+    stale_feature.mkdir(parents=True)
+    (feature / "workpack.md").write_text("# Workpack\n", encoding="utf-8")
+    (feature / "workflow-state.json").write_text(
+        json.dumps({"workflow_model": {"delivery_profile": "standard-bugfix-lite"}}),
+        encoding="utf-8",
+    )
+    (project / ".specify" / "feature.json").write_text(
+        json.dumps(
+            {
+                "feature_directory": str(stale_feature),
+                "delivery_profile": "full-sdd",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    ps = _run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(REPO_ROOT / "scripts" / "powershell" / "check-prerequisites.ps1"),
+            "-Json",
+            "-Stage",
+            "implement",
+        ],
+        cwd=project,
+    )
+    py = _run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "python" / "check_prerequisites.py"),
+            "--json",
+            "--stage",
+            "implement",
+        ],
+        cwd=project,
+    )
+
+    assert ps.returncode == 0, ps.stdout + ps.stderr
+    assert py.returncode == 0, py.stdout + py.stderr
+    assert _json_from_stdout(ps.stdout)["PLANNING_ARTIFACT"] == "workpack.md"
+    assert _json_from_stdout(py.stdout)["PLANNING_ARTIFACT"] == "workpack.md"
