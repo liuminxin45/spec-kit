@@ -28,7 +28,7 @@ Project-specific facts belong in workspace-local `ai/knowledge/` or portable cap
 
 官方 Spec Kit 的主线是通用 Spec-Driven Development：先把想法写成 spec，再生成 plan、tasks，最后 implement。这个仓库保留这个思想，但把它收敛成 Codex-only 的工程交付系统。
 
-当前对齐基线为 `upstream_baseline: github/spec-kit@v0.12.5`；本仓库版本独立演进，当前本地版本线为 `0.10.3`，不冒用官方 `0.12.x` 版本号。
+当前对齐基线为 `upstream_baseline: github/spec-kit@v0.12.5`；本仓库版本独立演进，当前本地版本线为 `0.10.4`，不冒用官方 `0.12.x` 版本号。
 
 | 维度 | 官方 `github/spec-kit` | 本仓库 | 主要优势 |
 | --- | --- | --- | --- |
@@ -111,6 +111,21 @@ pwsh -NoProfile -File .\scripts\powershell\uninstall.ps1
 ```powershell
 uv tool uninstall specify-cli
 ```
+
+### 构建本地可安装产物
+
+无需安装 wheel 构建后端即可生成本地 wheel、可选知识包目录/ZIP、组合安装脚本、
+AI 安装文档和 SHA256 清单：
+
+```powershell
+pwsh -NoProfile -File .\scripts\powershell\build-local-distribution.ps1 -Json
+```
+
+默认输出到工作区 `.specify/distributions/spec-kit-local-<version>-<timestamp>/`，并生成
+同名 bundle ZIP。默认只打包 Spec Kit；需要知识包时显式传入
+`-KnowledgePack <pack-id>`。Spec Kit 不内置任何项目 pack id、仓库名或产品事实。
+安装与多知识包统一 compose 规则见
+[`docs/local-install-and-knowledge-mount.md`](docs/local-install-and-knowledge-mount.md)。
 
 ### 初始化项目
 

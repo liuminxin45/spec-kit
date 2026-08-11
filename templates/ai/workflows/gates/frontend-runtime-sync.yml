@@ -1,17 +1,19 @@
 id: "frontend-runtime-sync"
 title: "Frontend Runtime Sync Gate"
 purpose: "Ensure source UI changes are built, loaded by the host-served plugin runtime for CDP validation, and backed by final .plugin package evidence."
+delivery_chain: "source edit -> frontend build -> direct runtime replacement -> real host CDP verification"
 source_of_truth:
   - ".specify/memory/repository-map.md Project Path Categories"
   - "frontend-plugin.conf extMetaData.location when present"
   - "sync-ui-runtime-artifacts facts"
+  - "validate-plugin-delivery-chain facts"
 required_when:
   - "source edits under frontend plugin affect visible host-embedded frontend plugin behavior"
 minimal_context:
   - "Plugin id, source root, build output, and host runtime directory."
   - "Build command and result."
 steps:
-  - "Follow the delivery chain: source edit -> frontend build -> direct runtime replacement -> real host CDP verification."
+  - "Follow the delivery chain: source -> staging -> package payload -> exact install input -> installed runtime -> loaded resource."
   - "Edit repository source only."
   - "Run the plugin build command from source."
   - "Mirror built output with sync-ui-runtime-artifacts when source/runtime mapping is explicit."
@@ -19,15 +21,18 @@ steps:
   - "Use CDP resource entries or equivalent host facts to prove new runtime files loaded."
   - "Build the final .plugin artifact through the shared plugin package flow."
   - "Run validate-plugin-package for the produced .plugin artifact."
+  - "Run validate-plugin-delivery-chain for every affected plugin; direct runtime replacement is temporary validation only and cannot close delivery."
 evidence:
   - "Source dir, runtime dir, plugin id, copied file count, removed stale count."
   - "Build command/result."
   - "Loaded resource evidence from the real host."
   - "Final .plugin path, size, and hash."
+  - "Registry plugin id, installed runtime path, resource URL, actual loaded content, and cross-boundary native/resource SHA256 or buildId."
 blockers:
   - "Unknown plugin id, runtime location, or build command."
   - "Runtime dir leaf does not match plugin id."
   - "Source build fails."
   - "Final .plugin package is missing or invalid."
+  - "Any affected plugin lacks exact build-result install identity or content differs across package, install, runtime, and loaded resource."
 context_to_avoid:
   - "Treating dist/, app-data, or host frontend runtime as durable source."

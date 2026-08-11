@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
+import zipfile
 from pathlib import Path
 
 import yaml
@@ -51,6 +52,8 @@ AUTOMATION_TOOLS = [
     "post-commit-self-check",
     "validate-rubric-score",
     "inspect-workflow-closure",
+    "inspect-workflow-drift",
+    "validate-plugin-delivery-chain",
     "collect-workflow-observer-packet",
     "promote-knowledge-candidates",
     "cleanup-host-cdp",
@@ -73,6 +76,8 @@ AUTOMATION_TOOLS = [
     "preflight-new-workflow",
     "resolve-next-stage",
     "preflight-push",
+    "inspect-spec-branch-history",
+    "sync-spec-branches",
     "invoke-workflow-hooks",
 ]
 
@@ -312,6 +317,21 @@ def root_fix_decision_gate_text() -> str:
     )
 
 
+def implementation_target_proof_text() -> str:
+    return (
+        "## Implementation Target Proof\n\n"
+        "- User entry and observable behavior: open Demo from the product menu\n"
+        "- Runtime trigger / call path: menu -> DemoController.open -> DemoView\n"
+        "- Target repositories: DemoRepo\n"
+        "- Target components, source paths, and key symbols: src/DemoView.ts, DemoView.open\n"
+        "- Source or runtime evidence: DemoController imports and invokes DemoView.open\n"
+        "- Excluded same-name / similar modules and reasons: LegacyDemo is not referenced by the entry\n"
+        "- Build target and expected output: npm run build -> dist/demo.js\n"
+        "- Install / deploy target and exact input: DemoHost <- dist/demo.plugin\n"
+        "- Real validation host, entry, and expected loaded resource: DemoHost menu loads demo.js\n\n"
+    )
+
+
 def test_automation_assets_are_packaged_and_declared():
     pyproject = read_text("pyproject.toml")
 
@@ -341,6 +361,7 @@ def test_automation_assets_are_packaged_and_declared():
         "stage_statuses",
         "human_gates",
         "selected_gates",
+        "workflow_drift",
         "next_stage_decision",
         "attempts",
         "validations",
@@ -406,9 +427,8 @@ def test_gate_packs_are_selectable_and_context_budgeted():
     selected = run_ps("select-gates", "-RepoRoot", str(REPO_ROOT), "-Stage", "implement")
     assert_standard_shape(selected, "select-gates")
     assert selected["status"] == "ok"
-    selected_ids = {item["id"] for item in selected["facts"]["selected"]}
-    assert {"host-cdp", "frontend-runtime-sync", "native-bridge", "qt-parity", "real-device", "plugin-package"} <= selected_ids
-    assert all(item["path"].startswith("ai/workflows/gates/") for item in selected["facts"]["selected"])
+    assert selected["facts"]["selected"] == []
+    assert selected["hints"] == ["no workflow gate pack matched; keep the command contract and active artifacts only"]
     assert "omitted_due_to_limit" in selected["facts"]
 
     repo = REPO_ROOT
@@ -435,9 +455,46 @@ def test_select_gates_accepts_explicit_routing_and_reports_omitted():
     assert_standard_shape(selected, "select-gates")
     ids = [item["id"] for item in selected["facts"]["selected"]]
     assert ids[:3] == ["frontend-runtime-sync", "host-cdp", "plugin-package"]
-    assert selected["facts"]["omitted_due_to_limit"]
+    assert selected["facts"]["omitted_due_to_limit"] == []
     assert "host-cdp" in selected["facts"]["risk_flags"]
     assert "frontend-runtime-sync" in selected["facts"]["risk_flags"]
+
+
+def test_select_gates_stage_filters_without_qualifying_and_active_ui_feature_selects_only_relevant(tmp_path):
+    workspace = tmp_path / "workspace"
+    gates_dir = workspace / "ai" / "workflows" / "gates"
+    gates_dir.parent.mkdir(parents=True)
+    shutil.copytree(REPO_ROOT / "templates" / "ai" / "workflows" / "gates", gates_dir)
+    specify = workspace / ".specify"
+    specify.mkdir()
+    (specify / "feature.json").write_text(
+        json.dumps(
+            {
+                "affected_repositories": ["AppShell", "WebConsole", "AutomationExtension"],
+                "risk_flags": [
+                    "cross-repo-validation",
+                    "service-runtime-ui-boundary",
+                    "host-embedded-ui",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    selected = run_ps("select-gates", "-RepoRoot", str(workspace), "-Stage", "implement")
+    ids = {item["id"] for item in selected["facts"]["selected"]}
+    assert ids == {"frontend-runtime-sync", "host-cdp", "ui-baseline", "plugin-package"}
+    assert not ({"native-bridge", "qt-parity", "real-device"} & ids)
+
+    ignored = run_ps(
+        "select-gates",
+        "-RepoRoot",
+        str(workspace),
+        "-Stage",
+        "implement",
+        "-IgnoreActiveFeature",
+    )
+    assert ignored["facts"]["selected"] == []
 
 
 def test_resolve_next_stage_routes_profiles_and_commit_closure(tmp_path):
@@ -766,6 +823,71 @@ def test_knowledge_index_assets_are_packaged_selectable_and_validated():
     selected_plan = run_ps("select-knowledge", "-RepoRoot", str(REPO_ROOT), "-Stage", "plan")
     plan_paths = {item["path"] for item in selected_plan["facts"]["selected"]}
     assert "ai/knowledge/build/validation-capabilities.yml" in plan_paths
+
+    assert "gerrit-linear-spec-branches" not in index["workspace"]
+
+
+def test_select_knowledge_requires_explicit_match_and_can_ignore_active_feature(tmp_path):
+    workspace = tmp_path / "workspace"
+    knowledge = workspace / "ai" / "knowledge"
+    (knowledge / "build").mkdir(parents=True)
+    (knowledge / "index.yml").write_text(
+        """schema_version: \"1.1\"
+policy:
+  repository_map_authority: \".specify/memory/repository-map.md\"
+  no_full_text_search_required: true
+  max_selected_guides: 3
+build:
+  data-platform:
+    guide: \"build/data-platform.md\"
+    authority: \"reviewed\"
+    confidence: \"high\"
+    tags: [\"data-platform\", \"webclient\", \"frontend\"]
+  unrelated-reviewed:
+    guide: \"build/unrelated.md\"
+    authority: \"reviewed\"
+    confidence: \"high\"
+    tags: [\"unrelated\"]
+""",
+        encoding="utf-8",
+    )
+    (knowledge / "build" / "data-platform.md").write_text("# Data Platform\n", encoding="utf-8")
+    (knowledge / "build" / "unrelated.md").write_text("# Unrelated\n", encoding="utf-8")
+    specify = workspace / ".specify"
+    specify.mkdir()
+    (specify / "feature.json").write_text(
+        json.dumps({"capability_tags": ["data-platform", "webclient", "frontend"]}),
+        encoding="utf-8",
+    )
+
+    ignored = run_ps(
+        "select-knowledge",
+        "-RepoRoot",
+        str(workspace),
+        "-Stage",
+        "implement",
+        "-IgnoreActiveFeature",
+        "-Terms",
+        "warehouse-scanner,frontend,build",
+    )
+    assert ignored["facts"]["selected"] == []
+    assert "explicit" in ignored["facts"]["routing_sources"]
+    assert all(not item["eligible"] for item in ignored["facts"]["excluded"])
+
+    selected = run_ps(
+        "select-knowledge",
+        "-RepoRoot",
+        str(workspace),
+        "-Stage",
+        "implement",
+        "-IgnoreActiveFeature",
+        "-CapabilityTags",
+        "data-platform,webclient,frontend",
+        "-RequestSummary",
+        "Build the current data platform web client",
+    )
+    assert [item["key"] for item in selected["facts"]["selected"]] == ["data-platform"], selected
+    assert any(item["key"] == "unrelated-reviewed" for item in selected["facts"]["excluded"])
 
 
 def test_bootstrap_knowledge_generates_reviewable_draft(tmp_path):
@@ -1201,7 +1323,7 @@ def test_knowledge_pack_exports_installs_and_materializes_with_aliases(tmp_path)
     )
 
     assert_standard_shape(applied, "apply-knowledge-pack")
-    assert applied["status"] == "ok"
+    assert applied["status"] == "ok", applied
     materialized = (workspace / "ai" / "knowledge" / "workspace" / "overview.md").read_text(encoding="utf-8")
     assert "modern-tool" in materialized
     assert "legacy-tool" not in materialized
@@ -1319,7 +1441,7 @@ def test_hook_capability_pack_materializes_registry_and_tools(tmp_path):
         "-Force",
     )
     assert_standard_shape(applied, "apply-knowledge-pack")
-    assert applied["status"] == "ok"
+    assert applied["status"] == "ok", applied
     assert (workspace / ".specify" / "capabilities" / "hooks" / "hook-demo" / "demo-hook" / "run.ps1").exists()
     workflow_hooks = (workspace / ".specify" / "workflow-hooks.yml").read_text(encoding="utf-8")
     assert "workflow.demo.echo.after" in workflow_hooks
@@ -1466,7 +1588,7 @@ def test_agent_chain_hook_pack_materializes_chain_manifest(tmp_path):
         "-Force",
     )
     assert_standard_shape(applied, "apply-knowledge-pack")
-    assert applied["status"] == "ok"
+    assert applied["status"] == "ok", applied
     assert (
         workspace
         / ".specify"
@@ -1745,7 +1867,6 @@ def test_hook_tool_same_version_conflicting_install_metadata_blocks(tmp_path):
         ),
         encoding="utf-8",
     )
-
     pack = tmp_path / "pack"
     (pack / "ai" / "knowledge" / "workspace").mkdir(parents=True)
     (pack / "hooks" / "demo").mkdir(parents=True)
@@ -1822,6 +1943,91 @@ def test_hook_tool_same_version_conflicting_install_metadata_blocks(tmp_path):
     assert "conflicts with an existing install record" in "; ".join(installed["blockers"])
     record = json.loads((records / "shared-tool-1.0.0.json").read_text(encoding="utf-8"))
     assert record["spec_hash"] == "existing-spec"
+
+
+def test_delta_overlay_preserves_newer_base_knowledge_entries(tmp_path):
+    workspace = tmp_path / "workspace"
+    active = workspace / "ai" / "knowledge"
+    (active / "build").mkdir(parents=True)
+    (active / "build" / "new-base.md").write_text("new base fact\n", encoding="utf-8")
+    (active / "build" / "retired.md").write_text("retired fact\n", encoding="utf-8")
+    (active / "index.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.2"',
+                "policy:",
+                "  default_context: false",
+                "  no_full_text_search_required: true",
+                '  repository_map_authority: ".specify/memory/repository-map.md"',
+                "  max_selected_guides: 3",
+                "build:",
+                "  newer-base:",
+                '    guide: "build/new-base.md"',
+                '    authority: "reviewed"',
+                "  retired-entry:",
+                '    guide: "build/retired.md"',
+                '    authority: "generated"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    pack = workspace / ".specify" / "knowledge" / "packs" / "delta-pack"
+    knowledge = pack / "ai" / "knowledge"
+    (knowledge / "build").mkdir(parents=True)
+    (knowledge / "build" / "delta.md").write_text("delta policy\n", encoding="utf-8")
+    (knowledge / "index.overlay.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "entries": [
+                    {
+                        "category": "build",
+                        "key": "delta-entry",
+                        "guide": "build/delta.md",
+                        "authority": "generated",
+                        "tags": ["delta"],
+                    }
+                ],
+                "remove": [{"category": "build", "key": "retired-entry"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (pack / "knowledge-pack.yml").write_text(
+        "\n".join(
+            [
+                'schema_version: "1.0"',
+                'id: "delta-pack"',
+                'title: "Delta Pack"',
+                'version: "0.2.0"',
+                'kind: "capability-pack"',
+                "compose:",
+                '  strategy: "overlay-active-knowledge"',
+                '  index_strategy: "merge-index-overlay"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    composed = run_ps(
+        "compose-knowledge-packs",
+        "-RepoRoot",
+        str(workspace),
+        "-PackId",
+        "delta-pack",
+    )
+    assert_standard_shape(composed, "compose-knowledge-packs")
+    assert composed["status"] == "ok"
+    index_text = (active / "index.yml").read_text(encoding="utf-8")
+    assert "newer-base:" in index_text
+    assert "delta-entry:" in index_text
+    assert "retired-entry:" not in index_text
+    assert (active / "build" / "new-base.md").exists()
+    assert (active / "build" / "delta.md").exists()
+    assert not (active / "index.overlay.json").exists()
 
 
 def test_invoke_workflow_hooks_normalizes_rework_timeout_and_non_json(tmp_path):
@@ -2277,6 +2483,8 @@ def test_compare_knowledge_pack_equivalence_scores_indexed_guides_routing_and_al
                     "risk_flags": ["public-api"],
                     "capability_tags": ["api", "e2e"],
                     "request_summary": "plan API validation for demo repository",
+                    "expected_selected": ["repositories.DemoRepo"],
+                    "expected_excluded": ["domains.demo-runtime"],
                 }
             ]
         ),
@@ -2318,15 +2526,21 @@ def test_compare_knowledge_pack_equivalence_scores_indexed_guides_routing_and_al
     )
 
     assert_standard_shape(compared, "compare-knowledge-pack-equivalence")
-    assert compared["status"] == "ok"
+    assert compared["facts"]["routing"][0]["source_canary"]["missing_expected_selected"] == [], compared["facts"]["routing"]
+    assert compared["facts"]["routing"][0]["source_canary"]["missing_expected_excluded"] == [], compared["facts"]["routing"]
+    assert compared["facts"]["routing"][0]["candidate_canary"]["missing_expected_selected"] == [], compared["facts"]["routing"]
+    assert compared["facts"]["routing"][0]["candidate_canary"]["missing_expected_excluded"] == [], compared["facts"]["routing"]
+    assert compared["status"] == "ok", compared
     scores = compared["facts"]["scores"]
     assert scores["index_parity_percent"] == 100
     assert scores["indexed_guide_parity_percent"] == 100
     assert scores["routing_parity_percent"] == 100
+    assert scores["routing_canary_percent"] == 100
     assert scores["alias_percent"] == 100
     assert scores["overall_percent"] == 100
     assert compared["facts"]["guides"]["extra_unindexed_candidate_files"] == []
     assert compared["facts"]["scenario_count"] == 1
+    assert compared["facts"]["routing"][0]["canary_passed"] is True
     assert compared["facts"]["aliases"]["leakage_files"] == []
     assert (report_dir / "equivalence-report.json").exists()
     assert (report_dir / "equivalence-summary.md").exists()
@@ -2379,6 +2593,62 @@ def test_all_automation_scripts_exist_in_powershell():
     script_dirs = sorted(path.name for path in (REPO_ROOT / "scripts").iterdir() if path.is_dir())
     assert script_dirs == ["powershell", "python"]
     assert (REPO_ROOT / "scripts" / "python" / "check_prerequisites.py").exists()
+
+
+def test_local_distribution_builder_creates_wheel_and_pack_bundle(tmp_path):
+    workspace = tmp_path / "workspace"
+    expected_packs = [
+        ("team-build-migration", "0.2.0"),
+        ("app-build-delivery", "0.2.0"),
+        ("builtin-packaging", "0.1.0"),
+        ("js-package-pipeline", "0.1.0"),
+    ]
+    for pack_id, version in expected_packs:
+        pack_root = workspace / ".specify" / "knowledge" / "exports" / pack_id
+        pack_root.mkdir(parents=True)
+        (pack_root / "knowledge-pack.yml").write_text(
+            f'id: "{pack_id}"\nversion: "{version}"\ntitle: "Fixture"\n',
+            encoding="utf-8",
+        )
+        (pack_root / "README.md").write_text("fixture\n", encoding="utf-8")
+    output_dir = tmp_path / "bundle"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "python" / "build_local_distribution.py"),
+            "--repo-root",
+            str(REPO_ROOT),
+            "--workspace-root",
+            str(workspace),
+            "--output-dir",
+            str(output_dir),
+            "--json",
+            *[argument for pack_id, _ in expected_packs for argument in ("--knowledge-pack", pack_id)],
+        ],
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    wheel = Path(payload["facts"]["wheel"])
+    assert wheel.exists()
+    with zipfile.ZipFile(wheel) as archive:
+        names = set(archive.namelist())
+        assert "specify_cli/__init__.py" in names
+        assert "specify_cli/core_pack/scripts/powershell/select-knowledge.ps1" in names
+        assert any(name.endswith(".dist-info/RECORD") for name in names)
+        assert any(name.endswith(".dist-info/entry_points.txt") for name in names)
+    manifest = json.loads((output_dir / "bundle-manifest.json").read_text(encoding="utf-8"))
+    assert manifest["spec_kit"]["version"] == "0.10.4"
+    assert manifest["promotion_performed"] is False
+    assert [pack["id"] for pack in manifest["knowledge_packs"]] == [pack[0] for pack in expected_packs]
+    assert (output_dir / "Install-Local.ps1").exists()
+    assert (output_dir / "INSTALL-AI.md").exists()
+    assert (output_dir / "SHA256SUMS.json").exists()
+    assert Path(payload["facts"]["bundle_zip"]).exists()
 
 
 def test_spec_kit_core_version_scripts_use_pyproject_as_source(tmp_path):
@@ -2831,7 +3101,7 @@ def test_validate_test_plan_requires_api_and_e2e_review_status(tmp_path):
 
     ok = run_ps("validate-test-plan", "-FeatureDir", str(feature_dir))
     assert_standard_shape(ok, "validate-test-plan")
-    assert ok["status"] == "ok"
+    assert ok["status"] == "ok", ok
 
     (feature_dir / "plan.md").write_text("## 测试用例计划\n\n| E2E | N/A |\n", encoding="utf-8")
     blocked = subprocess.run(
@@ -2888,7 +3158,7 @@ def test_validate_ai_self_acceptance_requires_pass(tmp_path):
         encoding="utf-8",
     )
     ok = run_ps("validate-ai-self-acceptance", "-FeatureDir", str(feature_dir))
-    assert ok["status"] == "ok"
+    assert ok["status"] == "ok", ok
 
 
 def test_validate_ai_self_acceptance_accepts_lean_workpack_outcome(tmp_path):
@@ -4299,7 +4569,7 @@ def test_validate_feature_artifacts_uses_layer_manifest_and_required_sections(tm
     (feature_dir / "plan.md").write_text(
         "# Plan\n\n## L2 Artifact Contract\n\n## 人类审核摘要\n\n## Root Cause Evidence\n\n"
         f"{root_fix_decision_gate_text()}\n"
-        "## 技术上下文\n\n## AI Context Contract\n\n## 影响模块与边界\n\n"
+        f"## 技术上下文\n\n## AI Context Contract\n\n{implementation_target_proof_text()}## 影响模块与边界\n\n"
         "## Quality Vision Link\n\n## 测试用例计划\n\n## Acceptance Rubric Link\n\n"
         "## Implementation Slices\n\n## 验证计划\n\n## AI Self-Acceptance Contract\n",
         encoding="utf-8",
@@ -4363,7 +4633,7 @@ def test_validate_feature_artifacts_allows_standard_bugfix_plan_slices_without_t
     (feature_dir / "plan.md").write_text(
         "# Plan\n\n## L2 Artifact Contract\n\n## 人类审核摘要\n\n## Root Cause Evidence\n\n"
         f"{root_fix_decision_gate_text()}\n"
-        "## 技术上下文\n\n## AI Context Contract\n\n## 影响模块与边界\n\n"
+        f"## 技术上下文\n\n## AI Context Contract\n\n{implementation_target_proof_text()}## 影响模块与边界\n\n"
         "## Quality Vision Link\n\n## 测试用例计划\n\n## Acceptance Rubric Link\n\n"
         "## 验证计划\n\n## AI Self-Acceptance Contract\n\n## Implementation Slices\n",
         encoding="utf-8",
@@ -4424,7 +4694,7 @@ def test_validate_feature_artifacts_allows_non_bugfix_plan_without_root_fix_gate
     (feature_dir / "plan.md").write_text(
         "# Plan\n\n## L2 Artifact Contract\n\n## 人类审核摘要\n\n"
         "## Root Cause Evidence\n\nN/A: not bugfix\n\n"
-        "## 技术上下文\n\n## AI Context Contract\n\n## 影响模块与边界\n\n"
+        f"## 技术上下文\n\n## AI Context Contract\n\n{implementation_target_proof_text()}## 影响模块与边界\n\n"
         "## Quality Vision Link\n\n## 测试用例计划\n\n## Acceptance Rubric Link\n\n"
         "## Implementation Slices\n\n## 验证计划\n\n## AI Self-Acceptance Contract\n",
         encoding="utf-8",
@@ -4796,7 +5066,7 @@ def test_validate_feature_artifacts_enforces_full_sdd_implementation_gates(tmp_p
     (feature_dir / "plan.md").write_text(
         "# Plan\n\n## L2 Artifact Contract\n\n## 人类审核摘要\n\n## Root Cause Evidence\n\n"
         f"{root_fix_decision_gate_text()}\n"
-        "## 技术上下文\n\n## AI Context Contract\n\n## 影响模块与边界\n\n"
+        f"## 技术上下文\n\n## AI Context Contract\n\n{implementation_target_proof_text()}## 影响模块与边界\n\n"
         "## Quality Vision Link\n\n## 测试用例计划\n\n## Acceptance Rubric Link\n\n"
         "## Implementation Slices\n\n## 验证计划\n\n## AI Self-Acceptance Contract\n",
         encoding="utf-8",
@@ -4923,7 +5193,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         "stale/current-feature hint\nread the current plan only\n"
         "standard-bugfix-lite\nworkpack.md\npreflight-new-workflow\npreflight-push\n"
         "select-knowledge\nselect-gates\nvalidate-knowledge-index\nvalidate-context-budget\n"
-        "inspect-validation-capabilities\ninspect-workflow-closure\nCommit is opt-in\n",
+        "inspect-validation-capabilities\ninspect-workflow-closure\nCommit is opt-in\nsync-spec-branches\n",
         encoding="utf-8",
     )
     (repo / ".specify" / "memory" / "repository-map.md").write_text(
@@ -5064,6 +5334,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         "post-commit-self-check.ps1",
         "validate-rubric-score.ps1",
         "inspect-workflow-closure.ps1",
+        "inspect-workflow-drift.ps1",
         "collect-workflow-observer-packet.ps1",
         "promote-knowledge-candidates.ps1",
         "cleanup-host-cdp.ps1",
@@ -5071,8 +5342,11 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         "resolve-next-stage.ps1",
         "preflight-new-workflow.ps1",
         "preflight-push.ps1",
+        "inspect-spec-branch-history.ps1",
+        "sync-spec-branches.ps1",
         "sync-native-runtime-artifacts.ps1",
         "validate-rpc-proto-bundle.ps1",
+        "validate-plugin-delivery-chain.ps1",
         "capture-cdp-screenshot.ps1",
         "cdp-common.ps1",
     ]:
@@ -5082,7 +5356,7 @@ def test_validate_generated_context_reports_drift_and_accepts_required_phrases(t
         )
 
     ok = run_ps("validate-generated-context", "-RepoRoot", str(repo))
-    assert ok["status"] == "ok"
+    assert ok["status"] == "ok", ok
 
     (repo / ".specify" / "templates" / "acceptance-rubric-template.md").write_text(
         "old acceptance rubric\n",
@@ -5129,7 +5403,7 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         "stale/current-feature hint\nread the current plan only\n"
         "standard-bugfix-lite\nworkpack.md\npreflight-new-workflow\npreflight-push\n"
         "select-knowledge\nselect-gates\nvalidate-knowledge-index\nvalidate-context-budget\n"
-        "inspect-validation-capabilities\ninspect-workflow-closure\nCommit is opt-in\n",
+        "inspect-validation-capabilities\ninspect-workflow-closure\nCommit is opt-in\nsync-spec-branches\n",
         encoding="utf-8",
     )
     (repo / ".specify" / "memory" / "repository-map.md").write_text(
@@ -5258,6 +5532,7 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         "post-commit-self-check.ps1",
         "validate-rubric-score.ps1",
         "inspect-workflow-closure.ps1",
+        "inspect-workflow-drift.ps1",
         "collect-workflow-observer-packet.ps1",
         "promote-knowledge-candidates.ps1",
         "cleanup-host-cdp.ps1",
@@ -5265,8 +5540,11 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         "resolve-next-stage.ps1",
         "preflight-new-workflow.ps1",
         "preflight-push.ps1",
+        "inspect-spec-branch-history.ps1",
+        "sync-spec-branches.ps1",
         "sync-native-runtime-artifacts.ps1",
         "validate-rpc-proto-bundle.ps1",
+        "validate-plugin-delivery-chain.ps1",
         "capture-cdp-screenshot.ps1",
         "cdp-common.ps1",
     ]:
@@ -5276,7 +5554,7 @@ def test_validate_generated_context_uses_codex_context_even_with_stale_init_opti
         )
 
     ok = run_ps("validate-generated-context", "-RepoRoot", str(repo))
-    assert ok["status"] == "ok"
+    assert ok["status"] == "ok", ok
     checked_paths = [entry["path"] for entry in ok["facts"]["checked"]]
     assert checked_paths[0] == "AGENTS.md"
     assert ".agents/skills/speckit-specify/SKILL.md" in checked_paths
@@ -5348,7 +5626,7 @@ def test_validate_feature_artifacts_blocks_commit_without_summary_state(tmp_path
     (feature_dir / "plan.md").write_text(
         "# Plan\n\n## L2 Artifact Contract\n\n## 人类审核摘要\n\n## Root Cause Evidence\n\n"
         f"{root_fix_decision_gate_text()}\n"
-        "## 技术上下文\n\n## AI Context Contract\n\n## 影响模块与边界\n\n"
+        f"## 技术上下文\n\n## AI Context Contract\n\n{implementation_target_proof_text()}## 影响模块与边界\n\n"
         "## Quality Vision Link\n\n## 测试用例计划\n\n"
         "| Kind | Plan | Review status |\n| --- | --- | --- |\n"
         "| API | interface regression row | approved-by-ai-obvious |\n"
@@ -5596,3 +5874,247 @@ def test_parse_promotion_candidates_reports_review_states_only(tmp_path):
     assert output["status"] == "ok"
     assert output["facts"]["counts"] == {"approved": 1, "pending": 1, "rejected": 1}
     assert output["blockers"] == []
+
+
+def test_inspect_workflow_drift_records_and_blocks_scope_change(tmp_path):
+    repo = tmp_path / "repo"
+    feature = repo / "specs" / "001-demo"
+    feature.mkdir(parents=True)
+    write_minimal_workspace(repo)
+    (feature / "workflow-state.json").write_text("{}\n", encoding="utf-8")
+    plan = feature / "plan.md"
+    plan.write_text(
+        """# Plan
+
+## Implementation Target Proof
+
+- User entry and observable behavior: Open Settings and save
+- Runtime trigger / call path: SettingsView -> saveSettings
+- Target repositories: app
+- Target components, source paths, and key symbols: src/settings.ts; saveSettings
+- Source or runtime evidence: route registration and call site
+- Excluded same-name / similar modules and reasons: legacy/settings.ts is unreachable
+- Build target and expected output: app build
+- Install / deploy target and exact input: build/app.zip
+- Real validation host, entry, and expected loaded resource: desktop Settings route
+""",
+        encoding="utf-8",
+    )
+
+    first = run_ps(
+        "inspect-workflow-drift",
+        "-RepoRoot",
+        str(repo),
+        "-FeatureDir",
+        str(feature),
+        "-SelectedGates",
+        "ui-baseline",
+        "-SelectedKnowledge",
+        "app-guide",
+        "-Record",
+    )
+    assert_standard_shape(first, "inspect-workflow-drift")
+    assert first["status"] == "ok"
+    assert first["facts"]["current_snapshot"]["scope_revision"] == 1
+
+    unchanged = run_ps(
+        "inspect-workflow-drift",
+        "-RepoRoot",
+        str(repo),
+        "-FeatureDir",
+        str(feature),
+        "-SelectedGates",
+        "ui-baseline",
+        "-SelectedKnowledge",
+        "app-guide",
+    )
+    assert unchanged["facts"]["scope_amendment_required"] is False
+
+    changed = plan.read_text(encoding="utf-8").replace(
+        "src/settings.ts; saveSettings", "src/profile.ts; saveProfile"
+    )
+    plan.write_text(changed, encoding="utf-8")
+    drifted = run_ps(
+        "inspect-workflow-drift",
+        "-RepoRoot",
+        str(repo),
+        "-FeatureDir",
+        str(feature),
+        "-SelectedGates",
+        "ui-baseline",
+        "-SelectedKnowledge",
+        "app-guide",
+    )
+    assert drifted["status"] == "blocked"
+    assert drifted["facts"]["scope_amendment_required"] is True
+    assert "target_components" in drifted["facts"]["changed_dimensions"]
+
+
+def test_validate_plugin_delivery_chain_checks_exact_package_and_boundary_hashes(tmp_path):
+    root = tmp_path / "delivery"
+    relative = Path("native") / "addon.node"
+    boundaries = {
+        name: root / name
+        for name in ["source", "build", "staging", "package-payload", "install-payload", "runtime"]
+    }
+    for path in boundaries.values():
+        path.mkdir(parents=True)
+    payload = b"native-build-identity"
+    for name in ["staging", "package-payload", "install-payload", "runtime"]:
+        target = boundaries[name] / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
+    package = root / "demo.plugin"
+    install_input = root / "selected.plugin"
+    package.write_bytes(b"package-identity")
+    install_input.write_bytes(b"package-identity")
+    manifest = root / "delivery.json"
+
+    manifest_data = {
+        "plugins": [
+            {
+                "plugin_id": "demo",
+                "source_root": str(boundaries["source"]),
+                "build_output": str(boundaries["build"]),
+                "staging_root": str(boundaries["staging"]),
+                "package_path": str(package),
+                "install_input": str(install_input),
+                "package_payload_root": str(boundaries["package-payload"]),
+                "install_input_payload_root": str(boundaries["install-payload"]),
+                "installed_runtime": str(boundaries["runtime"]),
+                "install_selection_mode": "explicit-build-result",
+                "critical_artifacts": [{"id": "native", "relative_path": relative.as_posix()}],
+            }
+        ]
+    }
+    manifest.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+    passed = run_ps(
+        "validate-plugin-delivery-chain", "-RepoRoot", str(root), "-ManifestPath", str(manifest)
+    )
+    assert_standard_shape(passed, "validate-plugin-delivery-chain")
+    assert passed["status"] == "ok"
+    assert passed["facts"]["plugins"][0]["closure"] == "passed"
+
+    install_input.write_bytes(b"old-same-version-package")
+    stale = run_ps(
+        "validate-plugin-delivery-chain", "-RepoRoot", str(root), "-ManifestPath", str(manifest)
+    )
+    assert stale["status"] == "blocked"
+    assert "not content-identical" in "\n".join(stale["blockers"])
+
+    install_input.write_bytes(b"package-identity")
+    (boundaries["runtime"] / relative).write_bytes(b"wrong-runtime-native")
+    mismatched_runtime = run_ps(
+        "validate-plugin-delivery-chain", "-RepoRoot", str(root), "-ManifestPath", str(manifest)
+    )
+    assert mismatched_runtime["status"] == "blocked"
+    assert "SHA256 differs" in "\n".join(mismatched_runtime["blockers"])
+
+
+def test_knowledge_revision_and_conformance_control_selection(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "spec-kit@example.invalid")
+    run_git(repo, "config", "user.name", "Spec Kit Test")
+    write_minimal_workspace(repo)
+    (repo / "source.txt").write_text("implemented\n", encoding="utf-8")
+    run_git(repo, "add", ".")
+    run_git(repo, "commit", "-m", "base")
+    revision = run_git(repo, "rev-parse", "HEAD")
+
+    knowledge = repo / "ai" / "knowledge"
+    (knowledge / "repositories").mkdir(parents=True)
+    (knowledge / "domains").mkdir(parents=True)
+    (knowledge / "repositories" / "app.md").write_text(
+        """---
+authority: generated
+confidence: low
+knowledge_kind: implementation-fact
+source_refs: []
+last_verified: null
+verified_revisions: {"app":"%s"}
+conformance_checks: [{"repository":"app","path":"source.txt","command":"file-contains","pattern":"implemented","expected":"present"}]
+supersedes: []
+superseded_by: []
+revalidation_triggers: ["app revision change"]
+---
+# App fact
+"""
+        % revision,
+        encoding="utf-8",
+    )
+    (knowledge / "domains" / "desired-policy.md").write_text(
+        """---
+authority: generated
+confidence: low
+knowledge_kind: policy
+source_refs: []
+last_verified: null
+verified_revisions: {}
+conformance_checks: [{"repository":"app","path":"source.txt","command":"file-contains","pattern":"not-yet-implemented","expected":"present"}]
+supersedes: []
+superseded_by: []
+revalidation_triggers: ["policy implementation changes"]
+---
+# Desired policy
+""",
+        encoding="utf-8",
+    )
+    (knowledge / "index.yml").write_text(
+        """schema_version: "1.2"
+purpose: "test"
+policy:
+  default_context: false
+  no_full_text_search_required: true
+  repository_map_authority: ".specify/memory/repository-map.md"
+  max_selected_guides: 3
+repositories:
+  app:
+    guide: "repositories/app.md"
+    authority: "generated"
+    confidence: "low"
+    tags: ["app-fact"]
+domains:
+  desired-policy:
+    guide: "domains/desired-policy.md"
+    authority: "generated"
+    confidence: "low"
+    tags: ["desired-policy"]
+""",
+        encoding="utf-8",
+    )
+
+    selected = run_ps(
+        "select-knowledge", "-RepoRoot", str(repo), "-AffectedRepositories", "app"
+    )
+    assert [item["key"] for item in selected["facts"]["selected"]] == ["app"]
+    assert selected["facts"]["selected"][0]["conformance_status"] == "passed"
+
+    (repo / "source.txt").write_text("implemented\nrevision changed\n", encoding="utf-8")
+    run_git(repo, "add", "source.txt")
+    run_git(repo, "commit", "-m", "change")
+    stale = run_ps(
+        "select-knowledge", "-RepoRoot", str(repo), "-AffectedRepositories", "app"
+    )
+    assert stale["facts"]["selected"] == []
+    excluded = {item["key"]: item for item in stale["facts"]["excluded"]}
+    assert excluded["app"]["conformance_status"] == "needs-revalidation"
+
+    policy = run_ps(
+        "select-knowledge", "-RepoRoot", str(repo), "-Terms", "desired-policy"
+    )
+    assert [item["key"] for item in policy["facts"]["selected"]] == ["desired-policy"]
+    assert policy["facts"]["selected"][0]["conformance_status"] == "failed"
+    assert "do not describe it as current implementation" in policy["facts"]["selected"][0]["lifecycle_reason"]
+
+    index_text = (knowledge / "index.yml").read_text(encoding="utf-8")
+    index_text = index_text.replace(
+        'desired-policy.md"\n    authority: "generated"\n    confidence: "low"',
+        'desired-policy.md"\n    authority: "reviewed"\n    confidence: "high"',
+    )
+    (knowledge / "index.yml").write_text(index_text, encoding="utf-8")
+    promoted = run_ps("validate-knowledge-index", "-RepoRoot", str(repo))
+    assert promoted["status"] == "blocked"
+    assert "requires passing conformance" in "\n".join(promoted["blockers"])

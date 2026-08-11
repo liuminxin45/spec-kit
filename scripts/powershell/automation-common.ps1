@@ -6,11 +6,17 @@ param(
     [string]$DeliveryProfile = "",
     [string]$WorkflowState = "",
     [string]$CandidatesPath = "",
+    [string[]]$AffectedRepositories = @(),
+    [string[]]$RiskFlags = @(),
+    [string[]]$CapabilityTags = @(),
+    [string[]]$Terms = @(),
+    [string]$RequestSummary = "",
     [string]$PackagePath = "",
     [string]$RubricPath = "",
     [string]$PackId = "",
     [switch]$Repack,
     [switch]$Force,
+    [switch]$IgnoreActiveFeature,
     [switch]$Json
 )
 
@@ -1110,6 +1116,7 @@ function Get-KnowledgeEntries {
                 guide = ""
                 authority = ""
                 confidence = ""
+                require_match = $false
                 tags = @()
             }
             continue
@@ -1129,6 +1136,10 @@ function Get-KnowledgeEntries {
             $current.confidence = $Matches[1].Trim().Trim('"').Trim("'")
             continue
         }
+        if ($line -match "^\s{4}require_match:\s*(true|false)\s*$") {
+            $current.require_match = ($Matches[1] -eq "true")
+            continue
+        }
         if ($line -match "^\s{4}tags:\s*\[(.*?)\]\s*$") {
             $tags = @()
             foreach ($tag in ($Matches[1] -split ",")) {
@@ -1144,6 +1155,144 @@ function Get-KnowledgeEntries {
         $entries += $current
     }
     return $entries
+}
+
+function Get-KnowledgeGuideMetadata {
+    param([string]$GuidePath)
+    $metadata = [ordered]@{
+        knowledge_kind = ""
+        verified_revisions = [pscustomobject]@{}
+        conformance_checks = @()
+        supersedes = @()
+        superseded_by = @()
+        revalidation_triggers = @()
+    }
+    if (-not (Test-Path -LiteralPath $GuidePath -PathType Leaf)) { return [pscustomobject]$metadata }
+    $text = Get-Content -LiteralPath $GuidePath -Raw
+    $kindMatch = [regex]::Match($text, '(?m)^knowledge_kind:\s*["'']?([^"''\r\n]+)["'']?\s*$')
+    if ($kindMatch.Success) { $metadata.knowledge_kind = $kindMatch.Groups[1].Value.Trim() }
+    foreach ($field in @("verified_revisions", "conformance_checks", "supersedes", "superseded_by", "revalidation_triggers")) {
+        $match = [regex]::Match($text, '(?m)^' + [regex]::Escape($field) + ':\s*(.+?)\s*$')
+        if (-not $match.Success) { continue }
+        try {
+            $metadata[$field] = $match.Groups[1].Value.Trim() | ConvertFrom-Json -NoEnumerate
+        } catch {
+            $metadata[$field] = $null
+        }
+    }
+    return [pscustomobject]$metadata
+}
+
+function Get-KnowledgeRepositoryPathMap {
+    $map = @{}
+    $map["workspace"] = $RepoRoot
+    $map["speckitruntime"] = if (Test-Path -LiteralPath (Join-Path $RepoRoot "templates/ai/knowledge/index.yml")) {
+        $RepoRoot
+    } else {
+        Join-Path $RepoRoot ".specify"
+    }
+    foreach ($repository in @(Get-WorkspaceRepositoryEntries)) {
+        $map[(Normalize-KnowledgeToken ([string]$repository.name))] = [string]$repository.path
+    }
+    return $map
+}
+
+function Test-KnowledgeRelativePath {
+    param([string]$RepositoryPath, [string]$RelativePath)
+    if ([string]::IsNullOrWhiteSpace($RepositoryPath) -or [string]::IsNullOrWhiteSpace($RelativePath) -or [IO.Path]::IsPathRooted($RelativePath)) {
+        return $false
+    }
+    try {
+        $root = [IO.Path]::GetFullPath($RepositoryPath).TrimEnd('\', '/')
+        $candidate = [IO.Path]::GetFullPath((Join-Path $root $RelativePath))
+        return ($candidate -eq $root -or $candidate.StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase))
+    } catch {
+        return $false
+    }
+}
+
+function Get-KnowledgeConformanceStatus {
+    param($Metadata)
+    $repositoryPaths = Get-KnowledgeRepositoryPathMap
+    $checks = @($Metadata.conformance_checks)
+    $details = @()
+    $failed = $false
+    $invalid = $false
+    foreach ($check in $checks) {
+        $repositoryName = [string](Get-ObjectPropertyValue -Object $check -PropertyName "repository")
+        $relativePath = [string](Get-ObjectPropertyValue -Object $check -PropertyName "path")
+        $command = ([string](Get-ObjectPropertyValue -Object $check -PropertyName "command")).ToLowerInvariant()
+        $expected = [string](Get-ObjectPropertyValue -Object $check -PropertyName "expected")
+        $pattern = [string](Get-ObjectPropertyValue -Object $check -PropertyName "pattern")
+        $repositoryPath = $repositoryPaths[(Normalize-KnowledgeToken $repositoryName)]
+        $passed = $false
+        $actual = ""
+        if (-not (Test-KnowledgeRelativePath -RepositoryPath $repositoryPath -RelativePath $relativePath)) {
+            $invalid = $true
+            $actual = "invalid repository or non-relative path"
+        } else {
+            $path = Join-Path $repositoryPath $relativePath
+            switch ($command) {
+                "path-exists" {
+                    $actual = if (Test-Path -LiteralPath $path) { "true" } else { "false" }
+                    $passed = $actual -eq $expected.ToLowerInvariant()
+                }
+                "file-contains" {
+                    if (Test-Path -LiteralPath $path -PathType Leaf) {
+                        $contains = (Get-Content -LiteralPath $path -Raw) -match [regex]::Escape($pattern)
+                        $actual = if ($contains) { "present" } else { "absent" }
+                    } else { $actual = "missing" }
+                    $passed = $actual -eq $expected.ToLowerInvariant()
+                }
+                "git-tracked" {
+                    $gitOutput = & git -C $repositoryPath ls-files --error-unmatch -- $relativePath 2>$null
+                    $actual = if ($LASTEXITCODE -eq 0 -and $gitOutput) { "true" } else { "false" }
+                    $passed = $actual -eq $expected.ToLowerInvariant()
+                }
+                default {
+                    $invalid = $true
+                    $actual = "unsupported read-only command"
+                }
+            }
+        }
+        if (-not $passed) { $failed = $true }
+        $details += [ordered]@{
+            repository = $repositoryName
+            path = $relativePath
+            command = $command
+            expected = $expected
+            actual = $actual
+            passed = $passed
+        }
+    }
+    $revisionDetails = @()
+    $revisionMismatch = $false
+    if ($null -ne $Metadata.verified_revisions) {
+        foreach ($property in @($Metadata.verified_revisions.PSObject.Properties)) {
+            $repositoryName = [string]$property.Name
+            $expectedRevision = [string]$property.Value
+            $repositoryPath = $repositoryPaths[(Normalize-KnowledgeToken $repositoryName)]
+            $actualRevision = ""
+            if ($repositoryPath -and (Test-Path -LiteralPath (Join-Path $repositoryPath ".git"))) {
+                $actualRevision = (& git -C $repositoryPath rev-parse HEAD 2>$null | Select-Object -First 1)
+            }
+            $matches = (-not [string]::IsNullOrWhiteSpace($expectedRevision) -and $actualRevision -eq $expectedRevision)
+            if (-not $matches) { $revisionMismatch = $true }
+            $revisionDetails += [ordered]@{ repository = $repositoryName; expected = $expectedRevision; actual = $actualRevision; matches = $matches }
+        }
+    }
+    $status = if ($invalid) {
+        "invalid"
+    } elseif ($revisionMismatch) {
+        "needs-revalidation"
+    } elseif ($failed) {
+        "failed"
+    } elseif ($checks.Count -eq 0) {
+        "not-configured"
+    } else {
+        "passed"
+    }
+    return [pscustomobject][ordered]@{ status = $status; checks = $details; revisions = $revisionDetails }
 }
 
 function Normalize-KnowledgeToken {
@@ -1166,39 +1315,114 @@ function Add-KnowledgeTerm {
 }
 
 function Get-KnowledgeRoutingContext {
+    $explicitAffectedRepositories = @($script:AffectedRepositories)
+    $explicitRiskFlags = @($script:RiskFlags)
+    $explicitCapabilityTags = @($script:CapabilityTags)
+    $explicitTerms = @($script:Terms)
     $terms = [System.Collections.ArrayList]@()
     $affected = @()
     $riskFlags = @()
     $capabilityTags = @()
     $summary = ""
     $featureJson = Join-Path $RepoRoot ".specify/feature.json"
+    $workspaceFile = Join-Path $RepoRoot ".specify/workspace.yml"
+    $workspaceRemoteKind = ""
+    $routingSources = [System.Collections.ArrayList]@()
 
     foreach ($value in @($Stage, $DeliveryProfile)) {
         Add-KnowledgeTerm -Terms $terms -Value $value
     }
 
-    if (Test-Path -LiteralPath $featureJson) {
+    $routingObjects = @()
+    if (-not $IgnoreActiveFeature -and (Test-Path -LiteralPath $featureJson)) {
         try {
-            $feature = Get-Content -LiteralPath $featureJson -Raw | ConvertFrom-Json
-            if ($feature.PSObject.Properties.Name -contains "affected_repositories") {
-                $affected = @($feature.affected_repositories | ForEach-Object { [string]$_ })
-            }
-            if ($feature.PSObject.Properties.Name -contains "risk_flags") {
-                $riskFlags = @($feature.risk_flags | ForEach-Object { [string]$_ })
-            }
-            if ($feature.PSObject.Properties.Name -contains "capability_tags") {
-                $capabilityTags = @($feature.capability_tags | ForEach-Object { [string]$_ })
-            }
-            if ($feature.PSObject.Properties.Name -contains "request_summary") {
-                $summary = [string]$feature.request_summary
+            $routingObjects += [PSCustomObject]@{
+                source = "active-feature"
+                value = (Get-Content -LiteralPath $featureJson -Raw | ConvertFrom-Json)
             }
         } catch {
             # The validation tool reports malformed feature state; selection stays best-effort.
         }
     }
 
-    foreach ($value in @($affected + $riskFlags + $capabilityTags + @($summary))) {
+    if ($WorkflowState -and (Test-Path -LiteralPath $WorkflowState -PathType Leaf)) {
+        try {
+            $routingObjects += [PSCustomObject]@{
+                source = "workflow-state"
+                value = (Get-Content -LiteralPath $WorkflowState -Raw | ConvertFrom-Json)
+            }
+        } catch {
+            # Artifact validation owns malformed workflow-state errors.
+        }
+    }
+
+    if ($CandidatesPath -and (Test-Path -LiteralPath $CandidatesPath -PathType Leaf)) {
+        try {
+            $candidateData = Get-Content -LiteralPath $CandidatesPath -Raw | ConvertFrom-Json
+            foreach ($candidate in @($candidateData)) {
+                $routingObjects += [PSCustomObject]@{ source = "candidates"; value = $candidate }
+            }
+        } catch {
+            # Candidate validation belongs to the caller; routing remains best-effort.
+        }
+    }
+
+    foreach ($record in $routingObjects) {
+        $value = $record.value
+        if ($null -eq $value) { continue }
+        [void]$routingSources.Add($record.source)
+        if ($value.PSObject.Properties.Name -contains "affected_repositories") {
+            $affected += @($value.affected_repositories | ForEach-Object { [string]$_ })
+        }
+        if ($value.PSObject.Properties.Name -contains "risk_flags") {
+            $riskFlags += @($value.risk_flags | ForEach-Object { [string]$_ })
+        }
+        if ($value.PSObject.Properties.Name -contains "capability_tags") {
+            $capabilityTags += @($value.capability_tags | ForEach-Object { [string]$_ })
+        }
+        if ($value.PSObject.Properties.Name -contains "request_summary" -and -not [string]::IsNullOrWhiteSpace([string]$value.request_summary)) {
+            $summary = [string]$value.request_summary
+        }
+    }
+
+    $affected += @($explicitAffectedRepositories | ForEach-Object { [string]$_ })
+    $riskFlags += @($explicitRiskFlags | ForEach-Object { [string]$_ })
+    $capabilityTags += @($explicitCapabilityTags | ForEach-Object { [string]$_ })
+    if (-not [string]::IsNullOrWhiteSpace($RequestSummary)) {
+        $summary = $RequestSummary
+    }
+    if ($explicitAffectedRepositories.Count -gt 0 -or $explicitRiskFlags.Count -gt 0 -or $explicitCapabilityTags.Count -gt 0 -or $explicitTerms.Count -gt 0 -or $RequestSummary) {
+        [void]$routingSources.Add("explicit")
+    }
+
+    $affected = @($affected | Where-Object { $_ } | Select-Object -Unique)
+    $riskFlags = @($riskFlags | Where-Object { $_ } | Select-Object -Unique)
+    $capabilityTags = @($capabilityTags | Where-Object { $_ } | Select-Object -Unique)
+
+    foreach ($value in @($affected + $riskFlags + $capabilityTags + @($summary) + @($explicitTerms))) {
         Add-KnowledgeTerm -Terms $terms -Value $value
+    }
+
+    if ($FeatureDir) {
+        $resolvedFeatureDir = Resolve-FeatureDirPath $FeatureDir
+        Add-KnowledgeTerm -Terms $terms -Value (Get-RelativeDisplayPath $resolvedFeatureDir)
+        $planPath = Join-Path $resolvedFeatureDir "plan.md"
+        if (Test-Path -LiteralPath $planPath -PathType Leaf) {
+            $planText = Get-Content -LiteralPath $planPath -Raw
+            $contextMatch = [regex]::Match($planText, "(?s)## AI Context Contract(.*?)(\n## |\z)")
+            if ($contextMatch.Success) {
+                Add-KnowledgeTerm -Terms $terms -Value $contextMatch.Groups[1].Value
+                [void]$routingSources.Add("feature-plan-context")
+            }
+        }
+    }
+
+    if (Test-Path -LiteralPath $workspaceFile) {
+        $workspaceText = Get-Content -LiteralPath $workspaceFile -Raw
+        if ($workspaceText -match '(?m)^\s*remote_kind:\s*[''"]?([^\s''"#]+)') {
+            $workspaceRemoteKind = $Matches[1].Trim().ToLowerInvariant()
+            Add-KnowledgeTerm -Terms $terms -Value $workspaceRemoteKind
+        }
     }
 
     return [ordered]@{
@@ -1208,6 +1432,9 @@ function Get-KnowledgeRoutingContext {
         capability_tags = $capabilityTags
         request_summary = $summary
         feature_json = $featureJson
+        workspace_remote_kind = $workspaceRemoteKind
+        routing_sources = @($routingSources | Select-Object -Unique)
+        ignore_active_feature = [bool]$IgnoreActiveFeature
     }
 }
 
@@ -1240,12 +1467,21 @@ function Invoke-SelectKnowledge {
     $normalizedAffected = @($routing.affected_repositories | ForEach-Object { Normalize-KnowledgeToken $_ })
     $maxSelected = [Math]::Max(1, (Get-KnowledgeMaxSelected -IndexPath $indexPath))
     $ranked = @()
+    $evaluated = @()
 
     foreach ($entry in $entries) {
         if (-not $entry.guide) { continue }
+        $guidePath = Resolve-KnowledgeGuidePath -IndexPath $indexPath -Guide $entry.guide
+        $metadata = Get-KnowledgeGuideMetadata -GuidePath $guidePath
+        $conformance = Get-KnowledgeConformanceStatus -Metadata $metadata
+        $knowledgeKind = ([string]$metadata.knowledge_kind).ToLowerInvariant()
         $score = 0
         $reasons = @()
         $matchedTags = @()
+        $explicitMatch = $false
+        $stageMatch = $false
+        $genericKnowledgeTags = @("frontend", "backend", "build", "package", "test", "validation", "runtime", "plugin", "procedure", "policy")
+        $specificEntryTags = @($entry.tags | Where-Object { $genericKnowledgeTags -notcontains $_ })
         $normalizedKey = Normalize-KnowledgeToken $entry.key
         $authority = if ($entry.authority) { $entry.authority.ToString().Trim().ToLowerInvariant() } else { "generated" }
         $confidence = if ($entry.confidence) { $entry.confidence.ToString().Trim().ToLowerInvariant() } else { "" }
@@ -1270,13 +1506,23 @@ function Invoke-SelectKnowledge {
         if ($normalizedAffected -contains $normalizedKey) {
             $score += 8
             $reasons += "affected repository"
+            $explicitMatch = $true
         }
 
         foreach ($tag in @($entry.tags)) {
             if ($terms -contains $tag) {
                 $score += 3
                 $matchedTags += $tag
+                if ($specificEntryTags.Count -eq 0 -or $genericKnowledgeTags -notcontains $tag) {
+                    $explicitMatch = $true
+                }
             }
+        }
+
+        if ($routing.workspace_remote_kind -eq "gerrit" -and $entry.key -eq "gerrit-linear-spec-branches") {
+            $score += 20
+            $reasons += "Gerrit workspace policy"
+            $explicitMatch = $true
         }
 
         $isValidationCapabilities = ($entry.key -eq "validation-capabilities" -or $entry.guide -eq "build/validation-capabilities.yml")
@@ -1284,10 +1530,12 @@ function Invoke-SelectKnowledge {
         if ($stageName -eq "validation" -and $entry.key -eq "validation-matrix") {
             $score += 4
             $reasons += "validation stage"
+            $stageMatch = $true
         }
         if ($isTestPlanningStage -and $isValidationCapabilities) {
             $score += 5
             $reasons += "test planning capability matrix"
+            $stageMatch = $true
         }
         if ($hasTestPlanningTerms) {
             if ($isValidationCapabilities) {
@@ -1310,8 +1558,22 @@ function Invoke-SelectKnowledge {
             $reasons += ("matched tags: " + (($matchedTags | Select-Object -Unique) -join ", "))
         }
 
-        if ($score -gt 0) {
-            $ranked += [PSCustomObject][ordered]@{
+        $eligible = ($explicitMatch -or $stageMatch)
+        $lifecycleReason = ""
+        if (@($metadata.superseded_by).Count -gt 0) {
+            $eligible = $false
+            $lifecycleReason = "superseded by " + (@($metadata.superseded_by) -join ", ")
+        } elseif ($knowledgeKind -eq "implementation-fact" -and $conformance.status -ne "passed") {
+            $eligible = $false
+            $lifecycleReason = "implementation fact is $($conformance.status)"
+        } elseif ($knowledgeKind -eq "procedure" -and $conformance.status -ne "passed") {
+            $eligible = $false
+            $lifecycleReason = "procedure conformance is $($conformance.status)"
+        } elseif ($knowledgeKind -eq "policy" -and $conformance.status -in @("failed", "needs-revalidation", "invalid")) {
+            $lifecycleReason = "policy selected as guidance, but source conformance is $($conformance.status); do not describe it as current implementation"
+            $reasons += $lifecycleReason
+        }
+        $candidate = [PSCustomObject][ordered]@{
                 score = $score
                 path = Get-KnowledgeDisplayPath -Guide $entry.guide
                 category = $entry.category
@@ -1320,7 +1582,15 @@ function Invoke-SelectKnowledge {
                 confidence = $confidence
                 reason = (($reasons | Select-Object -Unique) -join "; ")
                 matched_tags = @($matchedTags | Select-Object -Unique)
-            }
+                eligible = $eligible
+                knowledge_kind = $knowledgeKind
+                lifecycle_reason = $lifecycleReason
+                conformance_status = $conformance.status
+                conformance = $conformance
+        }
+        $evaluated += $candidate
+        if ($score -gt 0 -and $eligible -and (-not $entry.require_match -or $explicitMatch)) {
+            $ranked += $candidate
         }
     }
 
@@ -1338,6 +1608,10 @@ function Invoke-SelectKnowledge {
                     confidence = if ($capabilityEntry[0].confidence) { $capabilityEntry[0].confidence.ToString().Trim().ToLowerInvariant() } else { "" }
                     reason = "test planning capability matrix"
                     matched_tags = @()
+                    knowledge_kind = ([string](Get-KnowledgeGuideMetadata -GuidePath (Resolve-KnowledgeGuidePath -IndexPath $indexPath -Guide $capabilityEntry[0].guide)).knowledge_kind).ToLowerInvariant()
+                    lifecycle_reason = ""
+                    conformance_status = "not-configured"
+                    conformance = $null
                 }
             }
         }
@@ -1350,6 +1624,9 @@ function Invoke-SelectKnowledge {
     $result.facts.affected_repositories = $routing.affected_repositories
     $result.facts.risk_flags = $routing.risk_flags
     $result.facts.capability_tags = $routing.capability_tags
+    $result.facts.workspace_remote_kind = $routing.workspace_remote_kind
+    $result.facts.routing_sources = $routing.routing_sources
+    $result.facts.ignore_active_feature = $routing.ignore_active_feature
     $result.facts.selected = @($selected | ForEach-Object {
         [ordered]@{
             path = $_.path
@@ -1359,6 +1636,27 @@ function Invoke-SelectKnowledge {
             confidence = $_.confidence
             reason = $_.reason
             matched_tags = $_.matched_tags
+            knowledge_kind = $_.knowledge_kind
+            conformance_status = $_.conformance_status
+            lifecycle_reason = $_.lifecycle_reason
+        }
+    })
+    $selectedPaths = @($selected | ForEach-Object { $_.path })
+    $result.facts.excluded = @($evaluated | Where-Object { $selectedPaths -notcontains $_.path } | ForEach-Object {
+        [ordered]@{
+            path = $_.path
+            category = $_.category
+            key = $_.key
+            eligible = $_.eligible
+            knowledge_kind = $_.knowledge_kind
+            conformance_status = $_.conformance_status
+            reason = if (-not [string]::IsNullOrWhiteSpace($_.lifecycle_reason)) {
+                $_.lifecycle_reason
+            } elseif ($_.eligible) {
+                "eligible but ranked below selected guides: $($_.reason)"
+            } else {
+                "no explicit routing match: $($_.reason)"
+            }
         }
     })
     if ($selected.Count -eq 0) {
@@ -1394,7 +1692,13 @@ function Invoke-ValidateKnowledgeIndex {
     $unknownRepos = @()
     $invalidAuthorities = @()
     $generatedGuides = @()
+    $schemaIssues = @()
+    $conformanceDetails = @()
+    $needsRevalidation = @()
     $validAuthorities = @("generated", "reviewed", "authoritative")
+    $validKnowledgeKinds = @("policy", "implementation-fact", "procedure")
+    $schemaMatch = [regex]::Match($indexText, '(?m)^schema_version:\s*["'']?([0-9.]+)')
+    $strictLifecycleSchema = ($schemaMatch.Success -and [version]$schemaMatch.Groups[1].Value -ge [version]"1.2")
     $forbiddenPatterns = @(
         "[A-Za-z]:\\",
         "(^|[\\/])Users[\\/][^\\/]+"
@@ -1421,6 +1725,37 @@ function Invoke-ValidateKnowledgeIndex {
         }
 
         $text = Get-Content -LiteralPath $guidePath -Raw
+        $metadata = Get-KnowledgeGuideMetadata -GuidePath $guidePath
+        $knowledgeKind = ([string]$metadata.knowledge_kind).ToLowerInvariant()
+        $conformance = Get-KnowledgeConformanceStatus -Metadata $metadata
+        $displayPath = Get-KnowledgeDisplayPath -Guide $entry.guide
+        $conformanceDetails += [ordered]@{
+            guide = $displayPath
+            knowledge_kind = $knowledgeKind
+            authority = $authority
+            confidence = [string]$entry.confidence
+            status = $conformance.status
+            checks = $conformance.checks
+            revisions = $conformance.revisions
+        }
+        if ($strictLifecycleSchema) {
+            if ($validKnowledgeKinds -notcontains $knowledgeKind) {
+                $schemaIssues += "$displayPath missing or invalid knowledge_kind"
+            }
+            foreach ($field in @("verified_revisions", "conformance_checks", "supersedes", "superseded_by", "revalidation_triggers")) {
+                if ($null -eq $metadata.$field) { $schemaIssues += "$displayPath has invalid or missing $field JSON metadata" }
+            }
+        }
+        if ($knowledgeKind -eq "implementation-fact" -and $conformance.status -ne "passed") {
+            $needsRevalidation += "${displayPath}: $($conformance.status)"
+        }
+        if ($knowledgeKind -eq "procedure" -and $conformance.status -ne "passed") {
+            $needsRevalidation += "${displayPath}: procedure $($conformance.status)"
+        }
+        $confidence = ([string]$entry.confidence).ToLowerInvariant()
+        if ($strictLifecycleSchema -and ($authority -in @("reviewed", "authoritative") -or $confidence -eq "high") -and $conformance.status -ne "passed") {
+            $schemaIssues += "$displayPath reviewed/high-confidence knowledge requires passing conformance before promotion"
+        }
         foreach ($pattern in $forbiddenPatterns) {
             if ($text -match $pattern) {
                 $absolutePathOffenders += "$(Get-KnowledgeDisplayPath -Guide $entry.guide) contains machine-specific path pattern: $pattern"
@@ -1455,6 +1790,9 @@ function Invoke-ValidateKnowledgeIndex {
     if ($invalidAuthorities.Count -gt 0) {
         Set-Blocked $result ("knowledge index entries use invalid authority values: " + (($invalidAuthorities | Select-Object -Unique) -join ", "))
     }
+    if ($schemaIssues.Count -gt 0) {
+        Set-Blocked $result ("knowledge lifecycle schema/conformance issues: " + (($schemaIssues | Select-Object -Unique) -join "; "))
+    }
 
     $result.facts.index = $indexPath
     $result.facts.guide_count = @($entries | Where-Object { $_.guide }).Count
@@ -1464,6 +1802,9 @@ function Invoke-ValidateKnowledgeIndex {
     $result.facts.unknown_repositories = @($unknownRepos | Select-Object -Unique)
     $result.facts.invalid_authorities = @($invalidAuthorities | Select-Object -Unique)
     $result.facts.generated_guides = @($generatedGuides | Select-Object -Unique)
+    $result.facts.lifecycle_schema = if ($strictLifecycleSchema) { "1.2" } else { "legacy" }
+    $result.facts.conformance = $conformanceDetails
+    $result.facts.needs_revalidation = @($needsRevalidation | Select-Object -Unique)
     $result.facts.max_selected_guides = Get-KnowledgeMaxSelected -IndexPath $indexPath
     return $result
 }
@@ -1505,6 +1846,80 @@ function Invoke-ValidateFeatureArtifacts {
             if ($missingForFile.Count -gt 0) {
                 $missingSections += [ordered]@{ file = $file; missing = $missingForFile }
                 Set-Blocked $result ("$file missing required sections: " + ($missingForFile -join ", "))
+            }
+        }
+    }
+
+    $targetProofGate = [ordered]@{
+        checked = $false
+        required = $false
+        gate_status = "not_required"
+        reason = ""
+        missing_fields = @()
+    }
+    if ($Stage -eq "implement") {
+        $normalizedProfile = ([string]$routing.profile).ToLowerInvariant()
+        $normalizedTaskType = ([string]$routing.task_type).ToLowerInvariant()
+        $normalizedRiskLevel = ([string]$routing.risk_level).ToLowerInvariant()
+        $uiRiskFlags = @($routing.risk_flags | Where-Object {
+            ([string]$_).ToLowerInvariant() -match "(ui|frontend|parity|layout|host-cdp|embedded)"
+        })
+        $targetProofGate.required = (
+            $normalizedProfile -eq "full-sdd" -or
+            $normalizedTaskType -match "migration" -or
+            ($normalizedRiskLevel -eq "high" -and $uiRiskFlags.Count -gt 0)
+        )
+        if ($targetProofGate.required) {
+            $targetProofGate.checked = $true
+            $targetProofGate.gate_status = "ok"
+            $targetProofGate.reason = if ($normalizedProfile -eq "full-sdd") {
+                "full-sdd"
+            } elseif ($normalizedTaskType -match "migration") {
+                "migration"
+            } else {
+                "high-risk-ui"
+            }
+            $planPath = Join-Path $FeatureDir "plan.md"
+            if (-not (Test-Path -LiteralPath $planPath -PathType Leaf)) {
+                $targetProofGate.gate_status = "blocked"
+                $targetProofGate.missing_fields = @("plan.md")
+                Set-Blocked $result "Implementation Target Proof requires plan.md"
+            } else {
+                $planText = Get-Content -LiteralPath $planPath -Raw -ErrorAction SilentlyContinue
+                $sectionMatch = [regex]::Match(
+                    [string]$planText,
+                    '(?ms)^## Implementation Target Proof\s*$\s*(.*?)(?=^##\s|\z)'
+                )
+                $requiredLabels = @(
+                    "User entry and observable behavior",
+                    "Runtime trigger / call path",
+                    "Target repositories",
+                    "Target components, source paths, and key symbols",
+                    "Source or runtime evidence",
+                    "Excluded same-name / similar modules and reasons",
+                    "Build target and expected output",
+                    "Install / deploy target and exact input",
+                    "Real validation host, entry, and expected loaded resource"
+                )
+                if (-not $sectionMatch.Success) {
+                    $targetProofGate.missing_fields = @("Implementation Target Proof")
+                } else {
+                    $section = $sectionMatch.Groups[1].Value
+                    foreach ($label in $requiredLabels) {
+                        $valueMatch = [regex]::Match(
+                            $section,
+                            '(?im)^-\s*' + [regex]::Escape($label) + '\s*:\s*(.+?)\s*$'
+                        )
+                        if (-not $valueMatch.Success -or
+                            $valueMatch.Groups[1].Value.Trim() -match '^(TBD|TODO|N/?A|\[.*\])$') {
+                            $targetProofGate.missing_fields += $label
+                        }
+                    }
+                }
+                if ($targetProofGate.missing_fields.Count -gt 0) {
+                    $targetProofGate.gate_status = "blocked"
+                    Set-Blocked $result ("Implementation Target Proof is incomplete: " + ($targetProofGate.missing_fields -join ", "))
+                }
             }
         }
     }
@@ -1610,6 +2025,30 @@ function Invoke-ValidateFeatureArtifacts {
                 Set-Blocked $result $blocker
             }
         }
+
+        $workspacePolicyPath = Join-Path $RepoRoot ".specify/workspace.yml"
+        $linearHistoryRequired = $false
+        if (Test-Path -LiteralPath $workspacePolicyPath -PathType Leaf) {
+            $linearPolicyMatch = Select-String -Path $workspacePolicyPath -Pattern '^\s*forbid_spec_merge_commits:\s*true\s*$' | Select-Object -First 1
+            $linearHistoryRequired = ($null -ne $linearPolicyMatch)
+        }
+        if ($linearHistoryRequired) {
+            $historyInspector = Join-Path $PSScriptRoot "inspect-spec-branch-history.ps1"
+            if (-not (Test-Path -LiteralPath $historyInspector -PathType Leaf)) {
+                Set-Blocked $result "inspect-spec-branch-history.ps1 is required by the workspace branch policy"
+            } else {
+                $historyRaw = & $historyInspector -RepoRoot $RepoRoot -Fetch -Json
+                try {
+                    $historyGate = $historyRaw | ConvertFrom-Json
+                    $result.facts.spec_branch_history_gate = $historyGate.facts
+                    if ($historyGate.status -eq "blocked") {
+                        foreach ($blocker in @($historyGate.blockers)) { Set-Blocked $result $blocker }
+                    }
+                } catch {
+                    Set-Blocked $result "Spec branch linear-history gate did not return valid JSON"
+                }
+            }
+        }
     }
 
     $result.facts.feature_dir = $FeatureDir
@@ -1626,6 +2065,7 @@ function Invoke-ValidateFeatureArtifacts {
     $result.facts.layer_manifest = $manifestPath
     $result.facts.missing_sections = $missingSections
     $result.facts.root_fix_decision_gate = $rootFixGate
+    $result.facts.implementation_target_proof_gate = $targetProofGate
     $result.facts.workpack_outcome_gate = $workpackOutcomeGate
     $result.facts.retrospective_gate = $retrospectiveGate
     $result.facts.implementation_summary_gate = $implementationSummaryGate
@@ -1649,6 +2089,45 @@ function Invoke-ValidateGeneratedContext {
         $workflowPath = ".specify/workflows/speckit/workflow.yml"
     }
     $knowledgeLockPath = Join-Path $RepoRoot ".specify/knowledge/lock.yml"
+    $generatedManifestPath = Join-Path $RepoRoot ".specify/integrations/speckit.manifest.json"
+    $codexManifestPath = Join-Path $RepoRoot ".specify/integrations/codex.manifest.json"
+    $manifestHashMode = (-not $isSourceCheckout -and (Test-Path -LiteralPath $generatedManifestPath -PathType Leaf))
+    $manifestHashDetails = @()
+    if ($manifestHashMode) {
+        $manifestPaths = @($generatedManifestPath)
+        if (Test-Path -LiteralPath $codexManifestPath -PathType Leaf) {
+            $manifestPaths += $codexManifestPath
+        } elseif (Test-Path -LiteralPath (Join-Path $RepoRoot ".agents") -PathType Container) {
+            Set-Blocked $result "codex integration manifest is missing; generated skill hashes cannot be verified"
+        }
+        foreach ($manifestPath in $manifestPaths) {
+            try {
+                $generatedManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+                foreach ($property in @($generatedManifest.files.PSObject.Properties)) {
+                    $relativePath = [string]$property.Name
+                    $isManagedGeneratedAsset = (
+                        $relativePath -match '^\.specify/(scripts|templates|workflows)/' -or
+                        $relativePath -match '^\.agents/'
+                    )
+                    if (-not $isManagedGeneratedAsset) { continue }
+                    $expectedHash = ([string]$property.Value).ToLowerInvariant()
+                    $absolutePath = Join-Path $RepoRoot ($relativePath -replace '/', [IO.Path]::DirectorySeparatorChar)
+                    $exists = Test-Path -LiteralPath $absolutePath -PathType Leaf
+                    $actualHash = if ($exists) { (Get-FileHash -LiteralPath $absolutePath -Algorithm SHA256).Hash.ToLowerInvariant() } else { "" }
+                    $matches = ($exists -and $actualHash -eq $expectedHash)
+                    $manifestHashDetails += [ordered]@{ manifest = Split-Path -Leaf $manifestPath; path = $relativePath; exists = $exists; expected_sha256 = $expectedHash; actual_sha256 = $actualHash; matches = $matches }
+                    if (-not $matches) {
+                        Set-Blocked $result "generated asset differs from $(Split-Path -Leaf $manifestPath): $relativePath"
+                    }
+                }
+            } catch {
+                Set-Blocked $result "generated asset manifest is not valid JSON: $manifestPath"
+            }
+        }
+        if ($manifestHashDetails.Count -eq 0) {
+            Set-Blocked $result "integration manifests contain no generated scripts, skills, templates, or workflows"
+        }
+    }
     $repositoryMapPhrases = @("Project Path Categories", "Target inventory", "Do not write machine-specific absolute paths here")
     if (-not (Test-Path -LiteralPath $knowledgeLockPath -PathType Leaf)) {
         $repositoryMapPhrases += "<workspace-root>/<app-path>/"
@@ -1658,7 +2137,7 @@ function Invoke-ValidateGeneratedContext {
     $checks += @(
         [ordered]@{
             path = $canonicalContextFile
-            phrases = @("Project Path Categories", "best-effort self-validation", "stale/current-feature hint", "read the current plan only", "standard-bugfix-lite", "workpack.md", "implementation-summary.md", "Root-Fix Decision Gate", "select-knowledge", "select-gates", "validate-knowledge-index", "validate-context-budget", "inspect-validation-capabilities", "inspect-workflow-closure", "Commit is opt-in", "preflight-new-workflow", "preflight-push")
+            phrases = @("Project Path Categories", "best-effort self-validation", "stale/current-feature hint", "read the current plan only", "standard-bugfix-lite", "workpack.md", "implementation-summary.md", "Root-Fix Decision Gate", "select-knowledge", "select-gates", "validate-knowledge-index", "validate-context-budget", "inspect-validation-capabilities", "inspect-workflow-closure", "Commit is opt-in", "preflight-new-workflow", "preflight-push", "sync-spec-branches")
         },
         [ordered]@{
             path = if ($isSourceCheckout) { "templates/repository-map-template.md" } else { ".specify/memory/repository-map.md" }
@@ -1703,7 +2182,7 @@ function Invoke-ValidateGeneratedContext {
         }
         $checks += [ordered]@{
             path = "templates/commands/commit.md"
-            phrases = @("validate-feature-artifacts", "Stage commit", "implementation-summary.md", "validation.md", "Root-Fix Decision Gate", "Retrospective/observer/promotion artifacts are optional")
+            phrases = @("validate-feature-artifacts", "Stage commit", "implementation-summary.md", "validation.md", "Root-Fix Decision Gate", "Retrospective/observer/promotion artifacts are optional", "inspect-spec-branch-history")
         }
         $checks += [ordered]@{
             path = "templates/commands/complete-branch.md"
@@ -1872,7 +2351,11 @@ function Invoke-ValidateGeneratedContext {
             source_equal = if ($null -eq $sourceHash) { $null } else { $sourceHash -eq $actualHash }
         }
         if ($missingPhrases.Count -gt 0) {
-            Set-Blocked $result ($check.path + " missing required generated-context phrases: " + ($missingPhrases -join ", "))
+            if ($manifestHashMode) {
+                $result.hints += ($check.path + " semantic canary phrases changed; manifest/hash equivalence remains the primary generated-context gate: " + ($missingPhrases -join ", "))
+            } else {
+                Set-Blocked $result ($check.path + " missing required generated-context phrases: " + ($missingPhrases -join ", "))
+            }
         }
     }
 
@@ -1886,6 +2369,7 @@ function Invoke-ValidateGeneratedContext {
         "post-commit-self-check.ps1",
         "validate-rubric-score.ps1",
         "inspect-workflow-closure.ps1",
+        "inspect-workflow-drift.ps1",
         "collect-workflow-observer-packet.ps1",
         "promote-knowledge-candidates.ps1",
         "cleanup-host-cdp.ps1",
@@ -1895,8 +2379,11 @@ function Invoke-ValidateGeneratedContext {
         "resolve-next-stage.ps1",
         "preflight-new-workflow.ps1",
         "preflight-push.ps1",
+        "inspect-spec-branch-history.ps1",
+        "sync-spec-branches.ps1",
         "sync-native-runtime-artifacts.ps1",
-        "validate-rpc-proto-bundle.ps1"
+        "validate-rpc-proto-bundle.ps1",
+        "validate-plugin-delivery-chain.ps1"
     )
     $runtimeScriptDetails = @()
     foreach ($scriptName in $requiredRuntimeScripts) {
@@ -1912,6 +2399,9 @@ function Invoke-ValidateGeneratedContext {
     $result.facts.repo_root = $RepoRoot
     $result.facts.checked = $details
     $result.facts.runtime_scripts = $runtimeScriptDetails
+    $result.facts.generated_asset_validation_mode = if ($manifestHashMode) { "manifest-sha256" } else { "source-structural-canary" }
+    $result.facts.generated_manifest = if ($manifestHashMode) { @($manifestPaths) } else { @() }
+    $result.facts.generated_asset_hashes = $manifestHashDetails
     return $result
 }
 

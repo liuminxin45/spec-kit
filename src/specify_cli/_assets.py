@@ -69,6 +69,18 @@ def _locate_bundled_workflow(workflow_id: str) -> Path | None:
 
 def get_speckit_version() -> str:
     """Get current spec-kit version."""
+    # Source checkouts may be exercised from a virtual environment that still
+    # contains metadata for an older built distribution. Prefer the checkout's
+    # pyproject in that case; wheels have no repository pyproject here.
+    if _source_checkout_available():
+        try:
+            import tomllib
+
+            with open(_repo_root() / "pyproject.toml", "rb") as f:
+                data = tomllib.load(f)
+                return data.get("project", {}).get("version", "unknown")
+        except Exception:
+            pass
     try:
         return importlib.metadata.version("specify-cli")
     except Exception:

@@ -9,6 +9,7 @@ param(
     [string[]]$RiskFlags = @(),
     [string[]]$CapabilityTags = @(),
     [string[]]$Terms = @(),
+    [switch]$IgnoreActiveFeature,
     [switch]$Json,
     [switch]$Help
 )
@@ -179,7 +180,7 @@ function Read-Routing {
         plan = ""
     }
 
-    if (Test-Path -LiteralPath $routing.feature_json) {
+    if (-not $IgnoreActiveFeature -and (Test-Path -LiteralPath $routing.feature_json)) {
         try {
             $feature = Get-Content -LiteralPath $routing.feature_json -Raw | ConvertFrom-Json
             foreach ($name in @("affected_repositories", "risk_flags", "capability_tags")) {
@@ -254,15 +255,10 @@ $normalizedRepos = @($routing.affected_repositories | ForEach-Object { Normalize
 
 foreach ($entry in $entries) {
     if (-not $entry.path) { continue }
+    if ($Stage -and @($entry.stages) -notcontains $Stage) { continue }
     $score = 0
     $reasons = @()
     $matched = @()
-    foreach ($stageName in @($entry.stages)) {
-        if ($Stage -and $stageName -eq $Stage) {
-            $score += 1
-            $reasons += "stage"
-        }
-    }
     foreach ($repo in @($entry.affected_repositories)) {
         if ($normalizedRepos -contains (Normalize-Token $repo)) {
             $score += 4
@@ -294,7 +290,7 @@ foreach ($entry in $entries) {
     if ($matched.Count -gt 0) {
         $reasons += "matched: " + (($matched | Select-Object -Unique) -join ", ")
     }
-    if ($score -gt 0) {
+    if ($matched.Count -gt 0) {
         $selected += [ordered]@{
             id = $entry.id
             path = "ai/workflows/gates/$($entry.path)"
@@ -316,6 +312,7 @@ $result.facts.affected_repositories = $routing.affected_repositories
 $result.facts.risk_flags = $routing.risk_flags
 $result.facts.capability_tags = $routing.capability_tags
 $result.facts.ai_context_terms = $routing.ai_context_terms
+$result.facts.ignore_active_feature = [bool]$IgnoreActiveFeature
 $result.facts.selected = @($selected)
 $result.facts.omitted_due_to_limit = @($omitted)
 if ($selected.Count -eq 0) {

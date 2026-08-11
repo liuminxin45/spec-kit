@@ -32,6 +32,43 @@ def run_git(repo: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def write_gerrit_workspace(root: Path, repo: Path, branch: str = "feature", entry: str = "main") -> None:
+    specify = root / ".specify"
+    specify.mkdir(exist_ok=True)
+    repo_path = "." if root == repo else repo.name
+    (specify / "workspace.yml").write_text(
+        "\n".join(
+            [
+                'workspace:',
+                '  root: "."',
+                '  default_base_branch: "main"',
+                'branch_policy:',
+                '  remote_kind: "gerrit"',
+                '  workflow_push_allowed: false',
+                '  midflow_sync_strategy: "fetch-rebase"',
+                '  forbid_spec_merge_commits: true',
+                '  require_existing_remote_entry_branch: true',
+                'repositories:',
+                '  - name: "repo"',
+                f'    path: "{repo_path}"',
+                '    required: true',
+                '',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (specify / "feature.json").write_text(
+        json.dumps(
+            {
+                "spec_branch": branch,
+                "entry_branch": entry,
+                "completion_targets": [{"repository": "repo", "branch": entry}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def write_closure_artifacts(repo: Path, branch: str = "feature") -> None:
     feature_dir = repo / "specs" / branch
     feature_dir.mkdir(parents=True, exist_ok=True)
@@ -3203,11 +3240,36 @@ def test_open_source_readme_documents_pack_and_generated_knowledge_starts():
     assert ".specify/knowledge-bootstrap/ai-review/" in readme
     assert "Project-specific facts belong" in readme
     assert "validate-knowledge-pack.ps1" in readme
+
+
+def test_local_distribution_documentation_is_ai_actionable():
+    readme = read_text("README.md")
+    guide = read_text("docs/local-install-and-knowledge-mount.md")
+    builder = read_text("scripts/powershell/build-local-distribution.ps1")
+    installer = read_text("scripts/powershell/install-local-bundle.ps1")
+
+    assert "build-local-distribution.ps1" in readme
+    assert "Install-Local.ps1" in guide
+    assert "default_compose_order" in guide
+    assert "不得自动运行 `promote-candidates`" in guide
+    assert "validate-knowledge-pack.ps1" in builder
+    assert "install-knowledge-pack.ps1" in installer
+    assert "compose-knowledge-packs.ps1" in installer
     assert "github/spec-kit" in readme
     assert "本仓库不是 GitHub 官方项目" in readme
     assert "specify upgrade --project-dir <project-dir> --dry-run" in readme
     assert ".specify/spec-kit.lock.yml" in readme
     assert ".specify/integrations/speckit.manifest.json" in readme
+
+
+def test_open_source_distribution_defaults_to_no_knowledge_packs():
+    builder = read_text("scripts/powershell/build-local-distribution.ps1")
+    python_builder = read_text("scripts/python/build_local_distribution.py")
+    local_tools = read_text("scripts/powershell/spec-kit-local-tools.md")
+
+    assert "[string[]]$KnowledgePack = @()" in builder
+    assert "if not args.knowledge_pack" not in python_builder
+    assert "does not select or bundle\nproject knowledge by default" in local_tools
 
 
 def test_init_wrapper_documents_layered_assets_and_cherry_pick_completion():
@@ -3559,3 +3621,329 @@ def test_mcp_agent_config_requires_compatible_global_node(tmp_path):
     assert "requires Node.js" in combined_output
     assert "^20.19.0 || ^22.12.0 || >=23" in combined_output
     assert "with -SkipMcpAgentConfig" in combined_output
+
+
+def test_gerrit_history_inspector_and_push_preflight_block_spec_merge(tmp_path):
+    remote = tmp_path / "remote.git"
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "spec-kit@example.invalid")
+    run_git(repo, "config", "user.name", "Spec Kit Test")
+    (repo / "base.txt").write_text("base\n", encoding="utf-8")
+    run_git(repo, "add", "base.txt")
+    run_git(repo, "commit", "-m", "base")
+    run_git(repo, "remote", "add", "origin", str(remote))
+    run_git(repo, "push", "-u", "origin", "main")
+    run_git(repo, "switch", "-c", "feature")
+    (repo / "feature.txt").write_text("feature\n", encoding="utf-8")
+    run_git(repo, "add", "feature.txt")
+    run_git(repo, "commit", "-m", "feature")
+    run_git(repo, "switch", "main")
+    (repo / "remote.txt").write_text("remote\n", encoding="utf-8")
+    run_git(repo, "add", "remote.txt")
+    run_git(repo, "commit", "-m", "remote update")
+    run_git(repo, "push", "origin", "main")
+    run_git(repo, "switch", "feature")
+    run_git(repo, "merge", "--no-edit", "origin/main")
+    write_gerrit_workspace(tmp_path, repo)
+
+    inspector = REPO_ROOT / "scripts" / "powershell" / "inspect-spec-branch-history.ps1"
+    inspected = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(inspector), "-RepoRoot", str(tmp_path), "-Fetch", "-Json"],
+        text=True, encoding="utf-8", errors="replace", capture_output=True, check=False,
+    )
+    assert inspected.returncode != 0
+    inspection = json.loads(inspected.stdout)
+    record = inspection["facts"]["repositories"][0]
+    assert record["status"] == "merge-history-blocked"
+    assert len(record["merge_commits"]) == 1
+    assert record["has_upstream"] is False
+
+    push_preflight = REPO_ROOT / "scripts" / "powershell" / "preflight-push.ps1"
+    audited = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(push_preflight), "-RepoRoot", str(repo), "-Branch", "feature", "-Json"],
+        text=True, encoding="utf-8", errors="replace", capture_output=True, check=False,
+    )
+    assert audited.returncode != 0
+    audit = json.loads(audited.stdout)
+    assert audit["facts"]["workflow_push_forbidden"] is True
+    assert audit["facts"]["remote_target_exists"] is True
+    assert len(audit["facts"]["merge_commits"]) == 1
+    assert "PR branch" not in "\n".join(audit["hints"] + audit["blockers"])
+
+
+def test_gerrit_delegated_push_requires_current_human_approval(tmp_path):
+    remote = tmp_path / "remote.git"
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "spec-kit@example.invalid")
+    run_git(repo, "config", "user.name", "Spec Kit Test")
+    (repo / "base.txt").write_text("base\n", encoding="utf-8")
+    run_git(repo, "add", "base.txt")
+    run_git(repo, "commit", "-m", "base")
+    run_git(repo, "remote", "add", "origin", str(remote))
+    run_git(repo, "push", "-u", "origin", "main")
+    (repo / "delivery.txt").write_text("delivery\n", encoding="utf-8")
+    run_git(repo, "add", "delivery.txt")
+    run_git(repo, "commit", "-m", "delivery")
+    write_gerrit_workspace(tmp_path, repo, branch="feature", entry="main")
+    workspace = tmp_path / ".specify" / "workspace.yml"
+    workspace.write_text(
+        workspace.read_text(encoding="utf-8").replace(
+            "workflow_push_allowed: false",
+            "workflow_push_allowed: explicit-human-approval",
+        ),
+        encoding="utf-8",
+    )
+    preflight = REPO_ROOT / "scripts" / "powershell" / "preflight-push.ps1"
+
+    blocked = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(preflight), "-RepoRoot", str(repo),
+         "-Branch", "main", "-TargetBranch", "main", "-Json"],
+        text=True, encoding="utf-8", errors="replace", capture_output=True, check=False,
+    )
+    assert blocked.returncode != 0
+    blocked_payload = json.loads(blocked.stdout)
+    assert blocked_payload["facts"]["human_push_approval_required"] is True
+    assert blocked_payload["facts"]["human_push_approved"] is False
+    assert "human_push_approval_required" in "\n".join(blocked_payload["blockers"])
+
+    approved = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(preflight), "-RepoRoot", str(repo),
+         "-Branch", "main", "-TargetBranch", "main", "-ConfirmHumanPush", "-Json"],
+        text=True, encoding="utf-8", errors="replace", capture_output=True, check=False,
+    )
+    assert approved.returncode == 0
+    approved_payload = json.loads(approved.stdout)
+    assert approved_payload["status"] == "ok"
+    assert approved_payload["facts"]["human_push_approved"] is True
+    assert approved_payload["facts"]["ahead"] == 1
+    assert approved_payload["facts"]["behind"] == 0
+    assert approved_payload["facts"]["merge_commits"] == []
+
+
+def test_sync_spec_branches_fetch_rebases_without_upstream_or_merge(tmp_path):
+    remote = tmp_path / "remote.git"
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "spec-kit@example.invalid")
+    run_git(repo, "config", "user.name", "Spec Kit Test")
+    (repo / "base.txt").write_text("base\n", encoding="utf-8")
+    run_git(repo, "add", "base.txt")
+    run_git(repo, "commit", "-m", "base")
+    run_git(repo, "remote", "add", "origin", str(remote))
+    run_git(repo, "push", "-u", "origin", "main")
+    run_git(repo, "switch", "-c", "feature")
+    (repo / "feature.txt").write_text("feature\n", encoding="utf-8")
+    run_git(repo, "add", "feature.txt")
+    run_git(repo, "commit", "-m", "feature")
+    run_git(repo, "switch", "main")
+    (repo / "remote.txt").write_text("remote\n", encoding="utf-8")
+    run_git(repo, "add", "remote.txt")
+    run_git(repo, "commit", "-m", "remote update")
+    run_git(repo, "push", "origin", "main")
+    run_git(repo, "switch", "feature")
+    write_gerrit_workspace(tmp_path, repo)
+
+    sync = REPO_ROOT / "scripts" / "powershell" / "sync-spec-branches.ps1"
+    preflight = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(sync), "-RepoRoot", str(tmp_path), "-PreflightOnly", "-Json"],
+        text=True, encoding="utf-8", errors="replace", capture_output=True, check=True,
+    )
+    assert json.loads(preflight.stdout)["facts"]["repositories"][0]["planned_action"] == "fetch-rebase"
+    completed = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(sync), "-RepoRoot", str(tmp_path), "-ConfirmSync", "-Json"],
+        text=True, encoding="utf-8", errors="replace", capture_output=True, check=True,
+    )
+    result = json.loads(completed.stdout)
+    assert result["action"] == "completed"
+    assert result["facts"]["repositories"][0]["status"] == "rebased-linear"
+    assert run_git(repo, "rev-list", "--merges", "origin/main..feature") == ""
+    subprocess.run(["git", "-C", str(repo), "merge-base", "--is-ancestor", "origin/main", "feature"], check=True)
+    upstream = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "feature@{upstream}"],
+        capture_output=True, text=True, check=False,
+    )
+    assert upstream.returncode != 0
+
+
+def test_sync_spec_branches_blocks_tracked_dirty_without_switching(tmp_path):
+    remote = tmp_path / "remote.git"
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "spec-kit@example.invalid")
+    run_git(repo, "config", "user.name", "Spec Kit Test")
+    (repo / "base.txt").write_text("base\n", encoding="utf-8")
+    run_git(repo, "add", "base.txt")
+    run_git(repo, "commit", "-m", "base")
+    run_git(repo, "remote", "add", "origin", str(remote))
+    run_git(repo, "push", "-u", "origin", "main")
+    run_git(repo, "switch", "-c", "feature")
+    (repo / "base.txt").write_text("dirty\n", encoding="utf-8")
+    write_gerrit_workspace(tmp_path, repo)
+
+    sync = REPO_ROOT / "scripts" / "powershell" / "sync-spec-branches.ps1"
+    checked = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(sync), "-RepoRoot", str(tmp_path), "-ConfirmSync", "-Json"],
+        text=True, encoding="utf-8", errors="replace", capture_output=True, check=False,
+    )
+    assert checked.returncode != 0
+    payload = json.loads(checked.stdout)
+    assert payload["facts"]["repositories"][0]["status"] == "dirty"
+    assert run_git(repo, "branch", "--show-current") == "feature"
+    assert (repo / "base.txt").read_text(encoding="utf-8") == "dirty\n"
+
+
+def test_sync_spec_branches_aborts_conflict_and_restores_original_branch(tmp_path):
+    remote = tmp_path / "remote.git"
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "spec-kit@example.invalid")
+    run_git(repo, "config", "user.name", "Spec Kit Test")
+    (repo / "shared.txt").write_text("base\n", encoding="utf-8")
+    run_git(repo, "add", "shared.txt")
+    run_git(repo, "commit", "-m", "base")
+    run_git(repo, "remote", "add", "origin", str(remote))
+    run_git(repo, "push", "-u", "origin", "main")
+    run_git(repo, "switch", "-c", "feature")
+    (repo / "shared.txt").write_text("feature\n", encoding="utf-8")
+    run_git(repo, "add", "shared.txt")
+    run_git(repo, "commit", "-m", "feature")
+    feature_head = run_git(repo, "rev-parse", "feature")
+    run_git(repo, "switch", "main")
+    (repo / "shared.txt").write_text("remote\n", encoding="utf-8")
+    run_git(repo, "add", "shared.txt")
+    run_git(repo, "commit", "-m", "remote update")
+    run_git(repo, "push", "origin", "main")
+    write_gerrit_workspace(tmp_path, repo)
+
+    sync = REPO_ROOT / "scripts" / "powershell" / "sync-spec-branches.ps1"
+    completed = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(sync), "-RepoRoot", str(tmp_path), "-ConfirmSync", "-Json"],
+        text=True, encoding="utf-8", errors="replace", capture_output=True, check=False,
+    )
+    assert completed.returncode != 0
+    payload = json.loads(completed.stdout)
+    record = payload["facts"]["repositories"][0]
+    assert record["status"] == "rebase-conflict"
+    assert record["restored_original_branch"] is True
+    assert run_git(repo, "branch", "--show-current") == "main"
+    assert run_git(repo, "rev-parse", "feature") == feature_head
+    assert not (repo / ".git" / "REBASE_HEAD").exists()
+
+
+def test_gerrit_history_inspector_blocks_missing_remote_entry(tmp_path):
+    remote = tmp_path / "remote.git"
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "spec-kit@example.invalid")
+    run_git(repo, "config", "user.name", "Spec Kit Test")
+    (repo / "base.txt").write_text("base\n", encoding="utf-8")
+    run_git(repo, "add", "base.txt")
+    run_git(repo, "commit", "-m", "base")
+    run_git(repo, "remote", "add", "origin", str(remote))
+    run_git(repo, "switch", "-c", "feature")
+    write_gerrit_workspace(tmp_path, repo)
+
+    inspector = REPO_ROOT / "scripts" / "powershell" / "inspect-spec-branch-history.ps1"
+    inspected = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(inspector), "-RepoRoot", str(tmp_path), "-Fetch", "-Json"],
+        text=True, encoding="utf-8", errors="replace", capture_output=True, check=False,
+    )
+    assert inspected.returncode != 0
+    payload = json.loads(inspected.stdout)
+    assert payload["facts"]["repositories"][0]["status"] == "remote-target-missing"
+    assert "refs/heads/main" in "\n".join(payload["blockers"])
+
+
+def test_complete_branch_preflight_blocks_merge_history_in_gerrit_workspace(tmp_path):
+    remote = tmp_path / "remote.git"
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "spec-kit@example.invalid")
+    run_git(repo, "config", "user.name", "Spec Kit Test")
+    (repo / "base.txt").write_text("base\n", encoding="utf-8")
+    run_git(repo, "add", "base.txt")
+    run_git(repo, "commit", "-m", "base")
+    run_git(repo, "remote", "add", "origin", str(remote))
+    run_git(repo, "push", "-u", "origin", "main")
+    run_git(repo, "switch", "-c", "feature")
+    (repo / "feature.txt").write_text("feature\n", encoding="utf-8")
+    run_git(repo, "add", "feature.txt")
+    run_git(repo, "commit", "-m", "feature")
+    run_git(repo, "switch", "main")
+    (repo / "remote.txt").write_text("remote\n", encoding="utf-8")
+    run_git(repo, "add", "remote.txt")
+    run_git(repo, "commit", "-m", "remote update")
+    run_git(repo, "push", "origin", "main")
+    run_git(repo, "switch", "feature")
+    run_git(repo, "merge", "--no-edit", "origin/main")
+    write_gerrit_workspace(repo, repo, branch="feature", entry="main")
+    write_closure_artifacts(repo)
+
+    complete = REPO_ROOT / "scripts" / "powershell" / "complete-spec-branches.ps1"
+    checked = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(complete), "-Branch", "feature", "-PreflightOnly", "-Json"],
+        cwd=repo, text=True, encoding="utf-8", errors="replace", capture_output=True, check=False,
+    )
+    assert checked.returncode != 0
+    payload = json.loads(checked.stdout)
+    assert payload["preflight"][0]["status"] == "merge-history-blocked"
+    assert len(payload["preflight"][0]["merge_commits"]) == 1
+
+
+def test_complete_branch_fast_forwards_existing_entry_before_cherry_pick(tmp_path):
+    remote = tmp_path / "remote.git"
+    repo = tmp_path / "repo"
+    writer = tmp_path / "writer"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "spec-kit@example.invalid")
+    run_git(repo, "config", "user.name", "Spec Kit Test")
+    (repo / "base.txt").write_text("base\n", encoding="utf-8")
+    run_git(repo, "add", "base.txt")
+    run_git(repo, "commit", "-m", "base")
+    run_git(repo, "remote", "add", "origin", str(remote))
+    run_git(repo, "push", "-u", "origin", "main")
+    run_git(repo, "switch", "-c", "feature")
+    (repo / "feature.txt").write_text("feature\n", encoding="utf-8")
+    run_git(repo, "add", "feature.txt")
+    run_git(repo, "commit", "-m", "feature")
+
+    subprocess.run(["git", "clone", "-b", "main", str(remote), str(writer)], check=True, capture_output=True, text=True)
+    run_git(writer, "config", "user.email", "spec-kit@example.invalid")
+    run_git(writer, "config", "user.name", "Spec Kit Test")
+    (writer / "remote.txt").write_text("remote\n", encoding="utf-8")
+    run_git(writer, "add", "remote.txt")
+    run_git(writer, "commit", "-m", "remote update")
+    run_git(writer, "push", "origin", "main")
+
+    run_git(repo, "fetch", "origin", "main")
+    run_git(repo, "rebase", "origin/main")
+    write_gerrit_workspace(repo, repo, branch="feature", entry="main")
+    write_closure_artifacts(repo)
+    complete = REPO_ROOT / "scripts" / "powershell" / "complete-spec-branches.ps1"
+    completed = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(complete), "-Branch", "feature", "-ConfirmCompletion", "-Json"],
+        cwd=repo, text=True, encoding="utf-8", errors="replace", capture_output=True, check=True,
+    )
+    payload = json.loads(completed.stdout)
+    assert payload["preflight"][0]["fast_forward_required"] is True
+    assert run_git(repo, "branch", "--show-current") == "main"
+    assert run_git(repo, "rev-list", "--merges", "origin/main..main") == ""
+    assert run_git(repo, "log", "-1", "--pretty=%s") == "feature"

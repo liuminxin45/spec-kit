@@ -33,8 +33,10 @@ try {
         }
 
         $indexPath = Join-Path $packRootResolved "ai\knowledge\index.yml"
-        if (-not (Test-Path -LiteralPath $indexPath -PathType Leaf)) {
-            Set-KnowledgePackBlocked $result "ai/knowledge/index.yml not found"
+        $indexOverlayPath = Join-Path $packRootResolved "ai\knowledge\index.overlay.json"
+        $isDeltaOverlay = Test-Path -LiteralPath $indexOverlayPath -PathType Leaf
+        if (-not (Test-Path -LiteralPath $indexPath -PathType Leaf) -and -not $isDeltaOverlay) {
+            Set-KnowledgePackBlocked $result "ai/knowledge/index.yml or index.overlay.json not found"
         }
 
         $missingGuides = @()
@@ -43,6 +45,7 @@ try {
         $invalidAuthorities = @()
         $validAuthorities = @("generated", "reviewed", "authoritative", "")
 
+        $knowledgeEntries = @()
         if (Test-Path -LiteralPath $indexPath -PathType Leaf) {
             $indexText = Get-Content -LiteralPath $indexPath -Raw
             foreach ($phrase in @("repository_map_authority", "no_full_text_search_required", "max_selected_guides")) {
@@ -51,7 +54,23 @@ try {
                 }
             }
 
-            foreach ($entry in Get-KnowledgePackIndexEntries -IndexPath $indexPath) {
+            $knowledgeEntries = @(Get-KnowledgePackIndexEntries -IndexPath $indexPath)
+        } elseif ($isDeltaOverlay) {
+            try {
+                $overlay = Get-Content -LiteralPath $indexOverlayPath -Raw | ConvertFrom-Json
+                $knowledgeEntries = @($overlay.entries)
+                foreach ($entry in $knowledgeEntries) {
+                    if ([string]::IsNullOrWhiteSpace([string]$entry.category) -or [string]::IsNullOrWhiteSpace([string]$entry.key)) {
+                        Set-KnowledgePackBlocked $result "index.overlay.json entries require category and key"
+                    }
+                }
+            } catch {
+                Set-KnowledgePackBlocked $result "index.overlay.json is not valid JSON"
+            }
+        }
+
+        if ($knowledgeEntries.Count -gt 0) {
+            foreach ($entry in $knowledgeEntries) {
                 $authority = if ($entry.authority) { $entry.authority.ToString().Trim().ToLowerInvariant() } else { "" }
                 if ($validAuthorities -notcontains $authority) {
                     $invalidAuthorities += "$($entry.category).$($entry.key): $authority"
@@ -77,7 +96,7 @@ try {
                 if ($lineCount -gt 220) {
                     $oversizedGuides += "$(Get-KnowledgePackDisplayPath -Guide $entry.guide) has $lineCount lines"
                 }
-            }
+        }
         }
 
         if ($missingGuides.Count -gt 0) {
@@ -311,8 +330,9 @@ try {
         $result.facts.kind = $info.kind
         $result.facts.manifest = $info.manifest
         $result.facts.compose_strategy = $strategy
-        $result.facts.index = $indexPath
-        $result.facts.guide_count = @(Get-KnowledgePackIndexEntries -IndexPath $indexPath | Where-Object { $_.guide }).Count
+        $result.facts.index = if ($isDeltaOverlay) { $indexOverlayPath } else { $indexPath }
+        $result.facts.index_mode = if ($isDeltaOverlay) { "delta-overlay" } else { "full-index" }
+        $result.facts.guide_count = @($knowledgeEntries | Where-Object { $_.guide }).Count
         $result.facts.missing_guides = @($missingGuides | Select-Object -Unique)
         $result.facts.absolute_path_offenders = @($absolutePathOffenders | Select-Object -Unique)
         $result.facts.oversized_guides = @($oversizedGuides | Select-Object -Unique)

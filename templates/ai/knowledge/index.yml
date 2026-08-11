@@ -1,4 +1,4 @@
-schema_version: "1.1"
+schema_version: "1.2"
 purpose: >
   Deterministic, low-context knowledge routing for Spec Kit workspaces. This
   index ships as an open-source skeleton: it preserves the knowledge framework
@@ -13,6 +13,8 @@ policy:
   max_selected_guides: 3
   default_authority: "generated"
   authority_levels: [generated, reviewed, authoritative]
+  knowledge_kinds: [policy, implementation-fact, procedure]
+  revalidation_rule: "Implementation facts and procedures are selectable only while verified revisions and conformance checks pass; policy conformance failures must be reported as source-not-implemented."
   forbidden:
     - "Do not override repository ownership from repository-map.md."
     - "Do not store machine-specific absolute paths."
@@ -48,7 +50,6 @@ workspace:
     tags: ["clarification", "human-review", "decision"]
     load_when:
       - "Clarify/test-plan/quality choices require human review before continuing."
-
 repositories:
   # Repository entries are intentionally empty in the default template.
   # Run the knowledge-bootstrap command in a real workspace to create drafts

@@ -7,6 +7,12 @@ workspace:
 branch_policy:
   local_only: true
   push_remote: false
+  remote_kind: "generic"
+  # Supported values: false, true, explicit-human-approval.
+  workflow_push_allowed: false
+  midflow_sync_strategy: "fetch-rebase"
+  forbid_spec_merge_commits: true
+  require_existing_remote_entry_branch: false
   same_branch_across_repos: true
   require_clean_worktree: true
   complete_by_cherry_picking_to_base: true

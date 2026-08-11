@@ -301,6 +301,7 @@ layers:
       - "templates/workflow-state-template.json"
       - "templates/commands/*.md"
       - "scripts/powershell/select-gates.ps1"
+      - "scripts/powershell/inspect-workflow-drift.ps1"
       - "scripts/powershell/validate-implementation-slices.ps1"
       - "scripts/powershell/validate-generated-context.ps1"
     generated_assets:
@@ -395,8 +396,11 @@ layers:
       - "scripts/powershell/suggest-validation.ps1"
       - "scripts/powershell/inspect-commit-scope.ps1"
       - "scripts/powershell/complete-spec-branches.ps1"
+      - "scripts/powershell/inspect-spec-branch-history.ps1"
+      - "scripts/powershell/sync-spec-branches.ps1"
       - "scripts/powershell/parse-promotion-candidates.ps1"
       - "scripts/powershell/inspect-workflow-closure.ps1"
+      - "scripts/powershell/validate-plugin-delivery-chain.ps1"
       - "scripts/powershell/collect-workflow-observer-packet.ps1"
       - "scripts/powershell/promote-knowledge-candidates.ps1"
     generated_assets:

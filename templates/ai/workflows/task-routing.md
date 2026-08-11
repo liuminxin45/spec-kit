@@ -47,7 +47,14 @@ Before intake writes feature state, run `preflight-new-workflow`. Dirty worktree
 Workflow hooks are optional and default off. Load `.specify/workflow-hooks.yml` only when present. Dispatch selected hooks with `specify workflow invoke-hooks`; `workflow-agent-chain` hooks run serially and may continue only when `auto_continue=true`.
 
 ## Drift Checks
-After Spec Kit template or shared-context changes, run `validate-generated-context`, `validate-knowledge-index`, and `validate-context-budget` before relying on regenerated defaults.
+At every feature stage entry, after a failed attempt, and on the first
+continuation after context compaction, run `inspect-workflow-drift`, then rerun
+`select-gates` and `select-knowledge` from explicit current scope. If target
+component, repository, build scope, or delivery mode changed, stop for a scope
+amendment; route an independent issue to a follow-up workflow. After Spec Kit
+template or shared-context changes, run `validate-generated-context`,
+`validate-knowledge-index`, and `validate-context-budget` before relying on
+regenerated defaults.
 
 ## Delivery Rules
 - Always read repository-map before broad source scanning.
@@ -57,6 +64,10 @@ After Spec Kit template or shared-context changes, run `validate-generated-conte
 - Durable fixes must target repository source, not generated outputs, installed runtime directories, caches, or built artifacts.
 - Source/runtime artifact mismatch must be fixed in source before acceptance or commit when a selected gate requires runtime delivery evidence.
 - Push, remote tracking, branch completion, and destructive operations require explicit human approval.
+- Active local Spec branches never use `git pull`, `git merge`, or
+  `--rebase-merges`. Route mid-workflow base updates through
+  `sync-spec-branches` fetch/rebase preflight; any merge commit in the Spec
+  range blocks commit, complete-branch, and push preflight.
 
 ## Final Response Guard
 Run `inspect-workflow-closure` before final response only when feature state indicates accepted implementation, commit, strict self-check, or rubric work. If it reports a default-stage blocker, execute or report that blocker. Opt-in governance artifacts are not required unless the selected path requested them.

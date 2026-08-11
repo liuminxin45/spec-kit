@@ -5,6 +5,7 @@ source_of_truth:
   - ".specify/memory/repository-map.md Project Path Categories"
   - "inspect-plugin-build-plan facts"
   - "validate-plugin-package facts"
+  - "validate-plugin-delivery-chain facts"
 required_when:
   - "frontend, native, JS, or integrated plugin source changes affect delivery"
 minimal_context:
@@ -13,11 +14,15 @@ steps:
   - "Use inspect-plugin-build-plan before broad build-script searching."
   - "Run the shared plugin package/build command."
   - "Run validate-plugin-package against the produced .plugin artifact."
+  - "Install only the explicit .plugin from the current build result; do not rescan an output directory to infer the input."
+  - "Run validate-plugin-delivery-chain for all affected plugins before validation completion."
 evidence:
   - "Package command and result."
   - "Final .plugin path, size, and hash."
+  - "Exact install input and source/staging/package/runtime content identity for critical native/resource files."
 blockers:
   - "No deterministic plugin package command can be identified."
   - "Final .plugin package is missing or invalid."
+  - "Same id/version/timestamp is used as artifact identity, or any affected plugin delivery chain is incomplete."
 context_to_avoid:
   - "Treating dist/, export/, plugin-out/, or runtime replacement as final plugin delivery evidence."

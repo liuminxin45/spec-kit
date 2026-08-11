@@ -77,6 +77,7 @@ Create the smallest useful planning artifact:
 9. For `plan.md`, keep only decision-critical sections:
    - human summary
    - AI Context Contract
+   - Implementation Target Proof for `full-sdd`, migrations, and high-risk UI/runtime work: user entry, runtime path, repository/component/source path/key symbol, source or runtime evidence, excluded similar modules, build output, exact install/deploy input, and real validation target
    - Root Cause Evidence and Root-Fix Decision Gate when applicable
    - affected modules and ownership boundaries
    - selected gate/knowledge ids
@@ -93,6 +94,10 @@ Create the smallest useful planning artifact:
 ## Planning Rules
 
 - Prefer existing architecture and helper APIs.
+- Before writing a required Implementation Target Proof, perform bounded source
+  verification in the affected repositories. A matching filename, component
+  name, package id, or adjacent module is not enough without entry/call-path or
+  runtime evidence.
 - Put avoided context under `Context To Avoid`; do not stuff plans with broad background.
 - Use bounded search from repository-map and affected repositories with `rg`.
 - If root cause is unknown, write a bounded fact-layer slice before source edits.

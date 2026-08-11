@@ -89,8 +89,18 @@ investigation scope is bounded and whether implementation is still blocked.
    - Requirements to plan decisions.
    - Plan decisions to tasks.
    - Contracts and validation expectations to tasks.
+   - For `full-sdd`, migration, and high-risk UI/runtime work, cross-check the
+     plan's `Implementation Target Proof` against bounded source/runtime facts:
+     user entry, call path, repository/component/path/key symbol, excluded
+     similar targets, build output, exact install/deploy input, and real
+     validation host/resource. Artifact-to-artifact consistency is not proof
+     that the selected source target is real or reachable.
 
 5. Identify issues:
+   - Missing, stale, contradictory, or source-unproven `Implementation Target
+     Proof` when the routing profile or risk requires it. Treat an incorrect
+     target repository/component as CRITICAL and insufficient entry/call-path
+     evidence as HIGH.
    - Missing or conflicting requirements.
    - Plan decisions unsupported by the spec.
    - Tasks that implement behavior not planned or specified.

@@ -30,6 +30,7 @@ Complete an accepted local Spec branch only when the user explicitly asks for br
 1. Run `inspect-workflow-closure`; block only on default delivery issues such as missing implementation summary, missing validation, failing root-fix closure, or unresolved commit hook rework. Do not require retrospective, workflow-observer, post-commit self-check, or rubric unless the user selected strict governance.
 2. Run preflight:
    - PowerShell: `.specify/scripts/powershell/complete-spec-branches.ps1 -Json -PreflightOnly`
+   - Preflight fetches only each recorded existing Gerrit entry branch and blocks missing targets, Spec-range merge commits, upstreams, and ahead/diverged local entry branches.
 3. Show every affected repository:
    - repository path
    - current branch
@@ -42,6 +43,7 @@ Complete an accepted local Spec branch only when the user explicitly asks for br
 5. Ask for explicit human approval for this preflight result.
 6. After approval, run:
    - PowerShell: `.specify/scripts/powershell/complete-spec-branches.ps1 -Json -ConfirmCompletion`
+   - A behind-only local entry branch is fast-forwarded to the fetched remote ref without merge before linear Spec commits are cherry-picked.
 7. Verify:
    - affected repositories are on the recorded entry branch
    - local spec branch still exists
@@ -55,6 +57,7 @@ Complete an accepted local Spec branch only when the user explicitly asks for br
 - Never cherry-pick without explicit approval for this preflight result.
 - Never delete the local spec branch by default.
 - Never push from this stage.
+- Never run `git pull`, `git merge`, or `--rebase-merges`; an existing merge node requires a separately approved local history repair.
 - Ignore only clearly generated/temp/local artifacts; do not hide source work.
 - Resolve generated-artifact conflicts by keeping the base artifact when safe; source conflicts require semantic confidence or human input.
 

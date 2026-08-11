@@ -29,7 +29,7 @@ context_policy:
     - "ai/templates/*"
 
 requires:
-  speckit_version: ">=0.10.3"
+  speckit_version: ">=0.10.4"
 
 inputs:
   spec:
@@ -166,6 +166,9 @@ conditional_stages:
   complete-branch: "Opt-in branch-state mutation after explicit human approval."
 
 stage_gate_policy:
+  workflow_scope_drift:
+    command: "inspect-workflow-drift"
+    rule: "At every feature stage entry, after failed rework, and on the first continuation after context compaction, compare the recorded scope revision and target proof, then rerun gate and knowledge routing. Target repository/component/build/delivery changes require a scope amendment; independent issues require a follow-up workflow."
   new_workflow_preflight:
     command: "preflight-new-workflow"
     stage: "new-workflow-preflight"

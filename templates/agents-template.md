@@ -96,8 +96,8 @@ This avoids stale knowledge and keeps AI coding context bounded.
 - Complete-branch is a local branch-state mutation: preflight may run
   automatically, but cherry-pick requires explicit human approval and
   `-ConfirmCompletion`.
-- Push is outside the default workflow. Prefer PR-first; any exceptional push
-  requires explicit human approval and `preflight-push`.
+- Push is outside the default workflow; any exception requires explicit human approval and `preflight-push`.
+- Local Spec branches stay linear and local-only: never pull, merge, use `--rebase-merges`, set upstream, or push. With Gerrit `fetch-rebase`, only `sync-spec-branches` may fetch the recorded existing entry branch and rebase after explicit approval; merge commits block commit, completion, and push preflight.
 - Before final response after human acceptance, commit, strict self-check, or
   rubric work, run `inspect-workflow-closure`. If it reports a default-stage
   blocker, execute or report that blocker. Opt-in governance artifacts are not

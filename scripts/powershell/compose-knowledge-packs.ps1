@@ -80,6 +80,7 @@ try {
         $baseKnowledgeIncluded = $false
 
         $applied = @()
+        $indexOverlayChanges = @()
         $capabilityApplied = @()
         $aliases = [ordered]@{}
         $capabilitiesRoot = Join-Path $root ".specify\capabilities"
@@ -130,6 +131,16 @@ try {
                 $materializedInitialized = $true
             }
             Copy-KnowledgePackDirectory -Source $packKnowledge -Destination $materialized
+            $indexOverlayPath = Join-Path $packKnowledge "index.overlay.json"
+            if (Test-Path -LiteralPath $indexOverlayPath -PathType Leaf) {
+                $materializedIndex = Join-Path $materialized "index.yml"
+                $changes = @(Merge-KnowledgePackIndexOverlay -IndexPath $materializedIndex -OverlayPath $indexOverlayPath)
+                $indexOverlayChanges += [ordered]@{ pack_id = $slug; entries = $changes }
+                $copiedOverlayPath = Join-Path $materialized "index.overlay.json"
+                if (Test-Path -LiteralPath $copiedOverlayPath -PathType Leaf) {
+                    Remove-Item -LiteralPath $copiedOverlayPath -Force
+                }
+            }
             $layers = Get-KnowledgePackCapabilityLayers -PackRoot $packRoot
             foreach ($layerName in Get-KnowledgePackCapabilityLayerNames) {
                 $layer = $layers[$layerName]
@@ -360,6 +371,7 @@ try {
             $result.facts.published_capabilities = $publishedCapabilities
             $result.facts.base_knowledge_included = $baseKnowledgeIncluded
             $result.facts.aliases_applied = $aliases
+            $result.facts.index_overlay_changes = $indexOverlayChanges
             $result.facts.alias_changed_files = @($aliasChanged | ForEach-Object {
                 try {
                     [System.IO.Path]::GetRelativePath($root, $_).Replace('\', '/')

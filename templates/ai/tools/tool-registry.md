@@ -28,6 +28,8 @@ sufficiency, and tradeoff decisions.
 | Repository map skill | `.agents/spec-kit/skills/speckit-repository-map` | Repository role and path facts | Do not infer roles by scanning source trees |
 | Code simplifier skill | `.agents/spec-kit/skills/code-simplifier` | Post-implementation clarity cleanup | Preserve behavior exactly |
 | Commit message skill | `.agents/spec-kit/skills/commit-message` | Team commit message formatting | Use the approved team template only |
+| Spec branch history inspector | `.specify/scripts/powershell/inspect-spec-branch-history.ps1` | Report existing entry targets, divergence, upstream state, and Spec-range merge commits | Optional fetch only; never pushes |
+| Spec branch synchronizer | `.specify/scripts/powershell/sync-spec-branches.ps1` | Rebase clean local-only Spec branches onto recorded existing entry branches | Requires explicit `-ConfirmSync`; aborts conflicts and never creates upstream or pushes |
 | External MCP tools | Client-specific MCP servers such as GitHub or Figma | Source-of-truth artifacts explicitly requested or referenced by the user | Write/destructive actions require explicit human confirmation |
 
 ## Runtime Fact Sources
