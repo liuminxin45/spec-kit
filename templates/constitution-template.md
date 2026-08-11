@@ -87,15 +87,22 @@ encoding 必须在文档化边界处理。不得在无关层级增加 ad hoc con
 ### 10. 本地 Spec 分支工作流
 
 每个 Spec 都必须从本地 `NNN-short-name` Spec branch 开始。当任务涉及多个仓库时，
-每个受影响仓库都必须使用同名本地 Spec branch。Spec Kit 不得 push branches、
+每个受影响仓库都必须使用同名本地 Spec branch。Spec Kit 不得 push Spec branches、
 创建 remote tracking branches，或依赖 GitHub issue generation。Spec workflow
 在通过用户验收、必要提交完成、每个受影响仓库都将本地 Spec branch 的提交
 cherry-pick 回创建 Spec branch 时记录的入口分支后才算完成；默认保留本地 Spec branch，不删除。
 Commit 是 AI-owned technical gate：通过 deterministic preflight、scope/message
 validation、用户验收和 retrospective 后可以自动执行本地提交。Complete-branch 是
 state mutation gate：preflight 可以自动执行，但 cherry-pick 分支完成前必须请求并获得用户明确确认。
-Push、force-push 和 remote tracking 属于远端状态变更，默认禁止；如维护者例外要求，必须先通过
-`preflight-push` 并获得明确人工确认，优先走 PR。
+Push、force-push 和 remote tracking 属于远端状态变更，默认禁止；具体策略来自
+`.specify/workspace.yml`。`workflow_push_allowed: false` 禁止 AI push；
+`explicit-human-approval` 仅在人工明确要求当前推送且
+`preflight-push -ConfirmHumanPush` 通过时，允许 AI 使用工作区已配置的现有推送机制。
+具体命令或快捷键属于工作区知识，不由 Spec Kit 默认模板规定。force-push、新
+upstream、远端 Spec branch 和新远端目标仍禁止。
+本地 Spec branch 必须保持线性且无 upstream；开发中途更新基线只允许通过
+`sync-spec-branches` fetch 已记录的现有入口分支并在明确批准后 rebase，禁止
+`git pull`、`git merge` 和 `--rebase-merges`。
 
 ## 项目结构指引
 

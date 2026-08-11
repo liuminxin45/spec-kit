@@ -1,8 +1,14 @@
 ---
 authority: generated
 confidence: low
+knowledge_kind: policy
 source_refs: []
 last_verified: null
+verified_revisions: {}
+conformance_checks: []
+supersedes: []
+superseded_by: []
+revalidation_triggers: []
 ---
 
 # Runtime Investigation

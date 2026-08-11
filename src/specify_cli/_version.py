@@ -46,6 +46,15 @@ def _get_installed_version() -> str:
     distribution metadata, falls back to pyproject.toml. Callers must treat the
     sentinel string 'unknown' as an indeterminate value (see FR-020).
     """
+    # A source checkout can coexist with older distribution metadata in the
+    # same virtual environment. In that case the code being exercised is the
+    # checkout, so its pyproject version is authoritative for upgrade/self-check
+    # behavior. Installed wheels do not carry the repository pyproject beside
+    # this module and therefore continue to use importlib metadata.
+    source_version = _get_source_version_fallback()
+    if source_version != "unknown":
+        return source_version
+
     import importlib.metadata
 
     metadata_errors = [importlib.metadata.PackageNotFoundError]

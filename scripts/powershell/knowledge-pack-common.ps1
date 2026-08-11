@@ -812,6 +812,76 @@ function Get-KnowledgePackIndexEntries {
     return $entries
 }
 
+function Get-KnowledgePackIndexOverlay {
+    param([string]$PackRoot)
+    $path = Join-Path $PackRoot "ai\knowledge\index.overlay.json"
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    return (Get-Content -LiteralPath $path -Raw | ConvertFrom-Json)
+}
+
+function Format-KnowledgePackYamlQuotedValue {
+    param([string]$Value)
+    return '"' + (($Value -replace '\\', '/') -replace '"', '\"') + '"'
+}
+
+function Merge-KnowledgePackIndexOverlay {
+    param(
+        [string]$IndexPath,
+        [string]$OverlayPath
+    )
+    if (-not (Test-Path -LiteralPath $IndexPath -PathType Leaf)) {
+        throw "Base knowledge index not found for delta overlay: $IndexPath"
+    }
+    if (-not (Test-Path -LiteralPath $OverlayPath -PathType Leaf)) { return @() }
+    $overlay = Get-Content -LiteralPath $OverlayPath -Raw | ConvertFrom-Json
+    $text = Get-Content -LiteralPath $IndexPath -Raw
+    $changed = @()
+    $operations = @()
+    foreach ($remove in @($overlay.remove)) {
+        $operations += [pscustomobject]@{ category = [string]$remove.category; key = [string]$remove.key; remove = $true; value = $null }
+    }
+    foreach ($entry in @($overlay.entries)) {
+        $operations += [pscustomobject]@{ category = [string]$entry.category; key = [string]$entry.key; remove = $false; value = $entry }
+    }
+    foreach ($operation in $operations) {
+        if ($operation.category -notin @("workspace", "repositories", "domains", "build", "promoted") -or
+            $operation.key -notmatch '^[A-Za-z0-9_-]+$') {
+            throw "Invalid knowledge index overlay entry: $($operation.category).$($operation.key)"
+        }
+        $sectionPattern = '(?ms)^' + [regex]::Escape($operation.category) + ':\s*$\r?\n(.*?)(?=^[A-Za-z0-9_-]+:\s*$|\z)'
+        $sectionMatch = [regex]::Match($text, $sectionPattern)
+        if (-not $sectionMatch.Success) {
+            $text = $text.TrimEnd() + "`r`n`r`n$($operation.category):`r`n"
+            $sectionMatch = [regex]::Match($text, $sectionPattern)
+        }
+        $body = $sectionMatch.Groups[1].Value
+        $entryPattern = '(?ms)^  ' + [regex]::Escape($operation.key) + ':\s*$\r?\n.*?(?=^  [A-Za-z0-9_-]+:\s*$|\z)'
+        $body = [regex]::Replace($body, $entryPattern, "")
+        if (-not $operation.remove) {
+            $entry = $operation.value
+            $lines = @("  $($operation.key):")
+            foreach ($field in @("guide", "authority", "confidence")) {
+                $value = [string](Get-KnowledgePackObjectValue -Object $entry -Key $field)
+                if (-not [string]::IsNullOrWhiteSpace($value)) { $lines += "    ${field}: $(Format-KnowledgePackYamlQuotedValue $value)" }
+            }
+            $requireMatch = Get-KnowledgePackObjectValue -Object $entry -Key "require_match"
+            if ($null -ne $requireMatch) { $lines += "    require_match: $(([bool]$requireMatch).ToString().ToLowerInvariant())" }
+            $tags = @((Get-KnowledgePackObjectValue -Object $entry -Key "tags") | ForEach-Object { Format-KnowledgePackYamlQuotedValue ([string]$_) })
+            if ($tags.Count -gt 0) { $lines += "    tags: [$($tags -join ', ')]" }
+            $loadWhen = @((Get-KnowledgePackObjectValue -Object $entry -Key "load_when") | ForEach-Object { [string]$_ } | Where-Object { $_ })
+            if ($loadWhen.Count -gt 0) {
+                $lines += "    load_when:"
+                foreach ($condition in $loadWhen) { $lines += "      - $(Format-KnowledgePackYamlQuotedValue $condition)" }
+            }
+            $body = $body.TrimEnd() + "`r`n" + ($lines -join "`r`n") + "`r`n"
+        }
+        $text = $text.Substring(0, $sectionMatch.Groups[1].Index) + $body + $text.Substring($sectionMatch.Groups[1].Index + $sectionMatch.Groups[1].Length)
+        $changed += "$($operation.category).$($operation.key)"
+    }
+    Set-Content -LiteralPath $IndexPath -Value $text.TrimEnd() -Encoding utf8
+    return $changed
+}
+
 function Resolve-KnowledgePackGuidePath {
     param(
         [string]$IndexPath,

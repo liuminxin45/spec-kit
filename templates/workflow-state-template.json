@@ -45,6 +45,18 @@
     }
   },
   "selected_gates": [],
+  "workflow_drift": {
+    "scope_revision": 0,
+    "request_summary_sha256": "",
+    "implementation_target_proof_sha256": "",
+    "target_proof_summary": "",
+    "target_repositories": [],
+    "target_components": [],
+    "build_targets": [],
+    "delivery_targets": [],
+    "selected_gates": [],
+    "selected_knowledge": []
+  },
   "next_stage_decision": {
     "current_stage": "",
     "next_stage": "",

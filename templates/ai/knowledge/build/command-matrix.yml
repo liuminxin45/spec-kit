@@ -1,7 +1,13 @@
 schema_version: "1.0"
 authority: generated
 confidence: low
+knowledge_kind: policy
 source_refs: []
+verified_revisions: {}
+conformance_checks: []
+supersedes: []
+superseded_by: []
+revalidation_triggers: []
 
 commands:
   install:

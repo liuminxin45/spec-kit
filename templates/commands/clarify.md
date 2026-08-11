@@ -58,7 +58,14 @@ rollout risk.
      evidence source.
    - Compatibility, migration, rollback, and downstream effects.
 
-5. Decide whether to ask.
+5. Before asking about a repository, component, or source target, perform a
+   bounded source reality check in the affected repositories from
+   `repository-map.md`. For `full-sdd`, migration, and high-risk UI/runtime
+   work, verify the user entry, runtime trigger path, source path/key symbol,
+   build/install target, and distinguish same-name or similar modules. Record
+   what the source can answer without human input.
+
+6. Decide whether to ask.
    - If there are no high-impact ambiguities, record "no blocking
      clarification" in the output and continue to `speckit.plan`.
    - If risk is `low` or `medium`, prefer assumptions plus explicit validation
@@ -68,7 +75,7 @@ rollout risk.
    - If risk is `blocked`, stop and list the missing source behavior, missing
      design input, missing verification condition, or contradiction.
 
-6. Ask at most five high-impact questions when needed.
+7. Ask at most five high-impact questions when needed.
    - Prefer A/B/C multiple-choice when the option space is clear. Put the
      recommended option first as `A（推荐）`, and give each option one concise
      impact/tradeoff sentence.
@@ -76,7 +83,7 @@ rollout risk.
    - Ask one question at a time if the answer may change later questions.
    - Do not ask about trivial wording or implementation preferences.
 
-7. For UI parity, frontend visual work, or embedded UI fixes,
+8. For UI parity, frontend visual work, or embedded UI fixes,
    clarify or record explicit assumptions for:
    - Static references: design files, source files, screenshots, and target
      frontend/UI path.
@@ -103,12 +110,12 @@ rollout risk.
    - If choices affect public contracts, external-system coverage, fixtures, test cost,
      or accepted gaps, stop for human review before planning/implementation.
 
-9. For UI/UX/copy/parity work, load `speckit-quality-vision` via
+10. For UI/UX/copy/parity work, load `speckit-quality-vision` via
    `ai/workflows/skill-routing.yml` before planning.
    - Require baseline screenshot/design/source behavior or owner-approved `N/A`.
    - If baseline choice affects quality expectations, stop for human review.
 
-10. Update `spec.md`.
+11. Update `spec.md`.
    - Add a "Clarifications" section if missing.
    - Record each answer with date and concise rationale.
    - Update affected requirements or assumptions so the spec can stand alone.

@@ -54,6 +54,17 @@ knowledge/gate maps.
 
 - N/A
 
+## Implementation Target Proof
+Required for `full-sdd`, migration work, and high-risk UI/runtime work; otherwise write `N/A` with a short reason. Similar names or nearby modules are not proof of the implementation target.
+- User entry and observable behavior:
+- Runtime trigger / call path:
+- Target repositories:
+- Target components, source paths, and key symbols:
+- Source or runtime evidence:
+- Excluded same-name / similar modules and reasons:
+- Build target and expected output:
+- Install / deploy target and exact input:
+- Real validation host, entry, and expected loaded resource:
 ## Root Cause Evidence
 
 For bugfix work, fill the fields below. For non-bugfix work, write `N/A` with a

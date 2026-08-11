@@ -33,6 +33,10 @@ function Get-WorkspaceConfig {
     $workspaceRoot = $RepoRoot
     $baseBranch = "master"
     $primaryRepo = ""
+    $remoteKind = "generic"
+    $workflowPushAllowed = $true
+    $forbidSpecMergeCommits = $true
+    $requireExistingRemoteEntryBranch = $false
     $repos = @([PSCustomObject]@{ name = (Split-Path -Leaf $RepoRoot); path = "."; required = $true; participates_in_spec_branches = $true })
 
     if (Test-Path -LiteralPath $configPath -PathType Leaf) {
@@ -45,6 +49,14 @@ function Get-WorkspaceConfig {
         if ($baseText) { $baseBranch = $baseText.Matches[0].Groups[1].Value.Trim("'`"") }
         $primaryText = Select-String -Path $configPath -Pattern '^\s*primary_repo:\s*"?([^"]+)"?\s*$' -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($primaryText) { $primaryRepo = $primaryText.Matches[0].Groups[1].Value.Trim("'`"") }
+        $remoteKindText = Select-String -Path $configPath -Pattern '^\s*remote_kind:\s*"?([^"]+)"?\s*$' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($remoteKindText) { $remoteKind = $remoteKindText.Matches[0].Groups[1].Value.Trim("'`"") }
+        $pushAllowedText = Select-String -Path $configPath -Pattern '^\s*workflow_push_allowed:\s*(true|false)\s*$' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($pushAllowedText) { $workflowPushAllowed = ($pushAllowedText.Matches[0].Groups[1].Value -eq "true") }
+        $forbidMergesText = Select-String -Path $configPath -Pattern '^\s*forbid_spec_merge_commits:\s*(true|false)\s*$' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($forbidMergesText) { $forbidSpecMergeCommits = ($forbidMergesText.Matches[0].Groups[1].Value -eq "true") }
+        $requireRemoteText = Select-String -Path $configPath -Pattern '^\s*require_existing_remote_entry_branch:\s*(true|false)\s*$' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($requireRemoteText) { $requireExistingRemoteEntryBranch = ($requireRemoteText.Matches[0].Groups[1].Value -eq "true") }
 
         $parsedRepos = @()
         $current = $null
@@ -68,6 +80,10 @@ function Get-WorkspaceConfig {
     [PSCustomObject]@{
         default_base_branch = $baseBranch
         primary_repo = $primaryRepo
+        remote_kind = $remoteKind
+        workflow_push_allowed = $workflowPushAllowed
+        forbid_spec_merge_commits = $forbidSpecMergeCommits
+        require_existing_remote_entry_branch = $requireExistingRemoteEntryBranch
         repositories = @($repos | ForEach-Object {
             $repoPath = if ([System.IO.Path]::IsPathRooted($_.path)) { $_.path } else { Join-Path $workspaceRoot $_.path }
             [PSCustomObject]@{ name = $_.name; path = $repoPath; required = [bool]$_.required; participates_in_spec_branches = [bool]$_.participates_in_spec_branches }
@@ -221,6 +237,43 @@ function Get-CherryPickCommits {
         throw "Could not resolve cherry-pick commit list for '$BranchName' into '$BaseBranchName' in $Path."
     }
     return @($commits | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+}
+
+function Get-SpecMergeCommits {
+    param([string]$Path, [string]$BaseReference, [string]$BranchName)
+    $commits = @(git -C $Path rev-list --merges "$BaseReference..$BranchName" 2>$null)
+    if ($LASTEXITCODE -ne 0) { throw "Could not inspect merge commits for '$BranchName' against '$BaseReference' in $Path." }
+    return @($commits | Where-Object { $_ })
+}
+
+function Get-GerritEntryState {
+    param([string]$Path, [string]$BranchName, [string]$Remote = "origin")
+    $state = [ordered]@{
+        remote = $Remote
+        remote_ref = "$Remote/$BranchName"
+        remote_target_exists = $false
+        remote_target_oid = ""
+        entry_ahead = $null
+        entry_behind = $null
+        remote_base_is_spec_ancestor = $false
+        fetch_ok = $false
+    }
+    $remoteUrl = git -C $Path remote get-url $Remote 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$remoteUrl)) { return [PSCustomObject]$state }
+    $remoteHead = @(git -C $Path ls-remote --exit-code --heads $Remote "refs/heads/$BranchName" 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $remoteHead.Count -eq 0) { return [PSCustomObject]$state }
+    $state.remote_target_exists = $true
+    $state.remote_target_oid = ([string]$remoteHead[0] -split '\s+')[0]
+    git -C $Path fetch --no-tags $Remote "+refs/heads/${BranchName}:refs/remotes/${Remote}/${BranchName}" 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { return [PSCustomObject]$state }
+    $state.fetch_ok = $true
+    $counts = git -C $Path rev-list --left-right --count "$BranchName...$Remote/$BranchName" 2>$null
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$counts)) {
+        $parts = ([string]$counts).Trim() -split '\s+'
+        $state.entry_ahead = [int]$parts[0]
+        $state.entry_behind = [int]$parts[1]
+    }
+    return [PSCustomObject]$state
 }
 
 function Get-ConflictFiles {
@@ -387,13 +440,50 @@ foreach ($repo in $workspace.repositories) {
         $errors += "Spec branch '$Branch' in $($repo.name) has an upstream; Spec Kit branches must stay local-only."
         continue
     }
+    $entryState = $null
+    $commitBaseReference = $targetBase
+    $fastForwardRequired = $false
+    if ($workspace.require_existing_remote_entry_branch) {
+        $entryState = Get-GerritEntryState -Path $repo.path -BranchName $targetBase
+        if (-not $entryState.remote_target_exists -or -not $entryState.fetch_ok) {
+            $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "remote-target-missing"; branch = $Branch; base = $targetBase; planned_action = "error"; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; remote_entry_state = $entryState; dirty_state = $dirtyState }
+            $errors += "Recorded Gerrit entry branch 'refs/heads/$targetBase' is missing or could not be fetched for $($repo.name)."
+            continue
+        }
+        if ($entryState.entry_ahead -gt 0 -and $entryState.entry_behind -gt 0) {
+            $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "entry-branch-diverged"; branch = $Branch; base = $targetBase; planned_action = "error"; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; remote_entry_state = $entryState; dirty_state = $dirtyState }
+            $errors += "Local entry branch '$targetBase' diverged from origin in $($repo.name); merge is forbidden."
+            continue
+        }
+        if ($entryState.entry_ahead -gt 0) {
+            $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "entry-branch-ahead"; branch = $Branch; base = $targetBase; planned_action = "error"; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; remote_entry_state = $entryState; dirty_state = $dirtyState }
+            $errors += "Local entry branch '$targetBase' has local-only commits in $($repo.name); refusing to overwrite or merge it."
+            continue
+        }
+        $fastForwardRequired = ($entryState.entry_behind -gt 0)
+        $commitBaseReference = $entryState.remote_ref
+        git -C $repo.path merge-base --is-ancestor $commitBaseReference $Branch 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "needs-rebase"; branch = $Branch; base = $targetBase; planned_action = "sync-spec-branches"; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; remote_entry_state = $entryState; dirty_state = $dirtyState }
+            $errors += "Spec branch '$Branch' in $($repo.name) is not based on the latest recorded Gerrit entry branch; run sync-spec-branches preflight/rebase."
+            continue
+        }
+    }
+    if ($workspace.forbid_spec_merge_commits) {
+        $mergeCommits = Get-SpecMergeCommits -Path $repo.path -BaseReference $commitBaseReference -BranchName $Branch
+        if ($mergeCommits.Count -gt 0) {
+            $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "merge-history-blocked"; branch = $Branch; base = $targetBase; planned_action = "error"; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; merge_commits = @($mergeCommits); remote_entry_state = $entryState; dirty_state = $dirtyState }
+            $errors += "Spec branch '$Branch' in $($repo.name) contains merge commit(s): $($mergeCommits -join ', ')."
+            continue
+        }
+    }
     if ($Branch -eq $targetBase) {
         $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "branch-is-base"; branch = $Branch; base = $targetBase; planned_action = "error"; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; remote_divergence = $remoteDivergence; dirty_state = $dirtyState }
         $errors += "Spec branch '$Branch' is the base branch in $($repo.name); refusing to complete."
         continue
     }
     try {
-        $commits = Get-CherryPickCommits -Path $repo.path -BaseBranchName $targetBase -BranchName $Branch
+        $commits = Get-CherryPickCommits -Path $repo.path -BaseBranchName $commitBaseReference -BranchName $Branch
     } catch {
         $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "cherry-pick-list-error"; branch = $Branch; base = $targetBase; planned_action = "error"; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; remote_divergence = $remoteDivergence; dirty_state = $dirtyState }
         $errors += $_.Exception.Message
@@ -405,11 +495,11 @@ foreach ($repo in $workspace.repositories) {
         continue
     }
     if ($commits.Count -eq 0) {
-        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "already-up-to-date"; branch = $Branch; base = $targetBase; planned_action = "switch-to-base"; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; remote_divergence = $remoteDivergence; dirty_state = $dirtyState }
+        $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "already-up-to-date"; branch = $Branch; base = $targetBase; planned_action = "switch-to-base"; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; remote_divergence = $remoteDivergence; remote_entry_state = $entryState; fast_forward_required = $fastForwardRequired; dirty_state = $dirtyState }
         continue
     }
     $deleteAction = if ($shouldKeepBranch) { "cherry-pick" } else { "cherry-pick-and-delete" }
-    $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "ready"; branch = $Branch; base = $targetBase; planned_action = $deleteAction; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; remote_divergence = $remoteDivergence; dirty_state = $dirtyState }
+    $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "ready"; branch = $Branch; base = $targetBase; planned_action = $deleteAction; participates_in_spec_branches = [bool]$repo.participates_in_spec_branches; remote_divergence = $remoteDivergence; remote_entry_state = $entryState; fast_forward_required = $fastForwardRequired; dirty_state = $dirtyState }
 }
 
 $preflightPayload = [PSCustomObject]@{
@@ -485,9 +575,17 @@ foreach ($item in $preflight) {
         continue
     }
     if ($item.status -eq "branch-missing" -or $item.status -eq "already-up-to-date") {
+        if ($item.fast_forward_required) {
+            git -C $item.path branch -f $item.base $item.remote_entry_state.remote_ref | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward local entry branch '$($item.base)' in $($item.repository)." }
+        }
         git -C $item.path switch $item.base | Out-Null
         $results += [PSCustomObject]@{ repository = $item.repository; path = $item.path; status = "$($item.status); switched-to-$($item.base)"; branch = $Branch; base = $item.base; participates_in_spec_branches = [bool]$item.participates_in_spec_branches }
         continue
+    }
+    if ($item.fast_forward_required) {
+        git -C $item.path branch -f $item.base $item.remote_entry_state.remote_ref | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward local entry branch '$($item.base)' in $($item.repository)." }
     }
     git -C $item.path switch $item.base | Out-Null
     $commits = Get-CherryPickCommits -Path $item.path -BaseBranchName $item.base -BranchName $Branch
@@ -503,6 +601,10 @@ foreach ($item in $preflight) {
             $conflictText = if ($conflicts.Count -gt 0) { $conflicts -join ", " } else { "unknown" }
             throw "Cherry-pick failed in $($item.repository) at $commit. Conflicts: $conflictText"
         }
+    }
+    if ($item.remote_entry_state -and $item.remote_entry_state.remote_ref) {
+        $createdMerges = Get-SpecMergeCommits -Path $item.path -BaseReference $item.remote_entry_state.remote_ref -BranchName $item.base
+        if ($createdMerges.Count -gt 0) { throw "Completion created or retained merge commit(s) in $($item.repository): $($createdMerges -join ', ')." }
     }
     $status = "cherry-picked-to-$($item.base)"
     if (-not $shouldKeepBranch) {

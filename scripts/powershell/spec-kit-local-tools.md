@@ -3,6 +3,20 @@
 Workspace-level Spec Kit tooling lives in this `spec-kit` repository. These
 wrapper scripts are the supported local install/init entrypoints.
 
+Build a portable local wheel, optionally with caller-selected knowledge packs:
+
+```powershell
+.\scripts\powershell\build-local-distribution.ps1 -Json
+```
+
+Pass `-KnowledgePack <pack-id>` explicitly for packs stored under the selected
+workspace's `.specify/knowledge/exports/`. Spec Kit does not select or bundle
+project knowledge by default.
+
+The bundle includes `Install-Local.ps1` and `INSTALL-AI.md`. It installs all
+selected packs first and composes them together, so an earlier overlay is not
+silently dropped by a later single-pack apply.
+
 Install the local Codex edition:
 
 ```powershell
@@ -156,4 +170,12 @@ Team policy:
   and Rubric gates.
 - Push is outside the default workflow. Prefer PR-first; exceptional direct
   pushes require explicit human approval and `preflight-push`.
+- Gerrit workspaces with `workflow_push_allowed: false` never push from Spec
+  Kit. `explicit-human-approval` allows AI to use only the existing
+  workspace-configured push mechanism after a current human request and a
+  passing `preflight-push -ConfirmHumanPush`; commands and shortcuts remain
+  project knowledge. Use `inspect-spec-branch-history.ps1` for linear-history facts and
+  `sync-spec-branches.ps1 -PreflightOnly` followed by explicitly approved
+  `-ConfirmSync` for mid-workflow fetch/rebase updates. Never use pull or merge
+  on a local Spec branch.
 - GitHub issue generation is not installed.

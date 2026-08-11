@@ -75,7 +75,14 @@ Stable rules only. Do not load broad project knowledge or historical process doc
 - Do not push, create remote tracking branches, or create GitHub issues as part of the default workflow.
 - Commit is opt-in after validation and user acceptance. It does not require retrospective or workflow-observer artifacts.
 - Branch completion is opt-in and requires explicit human approval for the exact preflight result.
-- Push is outside the default workflow. Use PR-first; any exceptional push must pass `preflight-push` and explicit human approval.
+- Push follows `.specify/workspace.yml`. `workflow_push_allowed: false`
+  forbids AI push. `explicit-human-approval` permits AI to operate the existing
+  workspace-configured push mechanism only for a current explicit human request
+  and after `preflight-push -ConfirmHumanPush` passes. Project-specific commands
+  or shortcuts belong in selected knowledge packs.
+- Local Spec branches stay linear and local-only. Never use `git pull`,
+  `git merge`, or `--rebase-merges`; use the approved `sync-spec-branches`
+  fetch/rebase path and block commit/completion on Spec-range merge commits.
 - Run `inspect-workflow-closure` before final response only when feature state
   indicates accepted implementation, commit, strict self-check, or rubric work.
 

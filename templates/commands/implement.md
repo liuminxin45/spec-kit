@@ -3,6 +3,7 @@ description: Execute approved implementation slices while preserving source scop
 scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json -Stage implement -IncludeTasks
   preflight_ps: scripts/powershell/validate-feature-artifacts.ps1 -Json -Stage implement -FeatureDir <feature-dir>
+  drift_ps: scripts/powershell/inspect-workflow-drift.ps1 -Json -FeatureDir <feature-dir>
   select_knowledge_ps: scripts/powershell/select-knowledge.ps1 -Json -Stage implement -FeatureDir <feature-dir>
   select_gates_ps: scripts/powershell/select-gates.ps1 -Json -Stage implement -FeatureDir <feature-dir>
 ---
@@ -48,7 +49,14 @@ Optional artifacts such as `acceptance-rubric.md`, `quality-vision.md`, `fact-pa
 
 ## Execution Steps
 
-1. Run the prerequisite script and `validate-feature-artifacts -Stage implement`.
+1. Run the prerequisite script, `inspect-workflow-drift`, and
+   `validate-feature-artifacts -Stage implement`.
+   - Re-run drift, gate, and knowledge routing at every stage entry, after a
+     failed implementation attempt, and on the first continuation after context
+     compaction.
+   - If drift reports `scope_amendment_required`, stop source edits. Amend the
+     existing spec/plan/tasks for a bounded change; route an independent issue
+     to a follow-up workflow.
    - `full-sdd` and high-risk gates may require `analysis.md` and `checklists/implementation-readiness.md`.
    - Lean bugfix profiles should be satisfied by `workpack.md` plus `workflow-state.json`.
 2. Run `select-gates` for stage `implement`; read only selected gate packs.

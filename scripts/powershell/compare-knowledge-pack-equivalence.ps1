@@ -94,6 +94,40 @@ function Invoke-SelectKnowledgeForScenario {
     return ($raw | ConvertFrom-Json)
 }
 
+function Get-KnowledgeSelectionIds {
+    param($Items)
+    return @($Items | ForEach-Object {
+        if (-not [string]::IsNullOrWhiteSpace([string]$_.category) -and -not [string]::IsNullOrWhiteSpace([string]$_.key)) {
+            "$($_.category).$($_.key)"
+        }
+    } | Select-Object -Unique)
+}
+
+function Test-KnowledgeScenarioExpectation {
+    param(
+        $Selection,
+        $Scenario
+    )
+    $selectedIds = @(Get-KnowledgeSelectionIds -Items @($Selection.facts.selected))
+    $excludedIds = @(Get-KnowledgeSelectionIds -Items @($Selection.facts.excluded))
+    $expectedSelected = @($Scenario.expected_selected | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $expectedExcluded = @($Scenario.expected_excluded | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $missingSelected = @($expectedSelected | Where-Object { $selectedIds -notcontains [string]$_ })
+    # expected_excluded is a negative assertion: the id must not be selected.
+    # It may have been superseded and removed from the composed index entirely,
+    # so presence in facts.excluded is not required.
+    $missingExcluded = @($expectedExcluded | Where-Object { $selectedIds -contains [string]$_ })
+    return [ordered]@{
+        passed = ($missingSelected.Count -eq 0 -and $missingExcluded.Count -eq 0)
+        selected = $selectedIds
+        excluded = $excludedIds
+        expected_selected = $expectedSelected
+        expected_excluded = $expectedExcluded
+        missing_expected_selected = $missingSelected
+        missing_expected_excluded = $missingExcluded
+    }
+}
+
 function Initialize-ReferenceWorkspace {
     param(
         [string]$Root,
@@ -245,6 +279,7 @@ try {
 
         $routingResults = @()
         $routingMatches = 0
+        $canaryMatches = 0
         foreach ($scenario in $scenarios) {
             $sourceSelection = Invoke-SelectKnowledgeForScenario -Root $referenceRoot -Scenario $scenario
             $candidateSelection = Invoke-SelectKnowledgeForScenario -Root $candidateRoot -Scenario $scenario
@@ -252,15 +287,23 @@ try {
             $candidatePaths = @($candidateSelection.facts.selected | ForEach-Object { $_.path })
             $matches = (($sourcePaths -join "|") -eq ($candidatePaths -join "|"))
             if ($matches) { $routingMatches += 1 }
+            $sourceCanary = Test-KnowledgeScenarioExpectation -Selection $sourceSelection -Scenario $scenario
+            $candidateCanary = Test-KnowledgeScenarioExpectation -Selection $candidateSelection -Scenario $scenario
+            $canaryPassed = ($sourceCanary.passed -and $candidateCanary.passed)
+            if ($canaryPassed) { $canaryMatches += 1 }
             $routingResults += [ordered]@{
                 name = $scenario.name
                 stage = $scenario.stage
                 matches = $matches
                 source_selected = $sourcePaths
                 candidate_selected = $candidatePaths
+                canary_passed = $canaryPassed
+                source_canary = $sourceCanary
+                candidate_canary = $candidateCanary
             }
         }
         $routingParity = Get-Percent -Good $routingMatches -Total $scenarios.Count
+        $canaryPercent = Get-Percent -Good $canaryMatches -Total $scenarios.Count
 
         $packValidation = (& "$PSScriptRoot\validate-knowledge-pack.ps1" -PackRoot $pack -Json) | ConvertFrom-Json
         $sourceValidation = (& "$PSScriptRoot\automation-common.ps1" -Tool "validate-knowledge-index" -RepoRoot $referenceRoot -Json) | ConvertFrom-Json
@@ -312,6 +355,9 @@ try {
         if ($routingParity -lt 100.0) {
             Set-KnowledgePackBlocked $result "routing parity below 100%"
         }
+        if ($canaryPercent -lt 100.0) {
+            Set-KnowledgePackBlocked $result "routing canary expectations failed; expected_selected and expected_excluded must both hold"
+        }
         if (-not $validationPass) {
             Set-KnowledgePackBlocked $result "validation gate parity failed"
         }
@@ -336,6 +382,7 @@ try {
             index_parity_percent = $indexParity
             indexed_guide_parity_percent = $guideParity
             routing_parity_percent = $routingParity
+            routing_canary_percent = $canaryPercent
             validation_percent = $validationPercent
             alias_percent = $aliasPercent
             overall_percent = $overall

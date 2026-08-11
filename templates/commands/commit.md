@@ -40,6 +40,7 @@ Create local commits after implementation validation and user acceptance. This s
    - Missing `validation.md` is a hard blocker.
    - For bugfix work, missing or contradictory Root-Fix Decision Gate closure is a hard blocker.
    - Retrospective/observer/promotion artifacts are optional and must not block commit unless the user selected strict governance.
+   - The Gerrit linear-history gate invokes `inspect-spec-branch-history -Fetch`; any upstream, missing recorded remote entry branch, or merge commit in the Spec range is a hard blocker.
 4. Inspect every affected repository:
    - current branch
    - dirty files
@@ -66,6 +67,7 @@ Create local commits after implementation validation and user acceptance. This s
 
 - Do not commit generated build output, temp files, local logs, caches, installed runtime directories, served runtime artifacts, or generated deployment outputs.
 - If unrelated dirty work exists, leave it unstaged and call it out.
+- Never commit on a Spec branch whose recorded-entry range contains a merge commit. Never use pull/merge to repair the gate; use the approved fetch/rebase sync or a separately approved history rewrite.
 - If the commit-message skill or validator is unavailable, stop.
 - A commit hash is successful only after the post-commit message validates.
 - Do not output final Rubric scoring from this stage.
