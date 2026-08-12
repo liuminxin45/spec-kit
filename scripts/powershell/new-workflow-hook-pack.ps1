@@ -285,6 +285,15 @@ try {
         $ToolId = if ($Adapter -eq "open-code-review") { "open-code-review" } else { $PackId }
     }
     if ([string]::IsNullOrWhiteSpace($ToolVersion)) { Set-KnowledgePackBlocked $result "ToolVersion is required" }
+    if ($InstallMethod -eq "github-release") {
+        $releaseUri = $null
+        if (-not [Uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$releaseUri) -or $releaseUri.Scheme -ne "https") {
+            Set-KnowledgePackBlocked $result "github-release requires an absolute HTTPS Url"
+        }
+        if ($Sha256.Trim().ToLowerInvariant() -notmatch "^[a-f0-9]{64}$") {
+            Set-KnowledgePackBlocked $result "github-release requires a 64-character SHA-256"
+        }
+    }
     $packSlug = ConvertTo-KnowledgePackSlug -Value $PackId
     if ([string]::IsNullOrWhiteSpace($HookId)) {
         $stage = ($Event -replace "^workflow\.[^.]+\.","") -replace "\.(before|after)$",""

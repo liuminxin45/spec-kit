@@ -235,13 +235,20 @@ try {
                     "github-release" {
                         $url = [string](Get-KnowledgePackObjectValue -Object $dependency -Key "url")
                         if ([string]::IsNullOrWhiteSpace($url)) { throw "github-release install requires url for $depId" }
-                        $assetName = Split-Path -Leaf ([Uri]$url).AbsolutePath
+                        $downloadUri = [Uri]$url
+                        if (-not $downloadUri.IsAbsoluteUri -or $downloadUri.Scheme -ne "https") {
+                            throw "github-release install requires an absolute HTTPS url for $depId"
+                        }
+                        $expectedHash = ([string](Get-KnowledgePackObjectValue -Object $dependency -Key "sha256")).Trim().ToLowerInvariant()
+                        if ($expectedHash -notmatch "^[a-f0-9]{64}$") {
+                            throw "github-release install requires a 64-character SHA-256 for $depId"
+                        }
+                        $assetName = Split-Path -Leaf $downloadUri.AbsolutePath
                         if ([string]::IsNullOrWhiteSpace($assetName)) { $assetName = "$depSlug-$depVersion" }
                         $assetPath = Join-Path $toolDir $assetName
                         Invoke-WebRequest -Uri $url -OutFile $assetPath
                         $hashes.asset_sha256 = Get-KnowledgePackFileHash -Path $assetPath
-                        $expectedHash = [string](Get-KnowledgePackObjectValue -Object $dependency -Key "sha256")
-                        if (-not [string]::IsNullOrWhiteSpace($expectedHash) -and $hashes.asset_sha256 -ne $expectedHash.ToLowerInvariant()) {
+                        if ($hashes.asset_sha256 -ne $expectedHash) {
                             throw "github-release asset hash mismatch for $depId"
                         }
                         if ([string]::IsNullOrWhiteSpace($resolvedCommand)) {

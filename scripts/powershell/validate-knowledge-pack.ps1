@@ -271,6 +271,8 @@ try {
                     $depVersion = [string](Get-KnowledgePackObjectValue -Object $dependency -Key "version")
                     $depInstallMethod = [string](Get-KnowledgePackObjectValue -Object $dependency -Key "install_method")
                     $depPath = [string](Get-KnowledgePackObjectValue -Object $dependency -Key "path")
+                    $depUrl = [string](Get-KnowledgePackObjectValue -Object $dependency -Key "url")
+                    $depSha256 = ([string](Get-KnowledgePackObjectValue -Object $dependency -Key "sha256")).Trim().ToLowerInvariant()
                     if ([string]::IsNullOrWhiteSpace($depId)) {
                         $hookToolDependencyOffenders += "hook $hookId tool dependency missing id"
                     }
@@ -288,6 +290,15 @@ try {
                             if (-not (Test-Path -LiteralPath $depFullPath -PathType Leaf)) {
                                 $hookToolDependencyOffenders += "hook $hookId tool dependency $depId path not found: $depPath"
                             }
+                        }
+                    }
+                    if ($depInstallMethod -eq "github-release") {
+                        $depUri = $null
+                        if (-not [Uri]::TryCreate($depUrl, [UriKind]::Absolute, [ref]$depUri) -or $depUri.Scheme -ne "https") {
+                            $hookToolDependencyOffenders += "hook $hookId tool dependency $depId github-release url must be absolute HTTPS"
+                        }
+                        if ($depSha256 -notmatch "^[a-f0-9]{64}$") {
+                            $hookToolDependencyOffenders += "hook $hookId tool dependency $depId github-release sha256 must be 64 hexadecimal characters"
                         }
                     }
                 }

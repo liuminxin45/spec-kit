@@ -1605,6 +1605,30 @@ def test_agent_chain_hook_pack_materializes_chain_manifest(tmp_path):
     assert "runner:" not in workflow_hooks
 
 
+def test_github_release_hook_requires_https_and_sha256(tmp_path):
+    blocked = run_ps(
+        "new-workflow-hook-pack",
+        "-PackId",
+        "release-tool",
+        "-Event",
+        "workflow.demo.build.after",
+        "-ToolVersion",
+        "1.0.0",
+        "-InstallMethod",
+        "github-release",
+        "-Url",
+        "http://github.com/example/tool.exe",
+        "-OutputDir",
+        str(tmp_path / "pack"),
+        "-Force",
+    )
+    assert_standard_shape(blocked, "new-workflow-hook-pack")
+    assert blocked["status"] == "blocked"
+    blockers = "; ".join(blocked["blockers"])
+    assert "absolute HTTPS" in blockers
+    assert "64-character SHA-256" in blockers
+
+
 def test_hook_scaffold_open_code_review_pack_lifecycle(tmp_path):
     workspace = tmp_path / "workspace"
     (workspace / ".specify").mkdir(parents=True)
@@ -2642,7 +2666,7 @@ def test_local_distribution_builder_creates_wheel_and_pack_bundle(tmp_path):
         assert any(name.endswith(".dist-info/RECORD") for name in names)
         assert any(name.endswith(".dist-info/entry_points.txt") for name in names)
     manifest = json.loads((output_dir / "bundle-manifest.json").read_text(encoding="utf-8"))
-    assert manifest["spec_kit"]["version"] == "0.10.4"
+    assert manifest["spec_kit"]["version"] == "0.10.5"
     assert manifest["promotion_performed"] is False
     assert [pack["id"] for pack in manifest["knowledge_packs"]] == [pack[0] for pack in expected_packs]
     assert (output_dir / "Install-Local.ps1").exists()

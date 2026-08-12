@@ -11,6 +11,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
+import math
 from typing import Any
 
 
@@ -133,3 +134,18 @@ class StepBase(ABC):
     def can_resume(self, state: dict[str, Any]) -> bool:
         """Return whether this step can be resumed from the given state."""
         return True
+
+
+def validate_timeout(config: dict[str, Any], step_label: str) -> list[str]:
+    """Validate an optional subprocess timeout in seconds."""
+    if "timeout" not in config:
+        return []
+    timeout = config["timeout"]
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not math.isfinite(float(timeout))
+        or timeout <= 0
+    ):
+        return [f"{step_label}: 'timeout' must be a positive finite number."]
+    return []

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import math
 import os
 import re
 import subprocess
@@ -43,7 +44,8 @@ class WorkflowDefinition:
         self.data = data
         self.source_path = source_path
 
-        workflow = data.get("workflow", {})
+        self.workflow_config: Any = data.get("workflow", {})
+        workflow = self.workflow_config if isinstance(self.workflow_config, dict) else {}
         self.id: str = workflow.get("id", "")
         self.name: str = workflow.get("name", "")
         self.version: str = workflow.get("version", "0.0.0")
@@ -72,8 +74,11 @@ class WorkflowDefinition:
     @classmethod
     def from_yaml(cls, path: Path) -> WorkflowDefinition:
         """Load a workflow definition from a YAML file."""
-        with open(path, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+        except yaml.YAMLError as exc:
+            raise ValueError(f"Invalid workflow YAML in {path}: {exc}") from None
         if not isinstance(data, dict):
             msg = f"Workflow YAML must be a mapping, got {type(data).__name__}."
             raise ValueError(msg)
@@ -82,7 +87,10 @@ class WorkflowDefinition:
     @classmethod
     def from_string(cls, content: str) -> WorkflowDefinition:
         """Load a workflow definition from a YAML string."""
-        data = yaml.safe_load(content)
+        try:
+            data = yaml.safe_load(content)
+        except yaml.YAMLError as exc:
+            raise ValueError(f"Invalid workflow YAML: {exc}") from None
         if not isinstance(data, dict):
             msg = f"Workflow YAML must be a mapping, got {type(data).__name__}."
             raise ValueError(msg)
@@ -116,15 +124,22 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
     errors: list[str] = []
 
     # -- Schema version ---------------------------------------------------
-    if definition.schema_version not in ("1.0", "1"):
+    if not isinstance(definition.schema_version, str):
+        errors.append("'schema_version' must be a string.")
+    elif definition.schema_version not in ("1.0", "1"):
         errors.append(
             f"Unsupported schema_version {definition.schema_version!r}. "
             f"Expected '1.0'."
         )
 
     # -- Top-level fields -------------------------------------------------
+    if not isinstance(definition.workflow_config, dict):
+        errors.append("'workflow' must be a mapping.")
+
     if not definition.id:
         errors.append("Workflow is missing 'workflow.id'.")
+    elif not isinstance(definition.id, str):
+        errors.append("'workflow.id' must be a string.")
     elif not _ID_PATTERN.match(definition.id):
         errors.append(
             f"Workflow ID {definition.id!r} must be lowercase alphanumeric "
@@ -133,9 +148,13 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
 
     if not definition.name:
         errors.append("Workflow is missing 'workflow.name'.")
+    elif not isinstance(definition.name, str):
+        errors.append("'workflow.name' must be a string.")
 
     if not definition.version:
         errors.append("Workflow is missing 'workflow.version'.")
+    elif not isinstance(definition.version, str):
+        errors.append("'workflow.version' must be a string.")
     elif not re.match(r"^\d+\.\d+\.\d+$", definition.version):
         errors.append(
             f"Workflow version {definition.version!r} is not valid "
@@ -147,14 +166,27 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
         errors.append("'inputs' must be a mapping (or omitted).")
     else:
         for input_name, input_def in definition.inputs.items():
+            if not isinstance(input_name, str):
+                errors.append(f"Input name {input_name!r} must be a string.")
+                continue
             if not isinstance(input_def, dict):
                 errors.append(f"Input {input_name!r} must be a mapping.")
                 continue
             input_type = input_def.get("type")
-            if input_type and input_type not in ("string", "number", "boolean"):
+            if input_type is not None and not isinstance(input_type, str):
+                errors.append(f"Input {input_name!r} type must be a string.")
+            elif input_type and input_type not in ("string", "number", "boolean"):
                 errors.append(
                     f"Input {input_name!r} has invalid type {input_type!r}. "
                     f"Must be 'string', 'number', or 'boolean'."
+                )
+
+            enum_values = input_def.get("enum")
+            if enum_values is not None and (
+                not isinstance(enum_values, list) or not enum_values
+            ):
+                errors.append(
+                    f"Input {input_name!r} 'enum' must be a non-empty list."
                 )
 
             if "default" in input_def:
@@ -224,6 +256,9 @@ def _validate_steps(
         if not step_id:
             errors.append("Step is missing 'id' field.")
             continue
+        if not isinstance(step_id, str):
+            errors.append(f"Step ID {step_id!r} must be a string.")
+            continue
 
         if ":" in step_id:
             errors.append(
@@ -237,6 +272,9 @@ def _validate_steps(
 
         # Determine step type
         step_type = step_config.get("type", "command")
+        if not isinstance(step_type, str):
+            errors.append(f"Step {step_id!r}: 'type' must be a string.")
+            continue
         if step_type not in _get_valid_step_types():
             errors.append(
                 f"Step {step_id!r} has invalid type {step_type!r}."
@@ -283,6 +321,10 @@ def _validate_steps(
             nested = step_config.get(nested_key)
             if isinstance(nested, list):
                 _validate_steps(nested, seen_ids, errors)
+            elif nested is not None:
+                errors.append(
+                    f"Step {step_id!r}: {nested_key!r} must be a list of steps."
+                )
 
         # Validate switch cases
         cases = step_config.get("cases")
@@ -290,11 +332,17 @@ def _validate_steps(
             for _case_key, case_steps in cases.items():
                 if isinstance(case_steps, list):
                     _validate_steps(case_steps, seen_ids, errors)
+                else:
+                    errors.append(
+                        f"Switch step {step_id!r}: each case must be a list of steps."
+                    )
 
         # Validate switch default
         default = step_config.get("default")
         if isinstance(default, list):
             _validate_steps(default, seen_ids, errors)
+        elif default is not None:
+            errors.append(f"Switch step {step_id!r}: 'default' must be a list of steps.")
 
         # Validate fan-out nested step (template — not added to seen_ids
         # since the engine generates parentId:templateId:index at runtime)
@@ -303,6 +351,8 @@ def _validate_steps(
             fan_errors: list[str] = []
             _validate_steps([fan_step], set(), fan_errors)
             errors.extend(fan_errors)
+        elif fan_step is not None:
+            errors.append(f"Fan-out step {step_id!r}: 'step' must be a mapping.")
 
 
 # -- Run State Persistence ------------------------------------------------
@@ -412,15 +462,39 @@ class RunState:
             msg = f"Run state not found: {state_path}"
             raise FileNotFoundError(msg)
 
-        with open(state_path, encoding="utf-8") as f:
-            state_data = json.load(f)
+        try:
+            with open(state_path, encoding="utf-8") as f:
+                state_data = json.load(f)
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Invalid run state {state_path}: {exc}") from None
+        if not isinstance(state_data, dict):
+            raise ValueError(f"Invalid run state {state_path}: expected a JSON object.")
+        stored_run_id = state_data.get("run_id")
+        if stored_run_id != run_id:
+            raise ValueError(
+                f"Invalid run state {state_path}: stored run_id {stored_run_id!r} "
+                f"does not match requested run_id {run_id!r}."
+            )
+        required = ("workflow_id", "status")
+        missing = [key for key in required if not isinstance(state_data.get(key), str)]
+        if missing:
+            raise ValueError(
+                f"Invalid run state {state_path}: missing or invalid "
+                f"{', '.join(missing)}."
+            )
 
         state = cls(
             run_id=state_data["run_id"],
             workflow_id=state_data["workflow_id"],
             project_root=project_root,
         )
-        state.status = RunStatus(state_data["status"])
+        try:
+            state.status = RunStatus(state_data["status"])
+        except ValueError:
+            raise ValueError(
+                f"Invalid run state {state_path}: unknown status "
+                f"{state_data['status']!r}."
+            ) from None
         state.current_step_index = state_data.get("current_step_index", 0)
         state.current_step_id = state_data.get("current_step_id")
         state.step_results = state_data.get("step_results", {})
@@ -431,8 +505,17 @@ class RunState:
 
         inputs_path = runs_dir / "inputs.json"
         if inputs_path.exists():
-            with open(inputs_path, encoding="utf-8") as f:
-                inputs_data = json.load(f)
+            try:
+                with open(inputs_path, encoding="utf-8") as f:
+                    inputs_data = json.load(f)
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise ValueError(f"Invalid run inputs {inputs_path}: {exc}") from None
+            if not isinstance(inputs_data, dict) or not isinstance(
+                inputs_data.get("inputs", {}), dict
+            ):
+                raise ValueError(
+                    f"Invalid run inputs {inputs_path}: expected an 'inputs' mapping."
+                )
             state.inputs = inputs_data.get("inputs", {})
 
         return state
@@ -575,6 +658,10 @@ class WorkflowEngine:
         """
         from . import STEP_REGISTRY
 
+        validation_errors = self.validate(definition)
+        if validation_errors:
+            raise ValueError("Invalid workflow:\n- " + "\n- ".join(validation_errors))
+
         state = RunState(
             run_id=run_id,
             workflow_id=definition.id,
@@ -644,6 +731,9 @@ class WorkflowEngine:
             definition = WorkflowDefinition.from_yaml(run_copy)
         else:
             definition = self.load_workflow(state.workflow_id)
+        validation_errors = self.validate(definition)
+        if validation_errors:
+            raise ValueError("Invalid workflow:\n- " + "\n- ".join(validation_errors))
 
         # Restore context
         context = StepContext(
@@ -2595,6 +2685,8 @@ class WorkflowEngine:
                 raise ValueError(msg)
             try:
                 value = float(value)
+                if not math.isfinite(value):
+                    raise ValueError
                 if value == int(value):
                     value = int(value)
             except (ValueError, TypeError, OverflowError):
@@ -2638,8 +2730,18 @@ class WorkflowEngine:
                 continue
             state_path = run_dir / "state.json"
             if state_path.exists():
-                with open(state_path, encoding="utf-8") as f:
-                    state_data = json.load(f)
+                try:
+                    with open(state_path, encoding="utf-8") as f:
+                        state_data = json.load(f)
+                except (OSError, UnicodeError, json.JSONDecodeError):
+                    continue
+                if (
+                    not isinstance(state_data, dict)
+                    or state_data.get("run_id") != run_dir.name
+                    or not isinstance(state_data.get("workflow_id"), str)
+                    or not isinstance(state_data.get("status"), str)
+                ):
+                    continue
                 runs.append(state_data)
         return runs
 

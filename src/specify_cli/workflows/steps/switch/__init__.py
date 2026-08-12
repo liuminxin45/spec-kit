@@ -49,6 +49,10 @@ class SwitchStep(StepBase):
                 f"Switch step {config.get('id', '?')!r} is missing "
                 f"'expression' field."
             )
+        elif not isinstance(config["expression"], str):
+            errors.append(
+                f"Switch step {config.get('id', '?')!r}: 'expression' must be a string."
+            )
         cases = config.get("cases", {})
         if not isinstance(cases, dict):
             errors.append(

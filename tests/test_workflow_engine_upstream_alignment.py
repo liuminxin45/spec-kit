@@ -1,6 +1,7 @@
 import sys
 import threading
 import time
+import json
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,8 @@ from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepSt
 from specify_cli.workflows.engine import RunState, WorkflowDefinition, WorkflowEngine, validate_workflow
 from specify_cli.workflows.expressions import evaluate_condition, evaluate_expression
 from specify_cli.workflows.steps.shell import ShellStep
+from specify_cli.workflows.steps.prompt import PromptStep
+from specify_cli.workflows.steps.gate import GateStep
 
 
 def test_from_json_filter_is_strict_and_typed():
@@ -164,10 +167,15 @@ def test_fanout_failure_truncates_unless_continue_on_error(tmp_path, capture_ste
     assert [item.get("item") for item in halted.step_results["fan"]["output"]["results"]] == ["ok", "bad"]
 
     continued = WorkflowEngine(tmp_path / "continued").execute(
-        _fanout_definition(["ok", "bad", "later"], "not-an-int", continue_on_error=True),
+        _fanout_definition(["ok", "bad", "later"], 1, continue_on_error=True),
     )
     assert continued.status.value == "completed"
     assert [item.get("item") for item in continued.step_results["fan"]["output"]["results"]] == ["ok", "bad", "later"]
+
+
+def test_fanout_rejects_invalid_max_concurrency():
+    errors = validate_workflow(_fanout_definition([1], "not-an-int"))
+    assert any("max_concurrency" in error for error in errors)
 
 
 def test_parallel_fanout_halt_is_not_overwritten_by_running_sibling(tmp_path, monkeypatch):
@@ -244,3 +252,96 @@ steps:
     assert "unknown or not-yet-declared" in joined
     assert "entries must be step-id strings" in joined
     assert "all options must be strings" in joined
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("workflow: invalid\nsteps: []\n", "'workflow' must be a mapping"),
+        (
+            "workflow:\n  id: 7\n  name: Demo\n  version: 1.0.0\nsteps: []\n",
+            "workflow.id",
+        ),
+        (
+            "workflow:\n  id: demo\n  name: Demo\n  version: 1.0.0\ninputs:\n  mode:\n    enum: wrong\nsteps: []\n",
+            "enum",
+        ),
+    ],
+)
+def test_workflow_validation_rejects_malformed_mapping_and_scalar_types(content, message):
+    assert message in "\n".join(validate_workflow(WorkflowDefinition.from_string(content)))
+
+
+def test_invalid_yaml_is_reported_as_value_error():
+    with pytest.raises(ValueError, match="Invalid workflow YAML"):
+        WorkflowDefinition.from_string("workflow: [")
+
+
+def test_execute_validates_before_creating_run_state(tmp_path):
+    definition = WorkflowDefinition.from_string(
+        "workflow:\n  id: demo\n  name: Demo\n  version: 1.0.0\nsteps:\n  - id: bad\n    type: shell\n    run: 7\n"
+    )
+    with pytest.raises(ValueError, match="Invalid workflow"):
+        WorkflowEngine(tmp_path).execute(definition)
+    assert not (tmp_path / ".specify" / "workflows" / "runs").exists()
+
+
+@pytest.mark.parametrize("timeout", [True, 0, -1, float("inf"), "30"])
+def test_shell_and_prompt_timeout_validation(timeout):
+    shell_errors = ShellStep().validate({"id": "shell", "run": "echo ok", "timeout": timeout})
+    prompt_errors = PromptStep().validate({"id": "prompt", "prompt": "hello", "timeout": timeout})
+    assert any("positive finite number" in error for error in shell_errors)
+    assert any("positive finite number" in error for error in prompt_errors)
+
+
+def test_shell_timeout_returns_failed_result(tmp_path):
+    python = Path(sys.executable).as_posix()
+    result = ShellStep().execute(
+        {"id": "slow", "run": f'"{python}" -c "import time; time.sleep(1)"', "timeout": 0.01},
+        StepContext(project_root=str(tmp_path)),
+    )
+    assert result.status == StepStatus.FAILED
+    assert result.output["timed_out"] is True
+    assert "slow" in (result.error or "")
+
+
+def test_prompt_timeout_is_forwarded_and_reported(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        PromptStep,
+        "_try_dispatch",
+        staticmethod(lambda *args: {"exit_code": 124, "stdout": "", "stderr": "timeout", "timed_out": True}),
+    )
+    result = PromptStep().execute(
+        {"id": "agent", "prompt": "work", "integration": "codex", "timeout": 0.25},
+        StepContext(project_root=str(tmp_path)),
+    )
+    assert result.status == StepStatus.FAILED
+    assert "0.25 seconds" in (result.error or "")
+
+
+def test_gate_show_file_is_bounded_and_sanitized(tmp_path):
+    source = tmp_path / "review.txt"
+    source.write_text("\n".join(["first\x00line", *[f"line-{i}" for i in range(205)]]), encoding="utf-8")
+    content, error = GateStep._read_show_file("review.txt", StepContext(project_root=str(tmp_path)))
+    assert error is None
+    assert "\x00" not in content
+    assert "truncated after 200 lines" in content
+    assert "line-204" not in content
+
+
+def test_run_state_load_reports_corruption_and_list_runs_skips_it(tmp_path):
+    runs = tmp_path / ".specify" / "workflows" / "runs"
+    corrupt = runs / "corrupt"
+    corrupt.mkdir(parents=True)
+    (corrupt / "state.json").write_text("{", encoding="utf-8")
+    mismatch = runs / "expected"
+    mismatch.mkdir()
+    (mismatch / "state.json").write_text(
+        json.dumps({"run_id": "other", "workflow_id": "demo", "status": "failed"}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Invalid run state"):
+        RunState.load("corrupt", tmp_path)
+    with pytest.raises(ValueError, match="does not match"):
+        RunState.load("expected", tmp_path)
+    assert WorkflowEngine(tmp_path).list_runs() == []

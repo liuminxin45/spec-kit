@@ -3182,6 +3182,16 @@ def test_init_is_codex_only_without_ai_selector():
     assert "app.add_typer(preset_app" not in cli
     assert "app.add_typer(extension_app" not in cli
     assert "app.add_typer(integration_catalog_app" not in cli
+    assert "extension_app = typer.Typer" not in cli
+    assert "preset_app = typer.Typer" not in cli
+    assert "integration_catalog_app = typer.Typer" not in cli
+    assert "@extension_app.command" not in cli
+    assert "@preset_app.command" not in cli
+    assert "@integration_catalog_app.command" not in cli
+    assert "--skip-tls" not in init_doc
+    assert "--github-token" not in init_doc
+    assert "--offline" not in init_doc
+    assert '"--debug", help="Show detailed diagnostics' in init_doc
     assert "register_commands_for_non_skill_agents" not in agents
     assert "render_toml_command" not in agents
     assert "render_yaml_command" not in agents

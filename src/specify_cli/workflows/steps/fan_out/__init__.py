@@ -45,6 +45,10 @@ class FanOutStep(StepBase):
                 f"Fan-out step {config.get('id', '?')!r} is missing "
                 f"'items' field."
             )
+        elif not isinstance(config["items"], (str, list)):
+            errors.append(
+                f"Fan-out step {config.get('id', '?')!r}: 'items' must be an expression string or list."
+            )
         if "step" not in config:
             errors.append(
                 f"Fan-out step {config.get('id', '?')!r} is missing "
@@ -54,5 +58,14 @@ class FanOutStep(StepBase):
         if step is not None and not isinstance(step, dict):
             errors.append(
                 f"Fan-out step {config.get('id', '?')!r}: 'step' must be a mapping."
+            )
+        max_concurrency = config.get("max_concurrency", 1)
+        if (
+            isinstance(max_concurrency, bool)
+            or not isinstance(max_concurrency, int)
+            or max_concurrency < 1
+        ):
+            errors.append(
+                f"Fan-out step {config.get('id', '?')!r}: 'max_concurrency' must be an integer >= 1."
             )
         return errors

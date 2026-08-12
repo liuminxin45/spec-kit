@@ -8,7 +8,7 @@ third-party hosts on redirects.
 
 import os
 import urllib.request
-from typing import Dict
+from typing import BinaryIO, Dict
 from urllib.parse import urlparse
 
 # GitHub-owned hostnames that should receive the Authorization header.
@@ -21,6 +21,26 @@ GITHUB_HOSTS = frozenset({
     "api.github.com",
     "codeload.github.com",
 })
+MAX_JSON_RESPONSE_BYTES = 5 * 1024 * 1024
+MAX_ARCHIVE_RESPONSE_BYTES = 100 * 1024 * 1024
+
+
+def read_bounded(response: BinaryIO, max_bytes: int, *, label: str = "response") -> bytes:
+    """Read at most ``max_bytes`` and fail if the response is larger."""
+    if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes < 1:
+        raise ValueError("max_bytes must be a positive integer")
+    content_length = getattr(response, "headers", {}).get("Content-Length")
+    if content_length:
+        try:
+            if int(content_length) > max_bytes:
+                raise ValueError(f"{label} exceeds the {max_bytes}-byte limit")
+        except ValueError as exc:
+            if "exceeds" in str(exc):
+                raise
+    data = response.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ValueError(f"{label} exceeds the {max_bytes}-byte limit")
+    return data
 
 
 def build_github_request(url: str) -> urllib.request.Request:
@@ -63,6 +83,12 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
     """
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        parsed = urlparse(newurl)
+        is_localhost = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+        if parsed.scheme != "https" and not (
+            parsed.scheme == "http" and is_localhost
+        ):
+            raise ValueError(f"Refusing unsafe redirect target: {newurl}")
         original_auth = req.get_header("Authorization")
         new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
         if new_req is not None:
@@ -85,9 +111,6 @@ def open_github_url(url: str, timeout: int = 10):
     that GitHub may redirect to (e.g. S3 for release asset downloads).
     """
     req = build_github_request(url)
-
-    if not req.get_header("Authorization"):
-        return urllib.request.urlopen(req, timeout=timeout)
 
     opener = urllib.request.build_opener(_StripAuthOnRedirect)
     return opener.open(req, timeout=timeout)
