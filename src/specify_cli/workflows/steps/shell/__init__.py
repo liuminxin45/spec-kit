@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 from typing import Any
 
-from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
+from specify_cli.workflows.base import (
+    StepBase,
+    StepContext,
+    StepResult,
+    StepStatus,
+    validate_timeout,
+)
 from specify_cli.workflows.expressions import evaluate_expression
 
 
@@ -23,6 +30,20 @@ class ShellStep(StepBase):
         if isinstance(run_cmd, str) and "{{" in run_cmd:
             run_cmd = evaluate_expression(run_cmd, context)
         run_cmd = str(run_cmd)
+        timeout = config.get("timeout", 300)
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(float(timeout))
+            or timeout <= 0
+        ):
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Shell step {config.get('id', '?')!r}: 'timeout' must be "
+                    "a positive finite number."
+                ),
+            )
 
         cwd = context.project_root or "."
 
@@ -37,7 +58,7 @@ class ShellStep(StepBase):
                 capture_output=True,
                 text=True,
                 cwd=cwd,
-                timeout=300,
+                timeout=timeout,
             )
             output = {
                 "exit_code": proc.returncode,
@@ -71,11 +92,19 @@ class ShellStep(StepBase):
                 status=StepStatus.COMPLETED,
                 output=output,
             )
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
             return StepResult(
                 status=StepStatus.FAILED,
-                error="Shell command timed out after 300 seconds.",
-                output={"exit_code": -1, "stdout": "", "stderr": "timeout"},
+                error=(
+                    f"Shell step {config.get('id', '?')!r} timed out after "
+                    f"{timeout} seconds."
+                ),
+                output={
+                    "exit_code": -1,
+                    "stdout": exc.stdout or "",
+                    "stderr": exc.stderr or "timeout",
+                    "timed_out": True,
+                },
             )
         except OSError as exc:
             return StepResult(
@@ -90,6 +119,13 @@ class ShellStep(StepBase):
             errors.append(
                 f"Shell step {config.get('id', '?')!r} is missing 'run' field."
             )
+        elif not isinstance(config["run"], str):
+            errors.append(
+                f"Shell step {config.get('id', '?')!r}: 'run' must be a string."
+            )
+        errors.extend(
+            validate_timeout(config, f"Shell step {config.get('id', '?')!r}")
+        )
         output_format = config.get("output_format")
         if output_format is not None and output_format != "json":
             errors.append(

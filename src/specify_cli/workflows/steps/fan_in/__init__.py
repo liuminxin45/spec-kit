@@ -58,4 +58,9 @@ class FanInStep(StepBase):
                 f"Fan-in step {config.get('id', '?')!r}: "
                 f"'wait_for' must be a non-empty list of step IDs."
             )
+        output = config.get("output")
+        if output is not None and not isinstance(output, dict):
+            errors.append(
+                f"Fan-in step {config.get('id', '?')!r}: 'output' must be a mapping."
+            )
         return errors

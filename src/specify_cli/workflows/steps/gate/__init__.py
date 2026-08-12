@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+import re
 from typing import Any
 
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
@@ -22,6 +24,8 @@ class GateStep(StepBase):
     """
 
     type_key = "gate"
+    _MAX_FILE_LINES = 200
+    _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
         message = config.get("message", "Review required.")
@@ -43,12 +47,18 @@ class GateStep(StepBase):
             "choice": None,
         }
 
+        if show_file:
+            rendered, display_error = self._read_show_file(show_file, context)
+            output["show_file_content"] = rendered
+            if display_error:
+                output["show_file_error"] = display_error
+
         # Non-interactive: pause for later resume
         if not sys.stdin.isatty():
             return StepResult(status=StepStatus.PAUSED, output=output)
 
         # Interactive: prompt the user
-        choice = self._prompt(message, options)
+        choice = self._prompt(message, options, output.get("show_file_content"))
         output["choice"] = choice
 
         if choice.lower() in ("reject", "abort"):
@@ -68,10 +78,16 @@ class GateStep(StepBase):
         return StepResult(status=StepStatus.COMPLETED, output=output)
 
     @staticmethod
-    def _prompt(message: str, options: list[str]) -> str:
+    def _prompt(
+        message: str, options: list[str], show_file_content: str | None = None
+    ) -> str:
         """Display gate message and prompt for a choice."""
         print("\n  +-- Gate ------------------------------------")
         print(f"  | {message}")
+        if show_file_content:
+            print("  |")
+            for line in show_file_content.splitlines():
+                print(f"  | {line}")
         print("  |")
         for i, opt in enumerate(options, 1):
             print(f"  |  [{i}] {opt}")
@@ -90,11 +106,34 @@ class GateStep(StepBase):
                 return next(o for o in options if o.lower() == raw.lower())
             print(f"  Invalid choice. Enter 1-{len(options)} or an option name.")
 
+    @classmethod
+    def _read_show_file(
+        cls, show_file: Any, context: StepContext
+    ) -> tuple[str, str | None]:
+        if not isinstance(show_file, str) or not show_file.strip():
+            return "", "show_file must resolve to a non-empty path string."
+        path = Path(show_file).expanduser()
+        if not path.is_absolute():
+            path = Path(context.project_root or ".") / path
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError) as exc:
+            return "", f"Unable to read gate show_file {path}: {exc}"
+        bounded = lines[: cls._MAX_FILE_LINES]
+        rendered = "\n".join(cls._CONTROL_CHARS.sub("", line) for line in bounded)
+        if len(lines) > cls._MAX_FILE_LINES:
+            rendered += f"\n... truncated after {cls._MAX_FILE_LINES} lines ..."
+        return rendered, None
+
     def validate(self, config: dict[str, Any]) -> list[str]:
         errors = super().validate(config)
         if "message" not in config:
             errors.append(
                 f"Gate step {config.get('id', '?')!r} is missing 'message' field."
+            )
+        elif not isinstance(config["message"], str):
+            errors.append(
+                f"Gate step {config.get('id', '?')!r}: 'message' must be a string."
             )
         options = config.get("options", ["approve", "reject"])
         if not isinstance(options, list) or not options:
@@ -122,4 +161,8 @@ class GateStep(StepBase):
                     f"Gate step {config.get('id', '?')!r}: on_reject={on_reject!r} "
                     f"but options has no 'reject' or 'abort' choice."
                 )
+        if "show_file" in config and not isinstance(config["show_file"], str):
+            errors.append(
+                f"Gate step {config.get('id', '?')!r}: 'show_file' must be a string."
+            )
         return errors

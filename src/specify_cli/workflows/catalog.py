@@ -301,7 +301,11 @@ class WorkflowCatalog:
 
         # Fetch from URL — validate scheme before opening and after redirects
         from urllib.parse import urlparse
-        from specify_cli._github_http import open_github_url as _open_url
+        from specify_cli._github_http import (
+            MAX_JSON_RESPONSE_BYTES,
+            open_github_url as _open_url,
+            read_bounded,
+        )
 
         def _validate_catalog_url(url: str) -> None:
             parsed = urlparse(url)
@@ -318,7 +322,10 @@ class WorkflowCatalog:
         try:
             with _open_url(entry.url, timeout=30) as resp:
                 _validate_catalog_url(resp.geturl())
-                data = json.loads(resp.read().decode("utf-8"))
+                raw = read_bounded(
+                    resp, MAX_JSON_RESPONSE_BYTES, label="workflow catalog"
+                )
+                data = json.loads(raw.decode("utf-8"))
         except Exception as exc:
             # Fall back to cache if available
             if cache_file.exists():

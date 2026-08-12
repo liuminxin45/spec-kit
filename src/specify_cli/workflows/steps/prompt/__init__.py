@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+import math
 from typing import Any
 
-from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
+from specify_cli.workflows.base import (
+    StepBase,
+    StepContext,
+    StepResult,
+    StepStatus,
+    validate_timeout,
+)
 from specify_cli.workflows.expressions import evaluate_expression
 
 
@@ -36,6 +43,20 @@ class PromptStep(StepBase):
     type_key = "prompt"
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
+        timeout = config.get("timeout", 300)
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(float(timeout))
+            or timeout <= 0
+        ):
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Prompt step {config.get('id', '?')!r}: 'timeout' must be "
+                    "a positive finite number."
+                ),
+            )
         prompt_template = config.get("prompt", "")
         prompt = evaluate_expression(prompt_template, context)
         if not isinstance(prompt, str):
@@ -53,7 +74,7 @@ class PromptStep(StepBase):
 
         # Attempt CLI dispatch
         dispatch_result = self._try_dispatch(
-            prompt, integration, model, context
+            prompt, integration, model, context, timeout
         )
 
         output: dict[str, Any] = {
@@ -67,6 +88,15 @@ class PromptStep(StepBase):
             output["stdout"] = dispatch_result["stdout"]
             output["stderr"] = dispatch_result["stderr"]
             output["dispatched"] = True
+            if dispatch_result.get("timed_out"):
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    output=output,
+                    error=(
+                        f"Prompt step {config.get('id', '?')!r} timed out after "
+                        f"{timeout} seconds."
+                    ),
+                )
             if dispatch_result["exit_code"] != 0:
                 return StepResult(
                     status=StepStatus.FAILED,
@@ -99,6 +129,7 @@ class PromptStep(StepBase):
         integration_key: str | None,
         model: str | None,
         context: StepContext,
+        timeout: float,
     ) -> dict[str, Any] | None:
         """Dispatch *prompt* directly through the integration CLI."""
         if not integration_key or not prompt:
@@ -132,11 +163,19 @@ class PromptStep(StepBase):
                 exec_args,
                 text=True,
                 cwd=str(project_root),
+                timeout=timeout,
             )
             return {
                 "exit_code": result.returncode,
                 "stdout": "",
                 "stderr": "",
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                "exit_code": 124,
+                "stdout": "",
+                "stderr": "timeout",
+                "timed_out": True,
             }
         except KeyboardInterrupt:
             return {
@@ -153,4 +192,16 @@ class PromptStep(StepBase):
             errors.append(
                 f"Prompt step {config.get('id', '?')!r} is missing 'prompt' field."
             )
+        elif not isinstance(config["prompt"], str):
+            errors.append(
+                f"Prompt step {config.get('id', '?')!r}: 'prompt' must be a string."
+            )
+        for key in ("integration", "model"):
+            if key in config and not isinstance(config[key], str):
+                errors.append(
+                    f"Prompt step {config.get('id', '?')!r}: {key!r} must be a string."
+                )
+        errors.extend(
+            validate_timeout(config, f"Prompt step {config.get('id', '?')!r}")
+        )
         return errors

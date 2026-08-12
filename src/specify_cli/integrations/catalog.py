@@ -144,14 +144,21 @@ class IntegrationCatalog(CatalogStackBase):
                     pass  # Cache cleanup is best-effort; ignore deletion failures.
 
         try:
-            from specify_cli._github_http import open_github_url as open_url
+            from specify_cli._github_http import (
+                MAX_JSON_RESPONSE_BYTES,
+                open_github_url as open_url,
+                read_bounded,
+            )
 
             with open_url(entry.url, timeout=10) as resp:
                 # Validate final URL after redirects
                 final_url = resp.geturl()
                 if final_url != entry.url:
                     self._validate_catalog_url(final_url)
-                catalog_data = json.loads(resp.read())
+                raw = read_bounded(
+                    resp, MAX_JSON_RESPONSE_BYTES, label="integration catalog"
+                )
+                catalog_data = json.loads(raw.decode("utf-8"))
 
             if not isinstance(catalog_data, dict):
                 raise IntegrationCatalogError(
@@ -193,6 +200,10 @@ class IntegrationCatalog(CatalogStackBase):
         except json.JSONDecodeError as exc:
             raise IntegrationCatalogError(
                 f"Invalid JSON in catalog from {entry.url}: {exc}"
+            )
+        except UnicodeDecodeError as exc:
+            raise IntegrationCatalogError(
+                f"Catalog from {entry.url} is not valid UTF-8: {exc}"
             )
 
     def _get_merged_integrations(

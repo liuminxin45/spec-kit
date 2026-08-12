@@ -38,6 +38,10 @@ class IfThenStep(StepBase):
             errors.append(
                 f"If step {config.get('id', '?')!r} is missing 'condition' field."
             )
+        elif not isinstance(config["condition"], (str, bool)):
+            errors.append(
+                f"If step {config.get('id', '?')!r}: 'condition' must be a string or boolean."
+            )
         if "then" not in config:
             errors.append(
                 f"If step {config.get('id', '?')!r} is missing 'then' field."
@@ -48,7 +52,7 @@ class IfThenStep(StepBase):
                 f"If step {config.get('id', '?')!r}: 'then' must be a list of steps."
             )
         else_branch = config.get("else", [])
-        if else_branch and not isinstance(else_branch, list):
+        if "else" in config and not isinstance(else_branch, list):
             errors.append(
                 f"If step {config.get('id', '?')!r}: 'else' must be a list of steps."
             )
