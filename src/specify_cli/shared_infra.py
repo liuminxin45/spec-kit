@@ -682,9 +682,9 @@ def install_shared_infra(
             console.print(refresh_hint)
         else:
             console.print(
-                "To refresh shared infrastructure, run "
-                "[cyan]specify init --here --force[/cyan] or "
-                "[cyan]specify integration upgrade --force[/cyan]."
+                "Inspect the managed-file diff with "
+                "[cyan]specify integration upgrade --dry-run --json[/cyan]. "
+                "Use [cyan]--force[/cyan] only when overwriting the listed customizations is intended."
             )
 
     if symlinked_files:

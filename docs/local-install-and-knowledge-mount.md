@@ -27,7 +27,7 @@ ZIP 仅用于传输。挂载前应解压整个 bundle；`specify` 当前接收�
 - `uv`。Spec Kit wheel 位于本地；它的 Python 依赖由 `uv` 从本机缓存或配置的软件源
   解析。完全离线环境还需要事先准备依赖 wheelhouse/缓存。
 
-解压后，AI 应先校验 bundle 内文件：
+`Install-Local.ps1` 会在安装 wheel 前自动校验 bundle 内所有 SHA-256。也可以在执行前手工复核：
 
 ```powershell
 $root = (Resolve-Path <bundle-root>).Path
@@ -74,9 +74,12 @@ pwsh -NoProfile -File .\Install-Local.ps1 `
 行为：
 
 - 用本地 wheel 安装/重装 `specify-cli`。
-- 新项目执行 `specify init`；已初始化项目执行安全 `specify upgrade`。
-- 安装 bundle 中显式包含的知识包并按 manifest 顺序统一 compose。
+- 新项目执行 `specify init`；已初始化项目先 dry-run，再执行安全 `specify upgrade`。
+- 对已有项目的每个已安装 integration 先 dry-run，再执行 `specify integration upgrade`。
+- 安装 bundle 中显式包含的知识包并严格按 `default_compose_order` 统一 compose。
 - 运行 generated context、knowledge index 和 context budget 三项验证。
+- 最后运行带受管文件哈希核验的 `specify self check`；版本过期或文件缺失时安装失败，
+  用户定制文件会以 `warning` 而不是虚假的 `ok` 返回。
 
 仅安装 Spec Kit，不挂载知识包：
 
@@ -113,6 +116,9 @@ specify init --here --force --no-git --ignore-agent-tools
 ```powershell
 specify upgrade --project-dir <target-project-root> --dry-run --json
 specify upgrade --project-dir <target-project-root>
+specify integration upgrade codex --project-dir <target-project-root> --dry-run --json
+specify integration upgrade codex --project-dir <target-project-root>
+specify self check --project-dir <target-project-root> --json
 ```
 
 ## 手动挂载多个知识包

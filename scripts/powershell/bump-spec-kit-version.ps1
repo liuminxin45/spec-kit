@@ -52,7 +52,7 @@ if (-not $resolvedRoot) {
             $current = $versionMatch.Groups[1].Value
             $updated = [regex]::Replace($text, '(?m)^version\s*=\s*"([^"]+)"\s*$', "version = `"$Version`"", 1)
             if ($updated -ne $text) {
-                Set-Content -LiteralPath $pyproject -Value $updated -Encoding UTF8
+                [IO.File]::WriteAllText($pyproject, $updated, [Text.UTF8Encoding]::new($false))
             }
             $result.facts.repo_root = $repoRootPath
             $result.facts.pyproject = $pyproject

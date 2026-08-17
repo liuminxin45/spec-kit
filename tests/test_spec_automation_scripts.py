@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import shutil
 import subprocess
@@ -2666,13 +2667,169 @@ def test_local_distribution_builder_creates_wheel_and_pack_bundle(tmp_path):
         assert any(name.endswith(".dist-info/RECORD") for name in names)
         assert any(name.endswith(".dist-info/entry_points.txt") for name in names)
     manifest = json.loads((output_dir / "bundle-manifest.json").read_text(encoding="utf-8"))
-    assert manifest["spec_kit"]["version"] == "0.10.5"
+    assert manifest["spec_kit"]["version"] == "0.10.6"
     assert manifest["promotion_performed"] is False
     assert [pack["id"] for pack in manifest["knowledge_packs"]] == [pack[0] for pack in expected_packs]
     assert (output_dir / "Install-Local.ps1").exists()
     assert (output_dir / "INSTALL-AI.md").exists()
     assert (output_dir / "SHA256SUMS.json").exists()
     assert Path(payload["facts"]["bundle_zip"]).exists()
+
+
+def test_local_bundle_installer_upgrades_existing_project_and_integration(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    initialized = run_specify_cli(
+        project,
+        "init",
+        "--here",
+        "--force",
+        "--ignore-agent-tools",
+        "--no-git",
+    )
+    assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+
+    old_version = "0.0.1"
+    lock_path = project / ".specify" / "spec-kit.lock.yml"
+    lock = yaml.safe_load(lock_path.read_text(encoding="utf-8"))
+    lock["spec_kit"]["version"] = old_version
+    lock_path.write_text(yaml.safe_dump(lock, sort_keys=False), encoding="utf-8")
+    for name in ("speckit", "codex"):
+        manifest_path = project / ".specify" / "integrations" / f"{name}.manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["version"] = old_version
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    integration_path = project / ".specify" / "integration.json"
+    integration = json.loads(integration_path.read_text(encoding="utf-8"))
+    integration["version"] = old_version
+    integration_path.write_text(json.dumps(integration, indent=2) + "\n", encoding="utf-8")
+    init_options_path = project / ".specify" / "init-options.json"
+    init_options = json.loads(init_options_path.read_text(encoding="utf-8"))
+    init_options["speckit_version"] = old_version
+    init_options_path.write_text(json.dumps(init_options, indent=2) + "\n", encoding="utf-8")
+
+    bundle = tmp_path / "bundle"
+    built = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "python" / "build_local_distribution.py"),
+            "--repo-root",
+            str(REPO_ROOT),
+            "--workspace-root",
+            str(tmp_path),
+            "--output-dir",
+            str(bundle),
+            "--json",
+        ],
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=False,
+    )
+    assert built.returncode == 0, built.stdout + built.stderr
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    (fake_bin / "uv.cmd").write_text("@echo off\r\nexit /b 0\r\n", encoding="utf-8")
+    (fake_bin / "specify.cmd").write_text(
+        f'@echo off\r\n"{sys.executable}" -c "import specify_cli; specify_cli.main()" %*\r\n',
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["PATH"] = str(fake_bin) + os.pathsep + env.get("PATH", "")
+    env["PYTHONPATH"] = str(REPO_ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
+    installed = subprocess.run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(bundle / "Install-Local.ps1"),
+            "-ProjectPath",
+            str(project),
+            "-SkipKnowledgePacks",
+            "-Json",
+        ],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        timeout=180,
+        check=False,
+    )
+    assert installed.returncode == 0, installed.stdout + installed.stderr
+    payload = json.loads(installed.stdout[installed.stdout.index("{"):])
+    assert payload["status"] == "ok"
+    assert payload["upgraded_integrations"] == ["codex"]
+    assert payload["self_check"]["status"] == "current"
+    assert payload["self_check"]["assets"] == "current"
+    assert payload["self_check"]["integrations"] == [{"key": "codex", "status": "current"}]
+
+    current_version = tomllib.loads(read_text("pyproject.toml"))["project"]["version"]
+    upgraded_lock = yaml.safe_load(lock_path.read_text(encoding="utf-8"))
+    upgraded_codex = json.loads(
+        (project / ".specify" / "integrations" / "codex.manifest.json").read_text(encoding="utf-8")
+    )
+    assert upgraded_lock["spec_kit"]["version"] == current_version
+    assert upgraded_codex["version"] == current_version
+
+
+def test_local_bundle_installer_rejects_tampering_before_tool_install(tmp_path):
+    bundle = tmp_path / "bundle"
+    built = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "python" / "build_local_distribution.py"),
+            "--repo-root",
+            str(REPO_ROOT),
+            "--workspace-root",
+            str(tmp_path),
+            "--output-dir",
+            str(bundle),
+            "--json",
+        ],
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=False,
+    )
+    assert built.returncode == 0, built.stdout + built.stderr
+    (bundle / "INSTALL-AI.md").write_text("tampered\n", encoding="utf-8")
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    marker = tmp_path / "uv-invoked.txt"
+    (fake_bin / "uv.cmd").write_text(
+        '@echo off\r\n> "%UV_MARKER%" echo invoked\r\nexit /b 0\r\n',
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["PATH"] = str(fake_bin) + os.pathsep + env.get("PATH", "")
+    env["UV_MARKER"] = str(marker)
+    result = subprocess.run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(bundle / "Install-Local.ps1"),
+            "-ProjectPath",
+            str(tmp_path / "project"),
+            "-SkipKnowledgePacks",
+            "-Json",
+        ],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "Bundle checksum verification failed" in result.stdout + result.stderr
+    assert not marker.exists()
 
 
 def test_spec_kit_core_version_scripts_use_pyproject_as_source(tmp_path):
@@ -2732,6 +2889,7 @@ def test_spec_kit_core_version_scripts_use_pyproject_as_source(tmp_path):
     assert output["facts"]["version"] == "0.1.1"
     assert output["facts"]["tag_name"] == "v0.1.1"
     assert 'version = "0.1.1"' in (temp_repo / "pyproject.toml").read_text(encoding="utf-8")
+    assert not (temp_repo / "pyproject.toml").read_text(encoding="utf-8").endswith("\n\n")
 
 
 def test_specify_upgrade_uses_lock_manifest_and_dry_run(tmp_path):
@@ -2841,7 +2999,262 @@ def test_self_check_reports_project_asset_and_integration_drift(tmp_path):
     assert codex_status["version"] == "0.8.11"
     assert codex_status["status"] == "outdated"
     assert any("specify upgrade" in action for action in payload["project"]["next_actions"])
-    assert "specify integration upgrade codex --force" in payload["project"]["next_actions"]
+    assert "specify integration upgrade codex --dry-run --json" in payload["project"]["next_actions"]
+
+
+def test_self_check_verifies_managed_file_hashes_and_missing_files(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    initialized = run_specify_cli(
+        project,
+        "init",
+        "--here",
+        "--force",
+        "--ignore-agent-tools",
+        "--no-git",
+    )
+    assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+
+    managed_script = project / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    managed_script.write_text(
+        managed_script.read_text(encoding="utf-8") + "\n# local customization\n",
+        encoding="utf-8",
+    )
+    codex_manifest_path = project / ".specify" / "integrations" / "codex.manifest.json"
+    codex_manifest = json.loads(codex_manifest_path.read_text(encoding="utf-8"))
+    missing_rel = sorted(codex_manifest["files"])[0]
+    (project / missing_rel).unlink()
+
+    checked = run_specify_cli(project, "self", "check", "--project-dir", str(project), "--json")
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+    payload = json.loads(checked.stdout)
+
+    assert payload["status"] == "incomplete"
+    assert payload["project"]["assets"]["status"] == "customized"
+    assert ".specify/scripts/powershell/check-prerequisites.ps1" in payload["project"]["assets"]["integrity"]["modified"]
+    codex = next(item for item in payload["project"]["integrations"] if item["key"] == "codex")
+    assert codex["status"] == "incomplete"
+    assert missing_rel in codex["integrity"]["missing"]
+
+    codex_manifest_path.unlink()
+    missing_manifest_check = run_specify_cli(
+        project,
+        "self",
+        "check",
+        "--project-dir",
+        str(project),
+        "--json",
+    )
+    assert missing_manifest_check.returncode == 0
+    missing_manifest_payload = json.loads(missing_manifest_check.stdout)
+    assert missing_manifest_payload["status"] == "incomplete"
+    codex = next(
+        item for item in missing_manifest_payload["project"]["integrations"] if item["key"] == "codex"
+    )
+    assert codex["integrity"]["status"] == "missing-manifest"
+
+
+def test_integration_upgrade_has_safe_machine_readable_preflight(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    initialized = run_specify_cli(
+        project,
+        "init",
+        "--here",
+        "--force",
+        "--ignore-agent-tools",
+        "--no-git",
+    )
+    assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+
+    planned = run_specify_cli(
+        tmp_path,
+        "integration",
+        "upgrade",
+        "codex",
+        "--project-dir",
+        str(project),
+        "--dry-run",
+        "--json",
+    )
+    assert planned.returncode == 0, planned.stdout + planned.stderr
+    payload = json.loads(planned.stdout)
+    assert payload["status"] == "planned"
+    assert payload["plan"]["modified"] == []
+    assert payload["plan"]["target_version"] == tomllib.loads(read_text("pyproject.toml"))["project"]["version"]
+
+    manifest = json.loads(
+        (project / ".specify" / "integrations" / "codex.manifest.json").read_text(encoding="utf-8")
+    )
+    modified_rel = sorted(manifest["files"])[0]
+    modified_path = project / modified_rel
+    modified_path.write_text(modified_path.read_text(encoding="utf-8") + "\ncustom\n", encoding="utf-8")
+    blocked = run_specify_cli(
+        tmp_path,
+        "integration",
+        "upgrade",
+        "codex",
+        "--project-dir",
+        str(project),
+        "--dry-run",
+        "--json",
+    )
+    assert blocked.returncode == 1
+    blocked_payload = json.loads(blocked.stdout)
+    assert blocked_payload["status"] == "blocked"
+    assert modified_rel in blocked_payload["plan"]["modified"]
+
+
+def test_integration_upgrade_removes_stale_files_without_deleting_new_manifest(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    initialized = run_specify_cli(
+        project,
+        "init",
+        "--here",
+        "--force",
+        "--ignore-agent-tools",
+        "--no-git",
+    )
+    assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+
+    stale_rel = ".agents/spec-kit/skills/obsolete/SKILL.md"
+    stale_path = project / stale_rel
+    stale_path.parent.mkdir(parents=True)
+    stale_path.write_text("obsolete\n", encoding="utf-8")
+    manifest_path = project / ".specify" / "integrations" / "codex.manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["files"][stale_rel] = hashlib.sha256(stale_path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    upgraded = run_specify_cli(
+        tmp_path,
+        "integration",
+        "upgrade",
+        "codex",
+        "--project-dir",
+        str(project),
+        "--json",
+    )
+    assert upgraded.returncode == 0, upgraded.stdout + upgraded.stderr
+    payload = json.loads(upgraded.stdout)
+    assert payload["status"] == "ok"
+    assert payload["transaction"]["captured"] is True
+    assert stale_rel in payload["stale_removed"]
+    assert not stale_path.exists()
+    assert manifest_path.exists()
+    verified = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert stale_rel not in verified["files"]
+
+
+def test_integration_upgrade_rolls_back_after_setup_failure(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    initialized = run_specify_cli(
+        project,
+        "init",
+        "--here",
+        "--force",
+        "--ignore-agent-tools",
+        "--no-git",
+    )
+    assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+
+    manifest_path = project / ".specify" / "integrations" / "codex.manifest.json"
+    before_manifest = manifest_path.read_bytes()
+    manifest = json.loads(before_manifest)
+    tracked_rel = sorted(manifest["files"])[0]
+    tracked_path = project / tracked_rel
+    before_tracked = tracked_path.read_bytes()
+    runner = f"""
+import sys
+from pathlib import Path
+import typer
+import specify_cli
+from specify_cli.integrations.codex import CodexIntegration
+
+project = Path({str(project)!r}).resolve()
+original = CodexIntegration.setup
+
+def failing_setup(self, project_root, manifest, parsed_options=None, **opts):
+    result = original(self, project_root, manifest, parsed_options=parsed_options, **opts)
+    if Path(project_root).resolve() == project:
+        raise RuntimeError('forced integration setup failure')
+    return result
+
+CodexIntegration.setup = failing_setup
+try:
+    specify_cli.integration_upgrade(
+        key='codex',
+        force=False,
+        script=None,
+        integration_options=None,
+        project_dir=str(project),
+        dry_run=False,
+        json_output=True,
+    )
+except typer.Exit as exc:
+    raise SystemExit(exc.exit_code)
+"""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(REPO_ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
+    failed = subprocess.run(
+        [sys.executable, "-c", runner],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        timeout=120,
+        check=False,
+    )
+    assert failed.returncode == 1, failed.stdout + failed.stderr
+    payload = json.loads(failed.stdout)
+    assert payload["status"] == "blocked"
+    assert payload["transaction"]["rolled_back"] is True
+    assert payload["transaction"]["rollback_errors"] == []
+    assert manifest_path.read_bytes() == before_manifest
+    assert tracked_path.read_bytes() == before_tracked
+
+
+def test_project_upgrade_rolls_back_when_post_validation_fails(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    initialized = run_specify_cli(
+        project,
+        "init",
+        "--here",
+        "--force",
+        "--ignore-agent-tools",
+        "--no-git",
+    )
+    assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+
+    managed_rel = ".specify/scripts/powershell/check-prerequisites.ps1"
+    managed_path = project / managed_rel
+    old_content = b"# simulated previous managed version\n"
+    managed_path.write_bytes(old_content)
+    manifest_path = project / ".specify" / "integrations" / "speckit.manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["files"][managed_rel] = hashlib.sha256(old_content).hexdigest()
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    validation_path = project / ".specify" / "scripts" / "powershell" / "validate-context-budget.ps1"
+    validation_path.write_text("throw 'forced validation failure'\n", encoding="utf-8")
+    before_lock = (project / ".specify" / "spec-kit.lock.yml").read_bytes()
+    before_manifest = manifest_path.read_bytes()
+
+    upgraded = run_specify_cli(project, "upgrade", "--json")
+    assert upgraded.returncode == 1, upgraded.stdout + upgraded.stderr
+    payload = json.loads(upgraded.stdout[upgraded.stdout.index("{"):])
+    assert payload["status"] == "blocked"
+    assert payload["transaction"]["captured"] is True
+    assert payload["transaction"]["rolled_back"] is True
+    assert payload["transaction"]["rollback_errors"] == []
+    assert managed_path.read_bytes() == old_content
+    assert manifest_path.read_bytes() == before_manifest
+    assert (project / ".specify" / "spec-kit.lock.yml").read_bytes() == before_lock
 
 
 def test_specify_knowledge_commands_wrap_project_scripts(tmp_path):

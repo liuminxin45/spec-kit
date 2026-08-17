@@ -3265,6 +3265,10 @@ def test_local_distribution_documentation_is_ai_actionable():
     assert "validate-knowledge-pack.ps1" in builder
     assert "install-knowledge-pack.ps1" in installer
     assert "compose-knowledge-packs.ps1" in installer
+    assert "Assert-BundleChecksums" in installer
+    assert '"integration", "upgrade"' in installer
+    assert '"self", "check"' in installer
+    assert "default_compose_order" in installer
     assert "github/spec-kit" in readme
     assert "本仓库不是 GitHub 官方项目" in readme
     assert "specify upgrade --project-dir <project-dir> --dry-run" in readme

@@ -32,6 +32,7 @@ import subprocess
 import zipfile
 import shutil
 import json
+import tempfile
 import yaml
 from pathlib import Path
 
@@ -1059,7 +1060,9 @@ def upgrade(
     from ._upgrade import (
         apply_project_upgrade,
         build_upgrade_plan,
+        capture_upgrade_snapshot,
         resolve_upgrade_source,
+        restore_upgrade_snapshot,
         run_post_upgrade_validations,
     )
     from ._project_status import build_project_status
@@ -1108,6 +1111,7 @@ def upgrade(
         "applied": None,
         "validations": [],
         "blockers": [],
+        "transaction": {"captured": False, "rolled_back": False, "rollback_errors": []},
     }
 
     if dry_run:
@@ -1117,33 +1121,58 @@ def upgrade(
             _print_upgrade_plan(plan)
         return
 
-    applied = apply_project_upgrade(
-        project_root,
-        source_info=source_info,
-        current_version=current_version,
-        invoke_separator=invoke_separator,
-        force=force,
-        console=console,
-    )
-    result["applied"] = applied
+    try:
+        snapshot = capture_upgrade_snapshot(project_root, plan)
+        result["transaction"]["captured"] = True
+    except (OSError, ValueError) as exc:
+        result["status"] = "blocked"
+        result["blockers"].append(f"Could not create upgrade rollback snapshot: {exc}")
+        if json_output:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            console.print(f"[red]Blocked:[/red] {result['blockers'][0]}")
+        raise typer.Exit(1)
 
-    init_options = load_init_options(project_root)
-    init_options["speckit_version"] = source_info["version"]
-    init_options["speckit_upgrade_lock"] = applied.get("lock_file", "")
-    save_init_options(project_root, init_options)
+    try:
+        applied = apply_project_upgrade(
+            project_root,
+            source_info=source_info,
+            current_version=current_version,
+            invoke_separator=invoke_separator,
+            force=force,
+            console=console,
+        )
+        result["applied"] = applied
 
-    if not skip_validation:
-        validations = run_post_upgrade_validations(project_root)
-        result["validations"] = validations
-        blocked = [
-            item.get("tool", "validation")
-            for item in validations
-            if item.get("status") == "blocked"
-        ]
-        if blocked:
-            result["status"] = "blocked"
+        init_options = load_init_options(project_root)
+        init_options["speckit_version"] = source_info["version"]
+        init_options["speckit_upgrade_lock"] = applied.get("lock_file", "")
+        save_init_options(project_root, init_options)
+
+        if not skip_validation:
+            validations = run_post_upgrade_validations(project_root)
+            result["validations"] = validations
+            failed = [
+                item.get("tool", "validation")
+                for item in validations
+                if item.get("status") != "ok"
+            ]
+            if failed:
+                result["status"] = "blocked"
+                result["blockers"].append(
+                    "Post-upgrade validation did not pass: " + ", ".join(failed)
+                )
+    except Exception as exc:
+        result["status"] = "blocked"
+        result["blockers"].append(f"Project asset upgrade failed: {exc}")
+
+    if result["status"] == "blocked":
+        rollback_errors = restore_upgrade_snapshot(project_root, snapshot)
+        result["transaction"]["rolled_back"] = not rollback_errors
+        result["transaction"]["rollback_errors"] = rollback_errors
+        if rollback_errors:
             result["blockers"].append(
-                "Post-upgrade validation blocked: " + ", ".join(blocked)
+                "Upgrade rollback was incomplete: " + "; ".join(rollback_errors)
             )
 
     unresolved_upgrade_items = [
@@ -1164,29 +1193,33 @@ def upgrade(
     )
     result["project_status"] = project_status
     if result["status"] == "ok" and (
-        project_status["status"] == "outdated" or unresolved_upgrade_items
+        project_status["status"] != "current" or unresolved_upgrade_items
     ):
         result["status"] = "warning"
 
     if json_output:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
-        console.print(
-            f"[green]OK[/green] Spec Kit project assets upgraded "
-            f"{current_version} -> {source_info['version']}"
-        )
-        console.print(f"Lockfile: [cyan]{applied['lock_file']}[/cyan]")
-        console.print(f"Manifest: [cyan]{applied['manifest']}[/cyan]")
-        if unresolved_upgrade_items:
-            console.print("[yellow]Warning:[/yellow] Some managed assets were preserved or skipped.")
-            console.print("Review the dry-run plan, then rerun with [cyan]--force[/cyan] only when the overwrite is intended.")
-        if project_status["status"] == "outdated":
-            console.print("[yellow]Warning:[/yellow] Some project assets are still not on the target version.")
-            for action in project_status.get("next_actions", []):
-                console.print(f"  {action}")
-        if result["blockers"]:
+        if result["status"] == "blocked":
             for blocker in result["blockers"]:
                 console.print(f"[red]Blocked:[/red] {blocker}")
+            if result["transaction"]["rolled_back"]:
+                console.print("[green]Rollback complete:[/green] project files were restored.")
+        else:
+            applied = result["applied"] or {}
+            console.print(
+                f"[green]OK[/green] Spec Kit project assets upgraded "
+                f"{current_version} -> {source_info['version']}"
+            )
+            console.print(f"Lockfile: [cyan]{applied.get('lock_file', '')}[/cyan]")
+            console.print(f"Manifest: [cyan]{applied.get('manifest', '')}[/cyan]")
+            if unresolved_upgrade_items:
+                console.print("[yellow]Warning:[/yellow] Some managed assets were preserved or skipped.")
+                console.print("Review the dry-run plan, then rerun with [cyan]--force[/cyan] only when the overwrite is intended.")
+            if project_status["status"] != "current":
+                console.print("[yellow]Warning:[/yellow] Some project assets are not fully verified against the target version.")
+                for action in project_status.get("next_actions", []):
+                    console.print(f"  {action}")
 
     if result["status"] == "blocked":
         raise typer.Exit(1)
@@ -2252,6 +2285,9 @@ def integration_upgrade(
     force: bool = typer.Option(False, "--force", help="Force upgrade even if files are modified"),
     script: str | None = typer.Option(None, "--script", help="Script type: ps (default: from init-options.json or PowerShell)"),
     integration_options: str | None = typer.Option(None, "--integration-options", help="Options for the integration"),
+    project_dir: str | None = typer.Option(None, "--project-dir", "--dir", "-C", help="Spec Kit project root to upgrade"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate the upgrade without writing files"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable upgrade facts"),
 ):
     """Upgrade an integration by reinstalling with diff-aware file handling.
 
@@ -2260,48 +2296,98 @@ def integration_upgrade(
     """
     from .integrations import get_integration
     from .integrations.manifest import IntegrationManifest
+    from ._upgrade import (
+        _collect_shared_assets,
+        capture_file_snapshot,
+        restore_upgrade_snapshot,
+    )
+    from .shared_infra import load_speckit_manifest
 
-    project_root = _require_specify_project()
+    project_root = _require_specify_project(project_dir)
     current = _read_integration_json(project_root)
     installed_key = _default_integration_key(current)
     installed_keys = _installed_integration_keys(current)
 
     if key is None:
         if not installed_key:
-            console.print("[yellow]No integration is currently installed.[/yellow]")
-            raise typer.Exit(0)
+            blocker = "No integration is currently installed."
+            if json_output:
+                print(json.dumps({"status": "blocked", "blockers": [blocker]}, ensure_ascii=False))
+            else:
+                console.print(f"[yellow]{blocker}[/yellow]")
+            raise typer.Exit(1)
         key = installed_key
 
     if key not in installed_keys:
-        console.print(f"[red]Error:[/red] Integration '{key}' is not installed.")
+        blocker = f"Integration '{key}' is not installed."
+        if json_output:
+            print(json.dumps({"status": "blocked", "blockers": [blocker]}, ensure_ascii=False))
+        else:
+            console.print(f"[red]Error:[/red] {blocker}")
         raise typer.Exit(1)
 
     integration = get_integration(key)
     if integration is None:
-        console.print(f"[red]Error:[/red] Unknown integration '{key}'")
+        blocker = f"Unknown integration '{key}'"
+        if json_output:
+            print(json.dumps({"status": "blocked", "blockers": [blocker]}, ensure_ascii=False))
+        else:
+            console.print(f"[red]Error:[/red] {blocker}")
         raise typer.Exit(1)
 
     manifest_path = project_root / ".specify" / "integrations" / f"{key}.manifest.json"
     if not manifest_path.exists():
-        console.print(f"[yellow]No manifest found for integration '{key}'. Nothing to upgrade.[/yellow]")
-        console.print(f"Run [cyan]specify integration install {key}[/cyan] to perform a fresh install.")
-        raise typer.Exit(0)
+        blocker = f"No manifest found for integration '{key}'."
+        if json_output:
+            print(json.dumps({"status": "blocked", "blockers": [blocker]}, ensure_ascii=False))
+        else:
+            console.print(f"[yellow]{blocker}[/yellow]")
+            console.print(f"Run [cyan]specify integration install {key}[/cyan] to perform a fresh install.")
+        raise typer.Exit(1)
 
     try:
         old_manifest = IntegrationManifest.load(key, project_root)
     except _MANIFEST_READ_ERRORS as exc:
-        console.print(f"[red]Error:[/red] Integration manifest for '{key}' is unreadable: {exc}")
+        blocker = f"Integration manifest for '{key}' is unreadable: {exc}"
+        if json_output:
+            print(json.dumps({"status": "blocked", "blockers": [blocker]}, ensure_ascii=False))
+        else:
+            console.print(f"[red]Error:[/red] {blocker}")
         raise typer.Exit(1)
 
-    # Detect modified files via manifest hashes
-    modified = old_manifest.check_modified()
+    integrity = old_manifest.inspect_integrity()
+    modified = integrity["modified"]
+    plan = {
+        "integration": key,
+        "project_root": str(project_root),
+        "current_version": old_manifest.version or "unknown",
+        "target_version": get_speckit_version(),
+        "force": force,
+        "tracked": integrity["tracked"],
+        "matched": len(integrity["matched"]),
+        "modified": modified,
+        "missing": integrity["missing"],
+        "unsafe": integrity["unsafe"],
+    }
     if modified and not force:
-        console.print(f"[yellow]⚠[/yellow]  {len(modified)} file(s) have been modified since installation:")
-        for rel in modified:
-            console.print(f"    {rel}")
-        console.print("\nUse [cyan]--force[/cyan] to overwrite modified files, or resolve manually.")
+        blocker = (
+            f"{len(modified)} integration file(s) have been modified since installation. "
+            "Review the dry-run result and use --force only when overwriting them is intended."
+        )
+        if json_output:
+            print(json.dumps({"status": "blocked", "dry_run": dry_run, "plan": plan, "blockers": [blocker]}, ensure_ascii=False, indent=2))
+        else:
+            console.print(f"[yellow]Warning:[/yellow] {blocker}")
+            for rel in modified:
+                console.print(f"    {rel}")
         raise typer.Exit(1)
-
+    if integrity["unsafe"]:
+        blocker = f"Integration manifest contains {len(integrity['unsafe'])} unsafe path(s)."
+        if json_output:
+            print(json.dumps({"status": "blocked", "dry_run": dry_run, "plan": plan, "blockers": [blocker]}, ensure_ascii=False, indent=2))
+        else:
+            console.print(f"[red]Error:[/red] {blocker}")
+        raise typer.Exit(1)
     selected_script = _resolve_integration_script_type(project_root, current, key, script)
 
     # Build parsed options from --integration-options so the integration
@@ -2323,19 +2409,83 @@ def integration_upgrade(
             _, infra_parsed = _resolve_integration_options(
                 default_integration, current, installed_key, None
             )
-    _install_shared_infra_or_exit(
-        project_root,
-        selected_script,
-        force=force,
-        invoke_separator=_invoke_separator_for_integration(
-            infra_integration, current, infra_key, infra_parsed
-        ),
+    infra_separator = _invoke_separator_for_integration(
+        infra_integration, current, infra_key, infra_parsed
     )
-    # Phase 1: Install new files (overwrites existing; old-only files remain)
-    console.print(f"Upgrading integration: [cyan]{key}[/cyan]")
-    new_manifest = IntegrationManifest(key, project_root, version=get_speckit_version())
+
+    affected_files = set(old_manifest.files)
+    with tempfile.TemporaryDirectory(prefix=f"specify-{key}-upgrade-plan-") as temp_dir:
+        temp_root = Path(temp_dir)
+        predicted_manifest = IntegrationManifest(key, temp_root, version=get_speckit_version())
+        integration.setup(
+            temp_root,
+            predicted_manifest,
+            parsed_options=parsed_options,
+            script_type=selected_script,
+            raw_options=raw_options,
+        )
+        affected_files.update(predicted_manifest.files)
+
+    speckit_manifest = load_speckit_manifest(project_root, version=get_speckit_version())
+    affected_files.update(speckit_manifest.files)
+    affected_files.update(
+        _collect_shared_assets(
+            project_root=project_root,
+            core_pack=_locate_core_pack(),
+            repo_root=_repo_root(),
+            invoke_separator=infra_separator,
+        )
+    )
+    affected_files.update(
+        {
+            f".specify/integrations/{key}.manifest.json",
+            ".specify/integrations/speckit.manifest.json",
+            INTEGRATION_JSON,
+            INIT_OPTIONS_FILE,
+        }
+    )
+    plan["planned_files"] = len(predicted_manifest.files)
+    plan["affected_files"] = len(affected_files)
+    if dry_run:
+        payload = {"status": "planned", "dry_run": True, "plan": plan, "blockers": []}
+        if json_output:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            console.print(
+                f"Integration '{key}' upgrade is ready: "
+                f"{plan['current_version']} -> {plan['target_version']}"
+            )
+            console.print(
+                f"Tracked: {plan['tracked']}, matched: {plan['matched']}, "
+                f"missing to restore: {len(plan['missing'])}, "
+                f"planned files: {plan['planned_files']}"
+            )
+        return
 
     try:
+        snapshot = capture_file_snapshot(project_root, affected_files)
+    except (OSError, ValueError) as exc:
+        blocker = f"Could not create integration rollback snapshot: {exc}"
+        if json_output:
+            print(json.dumps({"status": "blocked", "dry_run": False, "plan": plan, "blockers": [blocker]}, ensure_ascii=False, indent=2))
+        else:
+            console.print(f"[red]Blocked:[/red] {blocker}")
+        raise typer.Exit(1)
+
+    transaction = {"captured": True, "rolled_back": False, "rollback_errors": []}
+    new_manifest = IntegrationManifest(key, project_root, version=get_speckit_version())
+    console_was_quiet = console.quiet
+    if json_output:
+        console.quiet = True
+
+    try:
+        _install_shared_infra_or_exit(
+            project_root,
+            selected_script,
+            force=force,
+            invoke_separator=infra_separator,
+        )
+        console.print(f"Upgrading integration: [cyan]{key}[/cyan]")
         integration.setup(
             project_root,
             new_manifest,
@@ -2368,26 +2518,79 @@ def integration_upgrade(
         _write_integration_json(project_root, installed_key, installed_keys, settings)
         if installed_key == key:
             _update_init_options_for_integration(project_root, integration, script_type=selected_script)
+
+        old_files = old_manifest.files
+        new_files = new_manifest.files
+        stale_keys = set(old_files) - set(new_files)
+        if stale_keys:
+            stale_manifest = IntegrationManifest(key, project_root, version="stale-cleanup")
+            stale_manifest._files = {item: old_files[item] for item in stale_keys}
+            stale_removed, _ = stale_manifest.uninstall(
+                project_root,
+                force=True,
+                remove_manifest=False,
+            )
+            if stale_removed:
+                console.print(f"  Removed {len(stale_removed)} stale file(s) from previous install")
+
+        verified_manifest = IntegrationManifest.load(key, project_root)
+        verified = verified_manifest.inspect_integrity()
+        if verified["modified"] or verified["missing"] or verified["unsafe"]:
+            raise RuntimeError(
+                "post-upgrade integration integrity verification failed "
+                f"(modified={len(verified['modified'])}, "
+                f"missing={len(verified['missing'])}, unsafe={len(verified['unsafe'])})"
+            )
     except Exception as exc:
-        # Don't teardown — setup overwrites in-place, so teardown would
-        # delete files that were working before the upgrade.  Just report.
-        console.print(f"[red]Error:[/red] Failed to upgrade integration: {exc}")
-        console.print("[yellow]The previous integration files may still be in place.[/yellow]")
+        console.quiet = console_was_quiet
+        rollback_errors = restore_upgrade_snapshot(project_root, snapshot)
+        transaction["rolled_back"] = not rollback_errors
+        transaction["rollback_errors"] = rollback_errors
+        blockers = [f"Failed to upgrade integration: {exc}"]
+        if rollback_errors:
+            blockers.append("Integration rollback was incomplete: " + "; ".join(rollback_errors))
+        if json_output:
+            print(
+                json.dumps(
+                    {
+                        "status": "blocked",
+                        "dry_run": False,
+                        "plan": plan,
+                        "blockers": blockers,
+                        "transaction": transaction,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            for blocker in blockers:
+                console.print(f"[red]Error:[/red] {blocker}")
+            if transaction["rolled_back"]:
+                console.print("[green]Rollback complete:[/green] integration files were restored.")
         raise typer.Exit(1)
 
-    # Phase 2: Remove stale files from old manifest that are not in the new one
-    old_files = old_manifest.files
-    new_files = new_manifest.files
-    stale_keys = set(old_files) - set(new_files)
-    if stale_keys:
-        stale_manifest = IntegrationManifest(key, project_root, version="stale-cleanup")
-        stale_manifest._files = {k: old_files[k] for k in stale_keys}
-        stale_removed, _ = stale_manifest.uninstall(project_root, force=True)
-        if stale_removed:
-            console.print(f"  Removed {len(stale_removed)} stale file(s) from previous install")
+    console.quiet = console_was_quiet
 
     name = (integration.config or {}).get("name", key)
-    console.print(f"\n[green]OK[/green] Integration '{name}' upgraded successfully")
+    if json_output:
+        print(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "dry_run": False,
+                    "plan": plan,
+                    "version": get_speckit_version(),
+                    "stale_removed": sorted(stale_keys),
+                    "blockers": [],
+                    "transaction": transaction,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        console.print(f"\n[green]OK[/green] Integration '{name}' upgraded successfully")
 
 
 # ===== Integration catalog discovery commands =====
