@@ -28,7 +28,7 @@ Project-specific facts belong in workspace-local `ai/knowledge/` or portable cap
 
 官方 Spec Kit 的主线是通用 Spec-Driven Development：先把想法写成 spec，再生成 plan、tasks，最后 implement。这个仓库保留这个思想，但把它收敛成 Codex-only 的工程交付系统。
 
-当前对齐基线为 `upstream_baseline: github/spec-kit@v0.16.2`；本仓库版本独立演进，当前本地版本线为 `0.10.5`，不冒用官方版本号。
+当前对齐基线为 `upstream_baseline: github/spec-kit@v0.16.2`；本仓库版本独立演进，当前本地版本线为 `0.10.6`，不冒用官方版本号。
 
 | 维度 | 官方 `github/spec-kit` | 本仓库 | 主要优势 |
 | --- | --- | --- | --- |
@@ -85,13 +85,17 @@ flowchart LR
 pwsh -NoProfile -File .\scripts\powershell\install.ps1
 ```
 
+若源码目录的父目录已经是 Spec Kit 项目，脚本会依次预检并升级 CLI、项目资产和已安装的
+Codex integration，最后执行带文件哈希的 `self check`。只想安装 CLI 时使用
+`-SkipProjectUpgrade`；覆盖用户定制文件必须显式使用 `-ForceManagedAssetRefresh`。
+
 开发本仓库时可用 editable 安装：
 
 ```powershell
 pwsh -NoProfile -File .\scripts\powershell\install.ps1 -Editable
 ```
 
-检查当前 CLI 和项目资产状态：
+检查当前 CLI、项目资产版本及受管文件完整性：
 
 ```powershell
 specify --version
@@ -174,7 +178,7 @@ specify init --here --knowledge-pack <pack-dir> --knowledge-pack-apply-profiles
 
 ### 项目资产升级
 
-预览升级：
+预览项目资产升级：
 
 ```powershell
 specify upgrade --project-dir <project-dir> --dry-run
@@ -192,10 +196,13 @@ specify upgrade --project-dir <project-dir>
 specify upgrade --project-dir <project-dir> --source <spec-kit-source-dir>
 ```
 
+项目资产升级会在写入前保存事务快照；运行期异常或安装后验证未通过时会恢复升级前文件。
+
 刷新 Codex 入口 skill 和内部阶段 skills：
 
 ```powershell
-specify integration upgrade codex --force
+specify integration upgrade codex --dry-run --json
+specify integration upgrade codex
 ```
 
 诊断项目集成状态：

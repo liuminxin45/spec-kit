@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -30,6 +32,12 @@ from .shared_infra import (
 LOCK_REL_PATH = ".specify/spec-kit.lock.yml"
 MANIFEST_REL_PATH = ".specify/integrations/speckit.manifest.json"
 MANAGED_WORKFLOW_REL = ".specify/workflows/speckit/workflow.yml"
+UPGRADE_METADATA_RELS = {
+    LOCK_REL_PATH,
+    MANIFEST_REL_PATH,
+    ".specify/init-options.json",
+    ".specify/workflows/workflow-registry.json",
+}
 
 
 def _now() -> str:
@@ -38,6 +46,82 @@ def _now() -> str:
 
 def _hash_bytes(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
+
+
+def capture_file_snapshot(
+    project_root: Path,
+    rels: set[str] | list[str],
+) -> dict[str, dict[str, Any]]:
+    """Capture regular project files before a multi-file mutation."""
+    snapshot: dict[str, dict[str, Any]] = {}
+    root = project_root.resolve()
+    for rel in sorted(rels):
+        rel_path = Path(rel)
+        if rel_path.is_absolute() or ".." in rel_path.parts:
+            raise ValueError(f"Upgrade snapshot path is unsafe: {rel}")
+        path = root / rel_path
+        if not path.exists() and not path.is_symlink():
+            snapshot[rel] = {"exists": False, "content": b"", "mode": 0o644}
+            continue
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"Upgrade snapshot refuses non-regular path: {rel}")
+        snapshot[rel] = {
+            "exists": True,
+            "content": path.read_bytes(),
+            "mode": path.stat().st_mode & 0o777,
+        }
+    return snapshot
+
+
+def capture_upgrade_snapshot(project_root: Path, plan: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Capture every file the project-asset upgrade may add, replace, or remove."""
+    rels = set(UPGRADE_METADATA_RELS)
+    for bucket in ("added", "updated", "forced_overwrite", "removed_stale"):
+        rels.update(str(item) for item in plan.get(bucket, []))
+    workflow = plan.get("workflow") or {}
+    if workflow.get("status") in {"added", "updated", "forced-overwrite"}:
+        rels.add(str(workflow.get("path", MANAGED_WORKFLOW_REL)))
+    return capture_file_snapshot(project_root, rels)
+
+
+def restore_upgrade_snapshot(
+    project_root: Path,
+    snapshot: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Restore a captured upgrade snapshot and return any rollback errors."""
+    errors: list[str] = []
+    root = project_root.resolve()
+    for rel, state in snapshot.items():
+        path = root / rel
+        try:
+            if not state["exists"]:
+                if path.is_symlink() or path.is_file():
+                    path.unlink()
+                elif path.exists():
+                    raise OSError("new path is not a regular file")
+                parent = path.parent
+                while parent != root:
+                    try:
+                        parent.rmdir()
+                    except OSError:
+                        break
+                    parent = parent.parent
+                continue
+
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.rollback.", dir=path.parent)
+            temp_path = Path(temp_name)
+            try:
+                with os.fdopen(fd, "wb") as fh:
+                    fh.write(state["content"])
+                temp_path.chmod(state["mode"])
+                os.replace(temp_path, path)
+            finally:
+                if temp_path.exists():
+                    temp_path.unlink()
+        except OSError as exc:
+            errors.append(f"{rel}: {exc}")
+    return errors
 
 
 def _read_pyproject_version(source_root: Path) -> str:

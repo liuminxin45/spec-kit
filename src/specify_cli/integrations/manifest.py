@@ -173,22 +173,45 @@ class IntegrationManifest:
 
     def check_modified(self) -> list[str]:
         """Return relative paths of tracked files whose content changed on disk."""
+        return self.inspect_integrity()["modified"]
+
+    def inspect_integrity(self) -> dict[str, Any]:
+        """Return content-integrity facts for every tracked manifest entry.
+
+        ``check_modified`` intentionally retains its historical meaning and
+        reports only existing files whose content or file type changed.  This
+        richer API also reports missing and unsafe entries so callers such as
+        ``specify self check`` cannot declare an installation current from
+        version metadata alone.
+        """
+        matched: list[str] = []
         modified: list[str] = []
+        missing: list[str] = []
+        unsafe: list[str] = []
         for rel, expected_hash in self._files.items():
             rel_path = Path(rel)
-            # Skip paths that are absolute or attempt to escape the project root
             if rel_path.is_absolute() or ".." in rel_path.parts:
+                unsafe.append(rel)
                 continue
             abs_path = self.project_root / rel_path
             if not abs_path.exists() and not abs_path.is_symlink():
+                missing.append(rel)
                 continue
-            # Treat symlinks and non-regular-files as modified
             if abs_path.is_symlink() or not abs_path.is_file():
                 modified.append(rel)
                 continue
             if _sha256(abs_path) != expected_hash:
                 modified.append(rel)
-        return modified
+            else:
+                matched.append(rel)
+
+        return {
+            "tracked": len(self._files),
+            "matched": matched,
+            "modified": modified,
+            "missing": missing,
+            "unsafe": unsafe,
+        }
 
     # -- Uninstall --------------------------------------------------------
 
@@ -197,12 +220,14 @@ class IntegrationManifest:
         project_root: Path | None = None,
         *,
         force: bool = False,
+        remove_manifest: bool = True,
     ) -> tuple[list[Path], list[Path]]:
         """Remove tracked files whose hash still matches.
 
         Parameters:
             project_root: Override for the project root.
             force:        If ``True``, remove files even if modified.
+            remove_manifest: Remove this integration's manifest after files.
 
         Returns:
             ``(removed, skipped)`` — absolute paths.
@@ -254,16 +279,17 @@ class IntegrationManifest:
                 parent = parent.parent
 
         # Remove the manifest file itself
-        manifest = root / ".specify" / "integrations" / f"{self.key}.manifest.json"
-        if manifest.exists():
-            manifest.unlink()
-            parent = manifest.parent
-            while parent != root:
-                try:
-                    parent.rmdir()
-                except OSError:
-                    break
-                parent = parent.parent
+        if remove_manifest:
+            manifest = root / ".specify" / "integrations" / f"{self.key}.manifest.json"
+            if manifest.exists():
+                manifest.unlink()
+                parent = manifest.parent
+                while parent != root:
+                    try:
+                        parent.rmdir()
+                    except OSError:
+                        break
+                    parent = parent.parent
 
         return removed, skipped
 

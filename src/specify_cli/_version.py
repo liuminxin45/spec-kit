@@ -195,15 +195,34 @@ def _print_project_status(project_status: dict) -> None:
         f"{assets.get('version', 'unknown')} "
         f"({assets.get('status', 'unknown')})"
     )
+    asset_integrity = assets.get("integrity", {})
+    if asset_integrity:
+        console.print(
+            "  Integrity: "
+            f"{asset_integrity.get('matched', 0)}/{asset_integrity.get('tracked', 0)} matched, "
+            f"{len(asset_integrity.get('modified', []))} modified, "
+            f"{len(asset_integrity.get('missing', []))} missing"
+        )
     integrations = project_status.get("integrations", [])
     if integrations:
         for item in integrations:
             console.print(
                 f"Integration {item['key']}: {item['version']} ({item['status']})"
             )
+            integrity = item.get("integrity", {})
+            if integrity:
+                console.print(
+                    "  Integrity: "
+                    f"{integrity.get('matched', 0)}/{integrity.get('tracked', 0)} matched, "
+                    f"{len(integrity.get('modified', []))} modified, "
+                    f"{len(integrity.get('missing', []))} missing"
+                )
 
-    if project_status.get("status") == "outdated":
-        console.print("[yellow]Project assets are not fully upgraded.[/yellow]")
+    if project_status.get("status") != "current":
+        console.print(
+            "[yellow]Project assets are not fully current and verified "
+            f"({project_status.get('status', 'unknown')}).[/yellow]"
+        )
         for action in project_status.get("next_actions", []):
             console.print(f"  {action}")
 
