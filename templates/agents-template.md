@@ -89,7 +89,9 @@ This avoids stale knowledge and keeps AI coding context bounded.
   knowledge guides. Do not assume project-specific log directories in generic
   workspaces.
 - Branch completion cherry-picks back to the entry branch recorded at spec
-  branch creation, keeps the local spec branch by default, and does not push.
+  branch creation, keeps the local spec branch by default, and does not push. Every participating
+  repository must return to its recorded entry branch, including repositories
+  with no changes; verify actual branches before reporting completion.
 - Commit is opt-in after validation and user acceptance. It does not require
   retrospective or workflow-observer artifacts. Post-commit self-check and
   Rubric scoring are strict/release-mode opt-in stages.

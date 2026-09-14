@@ -31,7 +31,7 @@ Complete an accepted local Spec branch only when the user explicitly asks for br
 2. Run preflight:
    - PowerShell: `.specify/scripts/powershell/complete-spec-branches.ps1 -Json -PreflightOnly`
    - Preflight fetches only each recorded existing Gerrit entry branch and blocks missing targets, Spec-range merge commits, upstreams, and ahead/diverged local entry branches.
-3. Show every affected repository:
+3. Show every participating repository from workspace configuration and recorded completion targets, including repositories with no changed files or new commits. Never narrow completion to `affected_repositories`:
    - repository path
    - current branch
    - local spec branch
@@ -43,9 +43,11 @@ Complete an accepted local Spec branch only when the user explicitly asks for br
 5. Ask for explicit human approval for this preflight result.
 6. After approval, run:
    - PowerShell: `.specify/scripts/powershell/complete-spec-branches.ps1 -Json -ConfirmCompletion`
+   - Use the workspace-wide completion script; do not replace it with cherry-picks for only changed repositories. Zero-commit repositories must also switch back, and retained Spec branches must not remain checked out.
    - A behind-only local entry branch is fast-forwarded to the fetched remote ref without merge before linear Spec commits are cherry-picked.
 7. Verify:
-   - affected repositories are on the recorded entry branch
+   - every participating repository is on its recorded entry branch, including zero-commit repositories (usually master/main; preserve a recorded product branch)
+   - actual Git branch checks and switch exit codes passed; a failed switch means incomplete completion
    - local spec branch still exists
    - no remote push occurred
    - no remote tracking was created
