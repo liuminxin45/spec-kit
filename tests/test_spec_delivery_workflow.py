@@ -3961,3 +3961,38 @@ def test_complete_branch_fast_forwards_existing_entry_before_cherry_pick(tmp_pat
     assert run_git(repo, "branch", "--show-current") == "main"
     assert run_git(repo, "rev-list", "--merges", "origin/main..main") == ""
     assert run_git(repo, "log", "-1", "--pretty=%s") == "feature"
+
+
+def test_complete_branch_does_not_report_success_when_zero_commit_switch_fails(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "master")
+    run_git(repo, "config", "user.email", "spec-kit@example.invalid")
+    run_git(repo, "config", "user.name", "Spec Kit Test")
+    (repo / "file.txt").write_text("base\n", encoding="utf-8")
+    run_git(repo, "add", ".")
+    run_git(repo, "commit", "-m", "base")
+    run_git(repo, "branch", "feature")
+    (repo / "collision.txt").write_text("tracked on master\n", encoding="utf-8")
+    run_git(repo, "add", "collision.txt")
+    run_git(repo, "commit", "-m", "master advances")
+    run_git(repo, "switch", "feature")
+    (repo / "collision.txt").write_text("preserve local file\n", encoding="utf-8")
+    write_closure_artifacts(repo)
+    result = subprocess.run(
+        ["pwsh", "-NoProfile", "-File",
+         str(REPO_ROOT / "scripts/powershell/complete-spec-branches.ps1"),
+         "-Branch", "feature", "-ConfirmCompletion", "-Json"],
+        cwd=repo, text=True, encoding="utf-8", errors="replace", capture_output=True,
+    )
+    assert result.returncode != 0
+    assert '"action":"completed"' not in result.stdout
+    assert run_git(repo, "branch", "--show-current") == "feature"
+    assert (repo / "collision.txt").read_text(encoding="utf-8") == "preserve local file\n"
+
+
+def test_completion_contract_includes_unchanged_participants():
+    command = read_text("templates/commands/complete-branch.md")
+    assert "Never narrow completion to `affected_repositories`" in command
+    assert "Zero-commit repositories must also switch back" in command
+    assert "including repositories" in read_text("templates/agents-template.md")

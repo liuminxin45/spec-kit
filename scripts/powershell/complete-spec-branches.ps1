@@ -230,6 +230,18 @@ function Resolve-BaseBranch {
     throw "No base branch found in $Path. Tried '$Preferred', master, main."
 }
 
+function Switch-ToCompletionBranch {
+    param([string]$Path, [string]$Target)
+    git -C $Path switch $Target | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not switch to entry branch '$Target' in $Path; completion is incomplete."
+    }
+    $actual = git -C $Path branch --show-current
+    if ($LASTEXITCODE -ne 0 -or [string]$actual -ne $Target) {
+        throw "Entry branch verification failed in $Path; expected '$Target', got '$actual'."
+    }
+}
+
 function Get-CherryPickCommits {
     param([string]$Path, [string]$BaseBranchName, [string]$BranchName)
     $commits = git -C $Path rev-list --reverse "$BaseBranchName..$BranchName"
@@ -579,7 +591,7 @@ foreach ($item in $preflight) {
             git -C $item.path branch -f $item.base $item.remote_entry_state.remote_ref | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward local entry branch '$($item.base)' in $($item.repository)." }
         }
-        git -C $item.path switch $item.base | Out-Null
+        Switch-ToCompletionBranch -Path $item.path -Target $item.base
         $results += [PSCustomObject]@{ repository = $item.repository; path = $item.path; status = "$($item.status); switched-to-$($item.base)"; branch = $Branch; base = $item.base; participates_in_spec_branches = [bool]$item.participates_in_spec_branches }
         continue
     }
@@ -587,7 +599,7 @@ foreach ($item in $preflight) {
         git -C $item.path branch -f $item.base $item.remote_entry_state.remote_ref | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward local entry branch '$($item.base)' in $($item.repository)." }
     }
-    git -C $item.path switch $item.base | Out-Null
+    Switch-ToCompletionBranch -Path $item.path -Target $item.base
     $commits = Get-CherryPickCommits -Path $item.path -BaseBranchName $item.base -BranchName $Branch
     $autoResolvedConflicts = @()
     foreach ($commit in $commits) {
@@ -618,6 +630,15 @@ foreach ($item in $preflight) {
         $status = "$status; auto-resolved-artifact-conflicts=$($uniqueConflicts -join ',')"
     }
     $results += [PSCustomObject]@{ repository = $item.repository; path = $item.path; status = $status; branch = $Branch; base = $item.base; participates_in_spec_branches = [bool]$item.participates_in_spec_branches }
+}
+
+# Completion covers every participating repository, including zero-commit repos.
+foreach ($item in $preflight) {
+    if ($item.status -in @("skipped", "missing")) { continue }
+    $actual = git -C $item.path branch --show-current
+    if ($LASTEXITCODE -ne 0 -or [string]$actual -ne $item.base) {
+        throw "Completion is incomplete: $($item.repository) is on '$actual', expected '$($item.base)'."
+    }
 }
 
 $payload = [PSCustomObject]@{
