@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 
 
-UPSTREAM_BASELINE = "github/spec-kit@v0.16.2"
+UPSTREAM_BASELINE = "github/spec-kit@v1.0.6"
 
 
 def _locate_core_pack() -> Path | None:

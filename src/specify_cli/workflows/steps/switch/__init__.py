@@ -23,7 +23,7 @@ class SwitchStep(StepBase):
         value = evaluate_expression(expression, context)
 
         # String-coerce for matching
-        str_value = str(value) if value is not None else ""
+        str_value = str(value).strip() if value is not None else ""
 
         cases = config.get("cases", {})
         for case_key, case_steps in cases.items():
@@ -53,6 +53,8 @@ class SwitchStep(StepBase):
             errors.append(
                 f"Switch step {config.get('id', '?')!r}: 'expression' must be a string."
             )
+        if "cases" not in config:
+            errors.append(f"Switch step {config.get('id', '?')!r} is missing 'cases' field.")
         cases = config.get("cases", {})
         if not isinstance(cases, dict):
             errors.append(

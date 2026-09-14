@@ -65,6 +65,8 @@ def build_github_request(url: str) -> urllib.request.Request:
         raise ValueError(f"url must start with http:// or https://, got: {url!r}")
     if not parsed.hostname:
         raise ValueError(f"url must include a hostname, got: {url!r}")
+    # Validate explicit ports before constructing a credential-bearing request.
+    parsed.port
     github_token = (os.environ.get("GITHUB_TOKEN") or "").strip()
     gh_token = (os.environ.get("GH_TOKEN") or "").strip()
     token = github_token or gh_token or None

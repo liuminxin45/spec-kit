@@ -36,8 +36,9 @@ def test_expression_parser_is_quote_aware_for_braces_commas_pipes_and_keywords()
 
     assert evaluate_expression("before {{ inputs.text | contains('}}') }} after", context) == "before True after"
     assert evaluate_expression("{{ ['x,y', inputs.needle] | join('|') }}", context) == "x,y|a|b"
-    assert evaluate_condition("inputs.mode == 'read and write' and inputs.needle in ['a|b', 'c']", context)
-    assert evaluate_condition("'b' > 'aa'", context)
+    assert evaluate_condition("{{ inputs.mode == 'read and write' and inputs.needle in ['a|b', 'c'] }}", context)
+    assert not evaluate_condition("{{ inputs.mode == 'wrong' and inputs.needle in ['a|b', 'c'] }}", context)
+    assert evaluate_condition("{{ 'b' > 'aa' }}", context)
 
     with pytest.raises(ValueError, match="unknown filter"):
         evaluate_expression("{{ inputs.text | missing_filter('x') }}", context)

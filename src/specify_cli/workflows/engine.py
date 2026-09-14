@@ -56,9 +56,8 @@ class WorkflowDefinition:
         # Defaults
         self.default_integration: str | None = workflow.get("integration")
         self.default_model: str | None = workflow.get("model")
-        self.default_options: dict[str, Any] = workflow.get("options") or {}
-        if not isinstance(self.default_options, dict):
-            self.default_options = {}
+        raw_options = workflow.get("options")
+        self.default_options: Any = {} if raw_options is None else raw_options
 
         # Advisory pre-conditions (spec-kit version / integrations a workflow
         # expects). Validated by ``validate_workflow`` (recognized keys only)
@@ -160,6 +159,16 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             f"Workflow version {definition.version!r} is not valid "
             f"semantic versioning (expected X.Y.Z)."
         )
+
+    # Preserve malformed defaults until validation, including falsy values.
+    for name, value in (
+        ("integration", definition.default_integration),
+        ("model", definition.default_model),
+    ):
+        if value is not None and not isinstance(value, str):
+            errors.append(f"'workflow.{name}' must be a string or null.")
+    if not isinstance(definition.default_options, dict):
+        errors.append("'workflow.options' must be a mapping or null.")
 
     # -- Inputs -----------------------------------------------------------
     if not isinstance(definition.inputs, dict):
@@ -458,13 +467,11 @@ class RunState:
         cls._validate_run_id(run_id)
         runs_dir = project_root / ".specify" / "workflows" / "runs" / run_id
         state_path = runs_dir / "state.json"
-        if not state_path.exists():
-            msg = f"Run state not found: {state_path}"
-            raise FileNotFoundError(msg)
-
         try:
             with open(state_path, encoding="utf-8") as f:
                 state_data = json.load(f)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Run state not found: {state_path}") from None
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise ValueError(f"Invalid run state {state_path}: {exc}") from None
         if not isinstance(state_data, dict):

@@ -29,7 +29,7 @@ context_policy:
     - "ai/templates/*"
 
 requires:
-  speckit_version: ">=0.10.6"
+  speckit_version: ">=1.0.0"
 
 inputs:
   spec:
