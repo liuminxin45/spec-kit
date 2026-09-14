@@ -64,6 +64,7 @@ Do not create `tasks.md` for `micro-fix` or `standard-bugfix-lite`. Do not creat
    - `plan.md`
    - `.specify/feature.json`
    - optional `research.md`, `data-model.md`, `contracts/`, and `quickstart.md` only when named by the plan.
+   - Carry exact field constraints from `data-model.md` into the relevant task and checks: lengths, required/nullability rules, enum values, and validation rules must not be left to implementation-time discretion.
 3. If the selected profile is not `full-sdd` and `plan.md` already contains complete Implementation Slices, stop and report that `tasks.md` is unnecessary.
 4. Generate `tasks.md` from the template.
 5. Organize work by executable implementation slice and validation closure, not by process ceremonies.

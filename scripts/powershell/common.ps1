@@ -213,7 +213,7 @@ function Test-FeatureJsonMatchesFeatureDir {
     }
 
     try {
-        $raw = Get-Content -LiteralPath $featureJson -Raw
+        $raw = [System.IO.File]::ReadAllText($featureJson, [System.Text.Encoding]::UTF8)
         $cfg = $raw | ConvertFrom-Json
     } catch {
         return $false
@@ -319,7 +319,7 @@ function Get-FeatureDeliveryProfile {
     $featureJson = Join-Path $RepoRoot '.specify/feature.json'
     if (Test-Path -LiteralPath $featureJson -PathType Leaf) {
         try {
-            $feature = Get-Content -LiteralPath $featureJson -Raw | ConvertFrom-Json
+            $feature = [System.IO.File]::ReadAllText($featureJson, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
             $configuredDir = [string]$feature.feature_directory
             $matchesFeatureDir = [string]::IsNullOrWhiteSpace($configuredDir) -or
                 (Test-SpecKitSamePath -Left $configuredDir -Right $FeatureDir -RepoRoot $RepoRoot)
@@ -337,7 +337,7 @@ function Get-FeatureDeliveryProfile {
     $statePath = Join-Path $FeatureDir 'workflow-state.json'
     if (Test-Path -LiteralPath $statePath -PathType Leaf) {
         try {
-            $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+            $state = [System.IO.File]::ReadAllText($statePath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
             $workflowModel = $state.workflow_model
             $profile = ([string]$workflowModel.delivery_profile).Trim().ToLowerInvariant()
             if (-not [string]::IsNullOrWhiteSpace($profile) -and $profile -ne "auto") {
@@ -420,7 +420,7 @@ function Get-FeaturePathsEnv {
             $featureDir = Join-Path $repoRoot $featureDir
         }
     } elseif (Test-Path $featureJson) {
-        $featureJsonRaw = Get-Content -LiteralPath $featureJson -Raw
+        $featureJsonRaw = [System.IO.File]::ReadAllText($featureJson, [System.Text.Encoding]::UTF8)
         try {
             $featureConfig = $featureJsonRaw | ConvertFrom-Json
         } catch {

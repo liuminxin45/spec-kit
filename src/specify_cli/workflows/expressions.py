@@ -24,6 +24,8 @@ _REGISTERED_FILTERS: tuple[str, ...] = (
     "from_json",
 )
 
+_COMPARISON_OPERATORS = ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ")
+
 
 # -- Custom filters -------------------------------------------------------
 
@@ -305,6 +307,94 @@ def _find_top_level(text: str, token: str) -> int:
     return -1
 
 
+def _split_top_level(text: str, sep: str) -> list[str]:
+    """Split *text* on each occurrence of *sep* that lies outside any quoted
+    string or nested brackets.
+
+    Used to break a filter chain (``a | map('x') | join(',')``) into its
+    individual filter segments without splitting on a ``|`` that appears inside
+    a quoted argument. Each returned segment is a slice at a top-level
+    boundary, so the quote/bracket scan restarts cleanly on the remainder.
+    """
+    parts: list[str] = []
+    start = 0
+    while True:
+        idx = _find_top_level(text[start:], sep)
+        if idx == -1:
+            parts.append(text[start:])
+            return parts
+        parts.append(text[start:start + idx])
+        start += idx + len(sep)
+
+
+def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> Any:
+    """Apply a single pipe filter segment to *value*.
+
+    *filter_expr* is one link of a filter chain — the text between two
+    top-level ``|`` separators, already stripped (e.g. ``map('name')``,
+    ``default('x')``, ``from_json``). Returns the filtered value so the caller
+    can feed it into the next link.
+
+    Raises ``ValueError`` on any mis-wired or unknown filter rather than
+    silently returning *value* unchanged: a passthrough would turn a mistyped
+    or unsupported filter into a wrong result with no signal.
+    """
+    # `from_json` is strict: it takes no arguments and tolerates no trailing
+    # tokens. Match on the leading filter name and require the whole filter to
+    # be exactly `from_json`, so every mis-wired form (`from_json()`,
+    # `from_json('x')`, `from_json)`, `from_json extra`) fails loudly instead of
+    # silently falling through to the unknown-filter path.
+    leading = re.match(r"\w+", filter_expr)
+    if leading and leading.group(0) == "from_json":
+        if filter_expr != "from_json":
+            raise ValueError(
+                "from_json: expected '| from_json' with no arguments or "
+                f"trailing tokens, got '| {filter_expr}'"
+            )
+        return _filter_from_json(value)
+
+    # Parse filter name and argument. Use fullmatch (not match) so trailing
+    # tokens after the closing paren — e.g. a comparison/boolean operator that
+    # binds looser than the pipe, as in ``count | default(0) > 5`` — are not
+    # silently discarded but fall through to the "unsupported form" ValueError
+    # below, mirroring the strict trailing-token handling of the from_json
+    # branch above. The greedy ``.+`` still handles literal ``)`` and ``|``
+    # inside quoted args.
+    filter_match = re.fullmatch(r"(\w+)\((.+)\)", filter_expr)
+    if filter_match:
+        fname = filter_match.group(1)
+        farg = _evaluate_simple_expression(filter_match.group(2).strip(), namespace)
+        if fname == "default":
+            return _filter_default(value, farg)
+        if fname == "join":
+            return _filter_join(value, farg)
+        if fname == "map":
+            return _filter_map(value, farg)
+        if fname == "contains":
+            return _filter_contains(value, farg)
+    # Filter without args
+    if filter_expr == "default":
+        return _filter_default(value)
+    # No recognized filter matched. Fail loudly rather than silently returning
+    # the unfiltered value. Distinguish a *registered* filter used in an
+    # unsupported form (e.g. `| join` or `| map` with no argument) from a
+    # genuinely unknown filter name, so the message names the real problem
+    # instead of calling a known filter "unknown".
+    name = leading.group(0) if leading else filter_expr
+    expected = (
+        "expected one of default or default('x'), join('sep'), "
+        "map('attr'), contains('s'), or from_json"
+    )
+    if name in _REGISTERED_FILTERS:
+        raise ValueError(
+            f"filter '{name}' used in an unsupported form (got "
+            f"'| {filter_expr}'): {expected}"
+        )
+    raise ValueError(
+        f"unknown filter '{name}': {expected} (got '| {filter_expr}')"
+    )
+
+
 def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     """Evaluate a simple expression against the namespace.
 
@@ -329,65 +419,50 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     # Handle pipe filters. Detect the pipe at the top level only, so a literal
     # '|' inside a quoted operand (e.g. `inputs.x == 'a|b'`) or nested brackets is
     # not mistaken for a filter separator — mirroring the operator parsing below.
+    # Filters chain left-to-right: `list | map('name') | join(', ')` feeds each
+    # filter's result into the next, so `map` (which yields a list) can be
+    # rendered by `join`. Splitting only at the first pipe would hand the whole
+    # tail to one filter and mangle any later `|`.
     pipe_idx = _find_top_level(expr, "|")
     if pipe_idx != -1:
-        value = _evaluate_simple_expression(expr[:pipe_idx].strip(), namespace)
-        filter_expr = expr[pipe_idx + 1:].strip()
-
-        # `from_json` is strict: it takes no arguments and tolerates no
-        # trailing tokens. Match on the leading filter name and require the
-        # whole filter to be exactly `from_json`, so every mis-wired form
-        # (`from_json()`, `from_json('x')`, `from_json)`, `from_json extra`)
-        # fails loudly instead of silently falling through to the
-        # unknown-filter path and returning the unparsed value. (filter_expr
-        # is already stripped above.)
-        leading = re.match(r"\w+", filter_expr)
-        if leading and leading.group(0) == "from_json":
-            if filter_expr != "from_json":
-                raise ValueError(
-                    "from_json: expected '| from_json' with no arguments or "
-                    f"trailing tokens, got '| {filter_expr}'"
-                )
-            return _filter_from_json(value)
-
-        # Parse filter name and argument
-        filter_match = re.match(r"(\w+)\((.+)\)", filter_expr)
-        if filter_match:
-            fname = filter_match.group(1)
-            farg = _evaluate_simple_expression(filter_match.group(2).strip(), namespace)
-            if fname == "default":
-                return _filter_default(value, farg)
-            if fname == "join":
-                return _filter_join(value, farg)
-            if fname == "map":
-                return _filter_map(value, farg)
-            if fname == "contains":
-                return _filter_contains(value, farg)
-        # Filter without args
-        filter_name = filter_expr.strip()
-        if filter_name == "default":
-            return _filter_default(value)
-        # No recognized filter matched. Fail loudly rather than silently
-        # returning the unfiltered value: a passthrough turns a mis-typed or
-        # unsupported filter into a wrong result with no signal. Mirrors the
-        # strict `from_json` handling above. Distinguish a *registered* filter
-        # used in an unsupported form (e.g. `| join` or `| map` with no
-        # argument) from a genuinely unknown filter name, so the message names
-        # the real problem instead of calling a known filter "unknown".
-        leading_name = re.match(r"\w+", filter_expr)
-        name = leading_name.group(0) if leading_name else filter_expr
-        expected = (
-            "expected one of default or default('x'), join('sep'), "
-            "map('attr'), contains('s'), or from_json"
-        )
-        if name in _REGISTERED_FILTERS:
+        segments = _split_top_level(expr, "|")
+        # The pipe is detected before the operators below, so a filter written on
+        # the right-hand operand of a comparison was applied to the comparison's
+        # BOOLEAN RESULT instead: `count > limit | default(5)` evaluated
+        # `count > limit` first and then `default` on the bool, which is a no-op,
+        # so the expression silently returned the comparison against the
+        # *unfiltered* operand. This is the mirror of a filter followed by a
+        # comparison (`default('7') > '5'`), which this module already refuses
+        # rather than guessing at the intended precedence. Refuse both the same
+        # way, so an ambiguous expression is reported instead of quietly
+        # producing the answer the author did not ask for.
+        head = segments[0].strip()
+        # Unary ``not`` is a leading prefix, not an infix token, so it has no
+        # surrounding space for the scan below to match -- it has to be checked
+        # the same way the parser itself does (``expr.startswith("not ")``).
+        # Without this, ``not inputs.missing | default(1)`` still evaluated
+        # ``not inputs.missing`` first and applied the filter to that boolean,
+        # which is the exact mis-binding this guard exists to reject.
+        # (A ``not`` that follows ``and``/``or`` is already caught by those
+        # tokens below.)
+        _ambiguous_op = "not" if head.startswith("not ") else None
+        if _ambiguous_op is None:
+            for _op in ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ",
+                        " or ", " and "):
+                if _find_top_level(head, _op) != -1:
+                    _ambiguous_op = _op.strip()
+                    break
+        if _ambiguous_op is not None:
             raise ValueError(
-                f"filter '{name}' used in an unsupported form (got "
-                f"'| {filter_expr}'): {expected}"
+                f"ambiguous filter precedence in '{expr}': "
+                f"'| {segments[1].strip()}' would apply to the result of "
+                f"'{head}', not to an operand of '{_ambiguous_op}'. Filter the "
+                f"operand in its own expression instead."
             )
-        raise ValueError(
-            f"unknown filter '{name}': {expected} (got '| {filter_expr}')"
-        )
+        value = _evaluate_simple_expression(head, namespace)
+        for segment in segments[1:]:
+            value = _apply_filter(value, segment.strip(), namespace)
+        return value
 
     # Boolean operators — parse 'or' first (lower precedence) so that
     # 'a or b and c' is evaluated as 'a or (b and c)'. Splits are quote/bracket
@@ -412,7 +487,7 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     # Comparison operators (order matters — check multi-char ops first). Split at
     # the first top-level occurrence so an operator inside a quoted operand is
     # ignored.
-    for op in ("!=", "==", ">=", "<=", ">", "<", " not in ", " in "):
+    for op in _COMPARISON_OPERATORS:
         op_idx = _find_top_level(expr, op)
         if op_idx != -1:
             left = _evaluate_simple_expression(expr[:op_idx].strip(), namespace)
@@ -430,9 +505,9 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
             if op == "<=":
                 return _safe_compare(left, right, "<=")
             if op == " in ":
-                return left in right if right is not None else False
+                return _safe_membership(left, right, negate=False)
             if op == " not in ":
-                return left not in right if right is not None else True
+                return _safe_membership(left, right, negate=True)
 
     # Numeric literal
     try:
@@ -460,6 +535,10 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         items = [
             _evaluate_simple_expression(i.strip(), namespace)
             for i in _split_top_level_commas(inner)
+            # Drop empty segments from trailing/leading/double commas ([1, 2,] ->
+            # [1, 2], not [1, 2, None]). An intentional empty-string element
+            # ('') strips to "''" (truthy), so ['', 'a'] is preserved.
+            if i.strip()
         ]
         return items
 
@@ -475,6 +554,26 @@ def _coerce_number(value: Any) -> Any:
         except ValueError:
             return value
     return value
+
+
+def _safe_membership(left: Any, right: Any, *, negate: bool) -> bool:
+    """Safely evaluate ``left in right`` (or ``not in``) without crashing.
+
+    ``left in right`` raises ``TypeError`` whenever the operands don't support
+    membership testing — most commonly a non-iterable right operand (``None``,
+    an int, a bool), but also cases like an unhashable ``left`` against a set.
+    In every such case the membership relation is undefined, so treat it as
+    ``False`` (``not in`` as ``True``) rather than leaking the error out of the
+    evaluator and crashing the whole workflow. Mirrors the graceful
+    ``TypeError`` handling in ``_safe_compare`` for the ordering operators, and
+    generalizes the previous ``right is not None`` guard to any operand pair
+    that can't be membership-tested.
+    """
+    try:
+        contained = left in right
+    except TypeError:
+        contained = False
+    return not contained if negate else contained
 
 
 def _safe_compare(left: Any, right: Any, op: str) -> bool:
@@ -557,17 +656,58 @@ def evaluate_expression(template: str, context: Any) -> Any:
     return _interpolate_expressions(template, namespace)
 
 
-def evaluate_condition(condition: str, context: Any) -> bool:
+def validate_condition(condition: Any) -> list[str]:
+    """Reject conditions that would be interpolated into truthy prose.
+
+    Share the evaluator's single-block test and offer no automatic rewrite:
+    wrapping arbitrary text can invert a condition rather than repair it.
+    """
+    if isinstance(condition, bool) or condition == "":
+        return []
+    if not isinstance(condition, str):
+        return ["condition must be a string or boolean."]
+    stripped = condition.strip()
+    if stripped.lower() in ("true", "false"):
+        return []
+    if not _is_single_expression(stripped):
+        return [
+            "condition must be a boolean or a single complete '{{ ... }}' "
+            "expression; check delimiters and keep operators inside the block."
+        ]
+    # _is_single_expression determines the interpolation route, not syntax.
+    # Check quotes and brackets separately without evaluating unknown inputs.
+    quote = None
+    brackets: list[str] = []
+    for char in stripped[2:-2]:
+        if quote is not None:
+            if char == quote:
+                quote = None
+        elif char in ("'", '"'):
+            quote = char
+        elif char in "([":
+            brackets.append(char)
+        elif char in ")]":
+            if not brackets or brackets.pop() != {')': '(', ']': '['}[char]:
+                return ["condition has unbalanced brackets."]
+    if quote is not None or brackets:
+        return ["condition has unbalanced quotes or brackets."]
+    return []
+
+
+def evaluate_condition(condition: str | bool, context: Any) -> bool:
     """Evaluate a condition expression and return a boolean.
 
     Convenience wrapper around ``evaluate_expression`` that coerces
     the result to bool.
     """
+    errors = validate_condition(condition)
+    if errors:
+        raise ValueError(" ".join(errors))
     result = evaluate_expression(condition, context)
     # Treat plain "false"/"true" strings as booleans so that
     # condition: "false" (without {{ }}) behaves as expected.
     if isinstance(result, str):
-        lower = result.lower()
+        lower = result.strip().lower()
         if lower == "false":
             return False
         if lower == "true":

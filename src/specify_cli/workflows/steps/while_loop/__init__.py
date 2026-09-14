@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
-from specify_cli.workflows.expressions import evaluate_condition
+from specify_cli.workflows.expressions import evaluate_condition, validate_condition
 
 
 class WhileStep(StepBase):
@@ -53,9 +53,10 @@ class WhileStep(StepBase):
                 f"While step {config.get('id', '?')!r} is missing "
                 f"'condition' field."
             )
-        elif not isinstance(config["condition"], (str, bool)):
-            errors.append(
-                f"While step {config.get('id', '?')!r}: 'condition' must be a string or boolean."
+        else:
+            errors.extend(
+                f"While step {config.get('id', '?')!r}: {error}"
+                for error in validate_condition(config["condition"])
             )
         max_iter = config.get("max_iterations")
         if max_iter is not None:
@@ -64,6 +65,8 @@ class WhileStep(StepBase):
                     f"While step {config.get('id', '?')!r}: "
                     f"'max_iterations' must be an integer >= 1."
                 )
+        if "steps" not in config:
+            errors.append(f"While step {config.get('id', '?')!r} is missing 'steps' field.")
         nested = config.get("steps", [])
         if not isinstance(nested, list):
             errors.append(

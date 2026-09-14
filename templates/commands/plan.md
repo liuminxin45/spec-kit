@@ -57,7 +57,7 @@ Create the smallest useful planning artifact:
 ## Execution Steps
 
 1. Run the setup script and parse `ARTIFACT`, `ARTIFACT_KIND`, `WORKPACK`,
-   `IMPL_PLAN`, `SPECS_DIR`, delivery profile, and branch facts.
+   `IMPL_PLAN`, `FEATURE_DIR` (legacy `SPECS_DIR` alias), delivery profile, and branch facts.
 2. Load `.specify/feature.json`, repository-map, and only the active feature
    artifact selected by `ARTIFACT_KIND`.
 3. Run `select-gates` for stage `plan`; record selected gate ids, not full gate text.
@@ -94,6 +94,7 @@ Create the smallest useful planning artifact:
 ## Planning Rules
 
 - Prefer existing architecture and helper APIs.
+- When data-model.md defines field constraints, carry exact lengths, required/nullability rules, enum values, and validation rules into the relevant Implementation Slice and its checks; do not defer these decisions to implementation.
 - Before writing a required Implementation Target Proof, perform bounded source
   verification in the affected repositories. A matching filename, component
   name, package id, or adjacent module is not enough without entry/call-path or

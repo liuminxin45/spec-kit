@@ -2667,7 +2667,7 @@ def test_local_distribution_builder_creates_wheel_and_pack_bundle(tmp_path):
         assert any(name.endswith(".dist-info/RECORD") for name in names)
         assert any(name.endswith(".dist-info/entry_points.txt") for name in names)
     manifest = json.loads((output_dir / "bundle-manifest.json").read_text(encoding="utf-8"))
-    assert manifest["spec_kit"]["version"] == "0.10.6"
+    assert manifest["spec_kit"]["version"] == "1.0.0"
     assert manifest["promotion_performed"] is False
     assert [pack["id"] for pack in manifest["knowledge_packs"]] == [pack[0] for pack in expected_packs]
     assert (output_dir / "Install-Local.ps1").exists()

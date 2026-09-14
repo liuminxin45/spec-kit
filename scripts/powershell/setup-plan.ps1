@@ -65,6 +65,8 @@ if ($Json) {
         ARTIFACT = $artifactPath
         ARTIFACT_KIND = $artifactKind
         DELIVERY_PROFILE = $profile
+        FEATURE_DIR = $paths.FEATURE_DIR
+        # Legacy alias retained for existing consumers.
         SPECS_DIR = $paths.FEATURE_DIR
         BRANCH = $paths.CURRENT_BRANCH
         HAS_GIT = $paths.HAS_GIT
@@ -77,6 +79,7 @@ if ($Json) {
     Write-Output "ARTIFACT: $artifactPath"
     Write-Output "ARTIFACT_KIND: $artifactKind"
     Write-Output "DELIVERY_PROFILE: $profile"
+    Write-Output "FEATURE_DIR: $($paths.FEATURE_DIR)"
     Write-Output "SPECS_DIR: $($paths.FEATURE_DIR)"
     Write-Output "BRANCH: $($paths.CURRENT_BRANCH)"
     Write-Output "HAS_GIT: $($paths.HAS_GIT)"
