@@ -1,5 +1,10 @@
 {
   "schema_version": 1,
+  "continuation": {
+    "mode": "manual",
+    "authorization_evidence": "",
+    "scope": "default-stages-only"
+  },
   "workflow_model": {
     "manifest": ".specify/templates/layer-manifest.yml",
     "active_buckets": ["WorkItem", "Evidence"],

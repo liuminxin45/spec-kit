@@ -11,6 +11,9 @@ work also writes into this file instead of creating a separate report.
 - Delivery profile:
 - Risk level:
 - Validation owner:
+- Source revision and source working directory (workspace-relative):
+- Dependency/runtime directory and selected executable versions:
+- Process exit code (assertion counts alone do not prove success):
 
 ## 2. Validation Matrix
 

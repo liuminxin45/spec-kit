@@ -1304,9 +1304,9 @@ def test_stage_handoffs_acceptance_retrospective_and_commit_are_rule_driven():
     assert "automatic_stage_continuation" in yaml.safe_load(read_text("workflows/speckit/workflow.yml"))["stage_gate_policy"]
     assert "final_response_guard" in yaml.safe_load(read_text("workflows/speckit/workflow.yml"))["stage_gate_policy"]
     assert "execution_contract" in yaml.safe_load(read_text("workflows/speckit/workflow.yml"))["stage_gate_policy"]["automatic_stage_continuation"]
-    assert "A single slash-command or stage skill stops after its own stage" in task_routing
-    assert "only an explicit workflow-runner invocation may auto-continue" in task_routing
-    assert "opt-in governance/branch mutation stage" in task_routing
+    assert "including in natural language" in task_routing
+    assert "update-workflow-state.ps1 -ContinuationMode automatic" in task_routing
+    assert "automatic mode does not grant it" in task_routing
     assert "next_required_human_action" in read_text("templates/checklist-template.md")
     assert "Do not mark acceptance as passed yourself" in acceptance
     assert "Required user action" in acceptance

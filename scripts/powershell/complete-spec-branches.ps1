@@ -26,6 +26,7 @@ if ($Help) {
 }
 
 . "$PSScriptRoot/common.ps1"
+. "$PSScriptRoot/worktree-common.ps1"
 
 function Get-WorkspaceConfig {
     param([string]$RepoRoot)
@@ -407,13 +408,34 @@ if ($KeepBranch) { $shouldKeepBranch = $true }
 
 $preflight = @()
 $errors = @()
+$worktreePlans = @()
 $retrospectiveGate = Test-ClosureArtifactGate -RepoRoot $repoRoot -BranchName $Branch
 if ($retrospectiveGate.status -ne "ok") {
     $missingText = $retrospectiveGate.missing -join ", "
     $errors += "Closure artifact gate failed for '$Branch': missing $missingText in $($retrospectiveGate.feature_dir). Run speckit.implement/validation before complete-branch."
 }
 foreach ($repo in $workspace.repositories) {
+    $recorded = @($featureConfigForCompletion.completion_targets | Where-Object { $_.repository -eq $repo.name } | Select-Object -First 1)
+    if ($repo.participates_in_spec_branches -and $recorded.Count -gt 0 -and $recorded[0].original_path) {
+        $originalPath = [string]$recorded[0].original_path
+        if (-not [IO.Path]::IsPathRooted($originalPath)) { $originalPath = Join-Path $repoRoot $originalPath }
+        $registered = if (Test-GitRepo $repo.path) { @(Get-SpecKitWorktrees -Path $repo.path) } else { @() }
+        if (@($registered | Where-Object { Test-SpecKitSamePath $_.path $originalPath }).Count -eq 0) {
+            $errors += "$($repo.name): recorded original_path is not a registered worktree of this repository."
+        } else { $repo.path = $originalPath }
+    }
     $preferredBase = if ($explicitBaseBranch) { $BaseBranch } else { Get-RecordedCompletionBranch -FeatureConfig $featureConfigForCompletion -Repo $repo -Fallback $workspace.default_base_branch }
+    if ($repo.participates_in_spec_branches -and (Test-GitRepo $repo.path)) {
+        $trees = @(Get-SpecKitWorktrees -Path $repo.path)
+        $detach = @($trees | Where-Object { $_.branch -eq $Branch -and -not (Test-SpecKitSamePath $_.path $repo.path) })
+        $otherEntry = @($trees | Where-Object { $_.branch -eq $preferredBase -and -not (Test-SpecKitSamePath $_.path $repo.path) })
+        foreach ($tree in $detach) {
+            $dirty = @(git -C $tree.path status --porcelain --untracked-files=no)
+            if ($dirty.Count -gt 0) { $errors += "$($repo.name): Spec worktree '$($tree.path)' has tracked changes; preserve them explicitly before completion." }
+        }
+        if ($otherEntry.Count -gt 0) { $errors += "$($repo.name): entry branch is checked out in another worktree; resolve its ownership before completion." }
+        $worktreePlans += [pscustomobject]@{repository=$repo.name; entry_path=$repo.path; worktrees=$trees; detach_spec_paths=@($detach | ForEach-Object { $_.path })}
+    }
     if (-not $repo.participates_in_spec_branches) {
         $preflight += [PSCustomObject]@{ repository = $repo.name; path = $repo.path; status = "skipped"; branch = $Branch; base = $preferredBase; planned_action = "skip"; participates_in_spec_branches = $false }
         continue
@@ -528,6 +550,7 @@ $preflightPayload = [PSCustomObject]@{
     cherry_pick_ready = ($errors.Count -eq 0)
     keep_branch = $shouldKeepBranch
     preflight = $preflight
+    worktree_plans = $worktreePlans
     retrospective_gate = $retrospectiveGate
     errors = $errors
     repositories = @()
@@ -577,6 +600,13 @@ if (-not $ConfirmCompletion) {
 }
 
 $results = @()
+foreach ($plan in $worktreePlans) {
+    foreach ($path in $plan.detach_spec_paths) {
+        if (@(git -C $path status --porcelain --untracked-files=no).Count -gt 0) { throw "Spec worktree changed after preflight: $path" }
+        git -C $path switch --detach | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Cannot detach retained Spec worktree '$path'." }
+    }
+}
 foreach ($item in $preflight) {
     if ($item.status -eq "skipped") {
         $results += [PSCustomObject]@{ repository = $item.repository; path = $item.path; status = "skipped"; branch = $Branch; base = $item.base; participates_in_spec_branches = $false }
@@ -588,16 +618,14 @@ foreach ($item in $preflight) {
     }
     if ($item.status -eq "branch-missing" -or $item.status -eq "already-up-to-date") {
         if ($item.fast_forward_required) {
-            git -C $item.path branch -f $item.base $item.remote_entry_state.remote_ref | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward local entry branch '$($item.base)' in $($item.repository)." }
+            Move-SpecKitEntryForward -Path $item.path -Branch $item.base -Reference $item.remote_entry_state.remote_ref
         }
         Switch-ToCompletionBranch -Path $item.path -Target $item.base
         $results += [PSCustomObject]@{ repository = $item.repository; path = $item.path; status = "$($item.status); switched-to-$($item.base)"; branch = $Branch; base = $item.base; participates_in_spec_branches = [bool]$item.participates_in_spec_branches }
         continue
     }
     if ($item.fast_forward_required) {
-        git -C $item.path branch -f $item.base $item.remote_entry_state.remote_ref | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward local entry branch '$($item.base)' in $($item.repository)." }
+        Move-SpecKitEntryForward -Path $item.path -Branch $item.base -Reference $item.remote_entry_state.remote_ref
     }
     Switch-ToCompletionBranch -Path $item.path -Target $item.base
     $commits = Get-CherryPickCommits -Path $item.path -BaseBranchName $item.base -BranchName $Branch
@@ -639,6 +667,9 @@ foreach ($item in $preflight) {
     if ($LASTEXITCODE -ne 0 -or [string]$actual -ne $item.base) {
         throw "Completion is incomplete: $($item.repository) is on '$actual', expected '$($item.base)'."
     }
+    if (@(Get-SpecKitWorktrees -Path $item.path | Where-Object { $_.branch -eq $Branch }).Count -gt 0) {
+        throw "Completion is incomplete: Spec branch is still checked out in $($item.repository)."
+    }
 }
 
 $payload = [PSCustomObject]@{
@@ -658,6 +689,7 @@ $payload = [PSCustomObject]@{
     preflight = $preflight
     errors = @()
     repositories = $results
+    worktree_plans = $worktreePlans
 }
 
 if ($Json) {
