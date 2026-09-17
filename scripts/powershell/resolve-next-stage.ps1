@@ -10,6 +10,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot/common.ps1"
+. "$PSScriptRoot/workflow-state-common.ps1"
 
 if ($Help) {
     Write-Output "Usage: resolve-next-stage.ps1 [-RepoRoot <path>] [-FeatureDir <dir>] [-Json]"
@@ -86,13 +87,7 @@ function Test-WorkpackOutcomeComplete {
 
 function Get-Status {
     param($State, [string]$Name)
-    $node = Get-Prop $State $Name
-    $status = Get-Prop $node "status"
-    if ($status) { return ([string]$status).ToLowerInvariant() }
-    $stages = Get-Prop $State "stage_statuses"
-    $stageStatus = Get-Prop $stages $Name
-    if ($stageStatus) { return ([string]$stageStatus).ToLowerInvariant() }
-    return ""
+    return Get-SpecKitStageStatus -State $State -Name $Name
 }
 
 function Is-CompleteStatus {
@@ -309,12 +304,16 @@ if ([string]::IsNullOrWhiteSpace($FeatureDir) -or -not (Test-Path -LiteralPath $
     }
 }
 
+$defaultStages = @('speckit.intake','speckit.specify','speckit.clarify','speckit.plan','speckit.checklist','speckit.tasks','speckit.analyze','speckit.implement','speckit.validation','speckit.acceptance','speckit.fact-layer')
+$failedStages = @($state.stage_statuses.PSObject.Properties | Where-Object { $_.Value -in @('blocked','failed') })
+$stateConflicts = @(Get-SpecKitStateConflicts -State $state)
 $payload = [ordered]@{
     tool = "resolve-next-stage"
     status = if (@($decision.blockers).Count -gt 0) { "blocked" } else { "ok" }
     current_stage = $decision.current_stage
     next_stage = $decision.next_stage
     can_continue = $decision.can_continue
+    auto_continue = [bool]($decision.can_continue -and $state.continuation.mode -eq 'automatic' -and $state.continuation.authorization_evidence -and $decision.next_stage -in $defaultStages -and $failedStages.Count -eq 0 -and $stateConflicts.Count -eq 0)
     blockers = @($decision.blockers)
     unknowns = @()
     hints = @()
@@ -328,6 +327,8 @@ $payload = [ordered]@{
         delivery_profile = $profile
         risk_level = $riskLevel
         risk_flags = @($riskFlags)
+        state_conflicts = $stateConflicts
+        continuation_blocked_stages = @($failedStages.Name)
     }
 }
 

@@ -13,6 +13,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot/common.ps1"
+. "$PSScriptRoot/worktree-common.ps1"
 
 if ($Help) {
     Write-Output "Usage: sync-spec-branches.ps1 [-RepoRoot <workspace>] [-Branch <spec>] [-Remote origin] [-PreflightOnly|-ConfirmSync] [-Json]"
@@ -40,12 +41,18 @@ $preflight = @()
 foreach ($record in @($inspection.facts.repositories)) {
     if ($record.status -eq "skipped") { $preflight += $record; continue }
     if (-not (Test-Path -LiteralPath $record.path -PathType Container)) { $preflight += $record; continue }
+    $record | Add-Member -NotePropertyName entry_path -NotePropertyValue $record.path -Force
+    $trees = @(Get-SpecKitWorktrees -Path $record.path)
+    $owner = @($trees | Where-Object { $_.branch -eq $Branch })
+    if ($owner.Count -eq 1) { $record.path = $owner[0].path }
+    $record | Add-Member -NotePropertyName worktrees -NotePropertyValue $trees -Force
+    $record | Add-Member -NotePropertyName original_head -NotePropertyValue (git -C $record.path rev-parse HEAD) -Force
     $statusLines = @(git -C $record.path status --porcelain)
     $tracked = @($statusLines | Where-Object { $_ -and -not $_.StartsWith("?? ") })
     $unclassified = @($statusLines | Where-Object { $_.StartsWith("?? ") } | ForEach-Object { $_.Substring(3).Trim() } | Where-Object { -not (Test-IgnorablePath $_) })
     $record | Add-Member -NotePropertyName tracked_dirty -NotePropertyValue $tracked -Force
     $record | Add-Member -NotePropertyName unclassified_untracked -NotePropertyValue $unclassified -Force
-    $record | Add-Member -NotePropertyName original_branch -NotePropertyValue ((git -C $record.path branch --show-current).Trim()) -Force
+    $record | Add-Member -NotePropertyName original_branch -NotePropertyValue ([string](git -C $record.path branch --show-current)).Trim() -Force
     $plannedAction = if ($record.needs_rebase) { "fetch-rebase" } else { "none" }
     $record | Add-Member -NotePropertyName planned_action -NotePropertyValue $plannedAction -Force
     if ($tracked.Count -gt 0 -or $unclassified.Count -gt 0) {
@@ -93,6 +100,10 @@ foreach ($record in @($preflight)) {
             git -C $record.path switch $originalBranch | Out-Null
             $restoreFailed = ($LASTEXITCODE -ne 0)
         }
+        if (-not $originalBranch) {
+            git -C $record.path switch --detach $record.original_head | Out-Null
+            $restoreFailed = ($LASTEXITCODE -ne 0)
+        }
         $record.status = "rebase-conflict"
         $record | Add-Member -NotePropertyName restored_original_branch -NotePropertyValue (-not $restoreFailed) -Force
         $payload.status = "blocked"
@@ -114,6 +125,10 @@ foreach ($record in @($preflight)) {
     if ($originalBranch -and $originalBranch -ne $Branch) {
         git -C $record.path switch $originalBranch | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Rebase succeeded but original branch '$originalBranch' could not be restored in $($record.repository)." }
+    }
+    if (-not $originalBranch) {
+        git -C $record.path switch --detach $record.original_head | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Could not restore detached worktree.' }
     }
     $record | Add-Member -NotePropertyName restored_original_branch -NotePropertyValue $true -Force
     $results += $record

@@ -45,6 +45,7 @@ Complete an accepted local Spec branch only when the user explicitly asks for br
    - PowerShell: `.specify/scripts/powershell/complete-spec-branches.ps1 -Json -ConfirmCompletion`
    - Use the workspace-wide completion script; do not replace it with cherry-picks for only changed repositories. Zero-commit repositories must also switch back, and retained Spec branches must not remain checked out.
    - A behind-only local entry branch is fast-forwarded to the fetched remote ref without merge before linear Spec commits are cherry-picked.
+   - Inspect `worktree_plans`: sync operates in the worktree that owns the Spec branch; completion detaches retained Spec worktrees at their current commit and returns the original directory to its entry branch. Dirty tracked Spec worktrees and entry branches owned elsewhere block preflight. Do not bypass this with manual resets or unapproved stash.
 7. Verify:
    - every participating repository is on its recorded entry branch, including zero-commit repositories (usually master/main; preserve a recorded product branch)
    - actual Git branch checks and switch exit codes passed; a failed switch means incomplete completion

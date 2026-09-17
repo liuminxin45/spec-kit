@@ -174,8 +174,8 @@ stage_gate_policy:
     stage: "new-workflow-preflight"
     rule: "Before intake writes or overwrites active feature state, block dirty worktrees, non-base branches, unfinished .specify/feature.json state, and unresolved workflow runs."
   automatic_stage_continuation:
-    rule: "A single slash-command or stage skill stops after its own stage and reports the next required command. Only an explicit workflow-runner invocation may auto-continue to the next structurally required default stage when no human acceptance, clarification, owner decision, high-risk confirmation, unavailable external dependency, build/validation failure, unresolved blocker, delivery evidence gap, or explicit user pause remains."
-    execution_contract: "Auto-continue means the workflow runner may execute the next YAML step; individual slash-command/stage-skill invocations must not run unrelated later stages. Opt-in governance and branch stages require explicit user request."
+    rule: "A single stage stops after its own stage unless a workflow-runner invocation or explicit natural-language user authorization enables automatic continuation. Record continuation.mode and authorization_evidence with update-workflow-state; use resolve-next-stage auto_continue. Stop at human acceptance, required clarification, owner decision, unavailable dependency, failed validation, unresolved blocker, missing required evidence, or explicit pause."
+    execution_contract: "Automatic continuation covers structurally required default stages only. Existing explicit authorization persists; do not repeatedly ask for it. Opt-in governance, commit, branch mutations and push require separate explicit requests. Stage transitions update canonical stage_statuses and legacy nodes together; never infer validation success from acceptance."
   next_stage_routing:
     micro-fix:
       after_plan: "implement when workpack or micro-fix evidence names files, validation, stop conditions, and root cause."

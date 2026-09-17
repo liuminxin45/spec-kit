@@ -65,6 +65,8 @@ Create local commits after implementation validation and user acceptance. This s
 
 ## Quality Rules
 
+- Review new files against their generation path: keep authored metadata, exclude reproducible generated configuration where the project supports regeneration, and verify fallback/build behavior. Do not delete existing configuration globally by filename.
+- After commit or amend, refresh the current delivery summary with repository SHA, validation environment/evidence and exclusions; preserve prior evidence as history. Use update-workflow-state for status transitions.
 - Do not commit generated build output, temp files, local logs, caches, installed runtime directories, served runtime artifacts, or generated deployment outputs.
 - If unrelated dirty work exists, leave it unstaged and call it out.
 - Never commit on a Spec branch whose recorded-entry range contains a merge commit. Never use pull/merge to repair the gate; use the approved fetch/rebase sync or a separately approved history rewrite.

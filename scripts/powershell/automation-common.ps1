@@ -21,6 +21,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot/workflow-state-common.ps1"
 
 function New-Result {
     param([string]$Name)
@@ -204,9 +205,9 @@ function Resolve-FeatureDirPath {
         return ""
     }
     if ([System.IO.Path]::IsPathRooted($Path)) {
-        return $Path
+        return [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($Path))
     }
-    return Join-Path $RepoRoot $Path
+    return [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath((Join-Path $RepoRoot $Path)))
 }
 
 function Get-RelativeDisplayPath {
@@ -672,15 +673,7 @@ function Ensure-WorkflowHookGate {
 
 function Get-WorkflowStateStatus {
     param($State, [string]$NodeName)
-    $node = Get-ObjectPropertyValue -Object $State -PropertyName $NodeName
-    if ($null -eq $node) {
-        return ""
-    }
-    $status = Get-ObjectPropertyValue -Object $node -PropertyName "status"
-    if ($null -eq $status) {
-        return ""
-    }
-    return [string]$status
+    return Get-SpecKitStageStatus -State $State -Name $NodeName
 }
 
 function Test-TextAcceptancePassed {
@@ -2676,6 +2669,8 @@ function Invoke-NormalizeWorkflowState {
             }
         }
         $result.facts.workflow_state = $WorkflowState
+        $result.facts.state_conflicts = @(Get-SpecKitStateConflicts -State $state)
+        if ($result.facts.state_conflicts.Count -gt 0) { Set-Warning $result 'Conflicting stage/legacy status; use update-workflow-state with explicit evidence. Validation and acceptance remain separate.' }
     } catch {
         Set-Blocked $result "workflow-state.json is not valid JSON"
     }
@@ -3192,6 +3187,8 @@ function Invoke-InspectWorkflowClosure {
         $artifacts[$name] = Test-Path -LiteralPath (Join-Path $resolvedFeatureDir $name) -PathType Leaf
     }
 
+    $result.facts.state_conflicts = @(Get-SpecKitStateConflicts -State $state)
+    if ($result.facts.state_conflicts.Count -gt 0) { $result.unknowns += 'workflow-state contains conflicting legacy statuses; stage_statuses is canonical. Repair with update-workflow-state and evidence.' }
     $acceptanceStatus = Get-WorkflowStateStatus -State $state -NodeName "acceptance"
     if (-not $acceptanceStatus) {
         if (Test-TextAcceptancePassed -Path (Join-Path $resolvedFeatureDir "acceptance.md")) {
