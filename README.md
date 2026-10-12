@@ -7,14 +7,16 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-brightgreen?style=for-the-badge" alt="MIT License"></a>
 </p>
 
-Spec Kit 是一个面向 Codex 的 AI Coding 工作流工具包。它把规格驱动开发、低上下文任务路由、AI 自我验收、知识包和工程验证脚本放在同一套可复制流程里。
+让 AI 修改代码之后，还需要确认：需求是否理解正确、改动是否经过验证，以及结果能否交付。这个 Spec Kit 基于 GitHub 官方 [Spec Kit](https://github.com/github/spec-kit) 扩展，面向 Codex 组织从需求说明到人工验收的开发流程。
 
-它适合这些场景：
+它保留“先写清需求和计划，再实现”的规格驱动开发思路，并按任务风险选择流程、按需加载项目知识，让 AI 在交给人验收前提供构建、测试、日志或界面检查的证据。
 
-- 让 Codex 先写清规格和计划，再动代码。
-- 小修复走轻流程，大风险变更走硬门禁。
-- 把项目知识从开源核心中剥离，按需挂载到目标项目。
-- 让 AI 在交给人验收前先用构建、测试、日志、浏览器或 CDP 证据自验。
+适合这些场景：
+
+- **需求需要澄清**：先形成规格、计划和任务，再动代码。
+- **改动大小不同**：小修复走轻流程，高风险变更经过更严格的验证。
+- **项目知识需要复用**：把项目事实整理成独立知识包，按需挂载到目标项目。
+- **实现需要验收**：让 AI 先检查结果并记录证据，再交给人判断。
 
 当前 AI 自我验收最擅长处理支持 CDP 协议的 UI 框架，例如 Electron、Chromium、WebView 或可通过 Chrome DevTools 观察的前端运行时。它可以读取 DOM、console、network、computed style、截图和运行时状态。非 CDP UI、真实设备或原生宿主仍可走测试、日志、设备门禁或人工验收，但缺少可验证证据时必须记录为 BLOCKED，不能假装通过。
 
