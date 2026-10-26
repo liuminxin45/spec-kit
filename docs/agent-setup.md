@@ -4,6 +4,14 @@
 
 本指南使用最新正式 Release。源码与命令发生差异时，读取所选 tag 的实际源码和 `--help`，报告差异，不猜测参数。
 
+2.0 的可选总 Skill/知识包模式见 [Codex Skill 模式](codex-skill-mode.md)。
+所选版本的 `init --help` 支持 `--mode codex-skill`，且用户选择该模式时，首次
+安装使用 `specify init --here --mode codex-skill --no-git --json`，通过
+`specify pack doctor --json` 与 `specify context --json` 检查，并以 `$speckit`
+开始任务；不执行下面的 legacy 集成安装/检查步骤。已有新模式项目用
+`specify upgrade --project-dir <目标> --dry-run --json` 预览，再执行不带 dry-run
+的升级。若最新正式版本尚未包含新模式，明确告知，不能把 main 冒充正式版。
+
 ## 1. 确认环境与目标
 
 - 目标是用户当前打开的项目根目录，不是 Spec Kit 的源码目录；存在歧义时先确认目标。

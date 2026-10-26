@@ -1,0 +1,6 @@
+interface:
+  display_name: "Spec Kit"
+  short_description: "Project knowledge, workflows, and evidence for AI Coding"
+  default_prompt: "Use $speckit to handle this AI Coding task with relevant project knowledge and verifiable acceptance."
+policy:
+  allow_implicit_invocation: true

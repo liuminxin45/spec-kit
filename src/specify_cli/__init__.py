@@ -520,6 +520,8 @@ def init(
     knowledge_pack_apply_profiles: bool = typer.Option(False, "--knowledge-pack-apply-profiles", help="Also apply workspace.yml and repository-map profiles from --knowledge-pack"),
     debug: bool = typer.Option(False, "--debug", help="Show detailed diagnostics when initialization fails."),
     branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, …, 1000, … — expands past 999 automatically) or 'timestamp' (YYYYMMDD-HHMMSS)"),
+    mode: str = typer.Option("legacy", "--mode", help="Project mode: legacy or codex-skill (opt-in knowledge/capability runtime)"),
+    json_output: bool = typer.Option(False, "--json", help="Print structured output for codex-skill initialization"),
 ):
     """
     Initialize a new Specify project.
@@ -545,6 +547,24 @@ def init(
         specify init --here --force  # Skip confirmation when current directory not empty
         specify init --here --knowledge-pack <pack-dir>
     """
+
+    if mode != "legacy":
+        from .codex_runtime.cli import emit
+        from .codex_runtime.common import RuntimeBlocked
+        from .codex_runtime.packs import initialize
+        def initialize_skill_mode():
+            if mode != "codex-skill":
+                raise RuntimeBlocked("Mode must be legacy or codex-skill")
+            if project_name not in {None, "."} and here:
+                raise RuntimeBlocked("Choose a project name or --here")
+            if not project_name and not here:
+                raise RuntimeBlocked("Specify a project name, '.', or --here")
+            if knowledge_pack or knowledge_pack_apply_profiles or branch_numbering:
+                raise RuntimeBlocked("Legacy knowledge/profile options do not apply; use pack add after initialization")
+            target = Path.cwd() if here or project_name == "." else Path(project_name).resolve()
+            return initialize(target)
+        emit(initialize_skill_mode)
+        return
 
     show_banner()
 
@@ -1057,6 +1077,20 @@ def upgrade(
     the installed package/core pack by default, or a local source checkout
     passed with ``--source``. It does not pull a remote branch implicitly.
     """
+    from ._project_status import resolve_project_root
+    from .codex_runtime.packs import is_project as is_codex_skill_project
+    candidate_root = resolve_project_root(project_dir)
+    if is_codex_skill_project(candidate_root):
+        from .codex_runtime import packs as runtime_packs
+        from .codex_runtime.cli import emit
+        from .codex_runtime.common import RuntimeBlocked
+        def upgrade_skill_mode():
+            runtime_packs.config(candidate_root)
+            if source or (version and version != get_speckit_version()):
+                raise RuntimeBlocked("Install/select the desired CLI first, then refresh its bundled Skill and packs")
+            return runtime_packs.install(candidate_root, ["builtin:workflows", "builtin:knowledge"], replace=True, dry_run=dry_run)
+        emit(upgrade_skill_mode)
+        return
     from ._upgrade import (
         apply_project_upgrade,
         build_upgrade_plan,
@@ -2700,6 +2734,10 @@ def integration_info(
 from .workflows.commands import register_workflow_commands as _register_workflow_commands
 
 _register_workflow_commands(app, _require_specify_project)
+
+from .codex_runtime.cli import register as _register_codex_runtime
+
+_register_codex_runtime(app)
 
 def main():
     app()

@@ -1,0 +1,25 @@
+schema_version: "2.0"
+id: speckit/workflows
+version: "1.0.0"
+description: "Generic AI Coding workflows; no project knowledge or permissions."
+contents:
+  - id: coding-lite
+    type: workflow
+    path: coding-lite.yml
+    description: "Bounded coding or defect repair"
+  - id: engineering-change
+    type: workflow
+    path: engineering-change.yml
+    description: "Cross-module or public contract change"
+  - id: investigation
+    type: workflow
+    path: investigation.yml
+    description: "Establish a cause from observations before choosing a fix"
+  - id: validation-only
+    type: workflow
+    path: validation-only.yml
+    description: "Verify a supplied artifact or behavior without product edits"
+  - id: delivery
+    type: workflow
+    path: delivery.yml
+    description: "Prepare an authorized delivery with current checks and human acceptance"

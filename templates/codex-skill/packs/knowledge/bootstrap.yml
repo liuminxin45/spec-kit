@@ -1,0 +1,12 @@
+schema_version: "2.0"
+id: "speckit/knowledge::bootstrap"
+version: "1.0.0"
+description: "Knowledge bootstrap: maintain source-backed project context."
+phases: [contract, implement, ai_accept]
+human_acceptance:
+  required_for_close: true
+  allow_accepted_gaps: false
+gates:
+  - {id: request, phase: contract, kind: machine, check: builtin/request-contract}
+  - {id: review, phase: ai_accept, kind: judgment, check: builtin/criteria-review}
+guidance: "Use the master Skill knowledge reference. Record generated maps as candidates, preserve provenance and review before promotion or release."

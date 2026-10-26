@@ -25,6 +25,15 @@ Spec-driven AI coding for Codex — from intent to verified delivery.
 
 适合想把 AI 编程从“改完了”推进到“可验收”的个人开发者和团队。
 
+## 新方向：一个 Skill，按需组合项目知识
+
+2.0 提供可选的 **Codex + `$speckit` + 知识包** 模式：项目地图、
+调试方法、设计稿、强制要求和 workflow 都可以独立维护、按需加载。
+AI 直接做开发，工具负责保存需求与澄清、检查门禁和关联真实验收证据。
+
+安装 2.0 后，通过 `specify init --here --mode codex-skill`
+启用。已有项目保留原流程；[新模式说明](docs/codex-skill-mode.md)包含使用与迁移方式。
+
 ## 一句话安装
 
 在**目标项目目录**打开你的 Agent，复制下面这一句：

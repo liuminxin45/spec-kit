@@ -1,5 +1,8 @@
 # Spec Kit Agent 使用手册
 
+2.0 可选择 [Codex Skill + 知识包模式](codex-skill-mode.md)。本页其余内容
+描述原有 legacy 模式，不应与新模式混装。
+
 <p align="center">
   <a href="https://github.com/liuminxin45/spec-kit"><img src="https://img.shields.io/badge/AI%20Coding-Spec%20Kit-blue?style=for-the-badge" alt="AI Coding Spec Kit"></a>
   <img src="https://img.shields.io/badge/Codex-only-Workflow-green?style=for-the-badge" alt="Codex-only Workflow">

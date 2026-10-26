@@ -23,6 +23,15 @@ Describe the change → Choose a workflow → Implement → Collect evidence →
 
 For developers and teams who want AI changes they can assess and accept.
 
+## One Skill, composable project knowledge
+
+Version 2.0 adds an opt-in **Codex + `$speckit` + packs** mode.
+Load project maps, debugging guides, design assets, requirements and workflows
+when needed; keep requests, clarification and actual acceptance evidence together.
+After installing version 2.0, use
+`specify init --here --mode codex-skill`. Existing projects retain their workflow.
+See the [new mode guide](docs/codex-skill-mode.md).
+
 ## Quick start
 
 Open an agent in your **target project directory** and paste this sentence:
