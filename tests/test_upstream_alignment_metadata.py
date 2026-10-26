@@ -1,3 +1,4 @@
+import re
 import tomllib
 from pathlib import Path
 
@@ -20,16 +21,18 @@ def read_text(path: str) -> str:
 def test_local_version_and_upstream_baseline_are_explicit(tmp_path):
     pyproject = tomllib.loads(read_text("pyproject.toml"))
     workflow = yaml.safe_load(read_text("workflows/speckit/workflow.yml"))
-    readme = read_text("README.md")
+    readme = read_text("docs/agent-guide.md")
 
-    assert pyproject["project"]["version"] == "1.0.0"
+    local_version = pyproject["project"]["version"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", local_version)
     assert workflow["requires"]["speckit_version"] == ">=1.0.0"
     assert UPSTREAM_BASELINE == "github/spec-kit@v1.0.6"
     assert "upstream_baseline: github/spec-kit@v1.0.6" in readme
 
-    lock_path = write_spec_kit_lock(tmp_path, version="1.0.0", source="test")
+    lock_path = write_spec_kit_lock(tmp_path, version=local_version, source="test")
     lock = yaml.safe_load(lock_path.read_text(encoding="utf-8"))
     assert lock["spec_kit"]["upstream_baseline"] == UPSTREAM_BASELINE
+    assert lock["spec_kit"]["version"] == local_version
 
 
 def test_catalog_url_validation_rejects_hostless_urls_and_duplicate_priorities(tmp_path):
