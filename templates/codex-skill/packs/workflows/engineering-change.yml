@@ -1,0 +1,15 @@
+schema_version: "2.0"
+id: "speckit/workflows::engineering-change"
+version: "1.0.0"
+description: "Cross-module or public contract change"
+phases: [contract, implement, ai_accept]
+human_acceptance:
+  required_for_close: true
+  allow_accepted_gaps: false
+gates:
+  - {id: request, phase: contract, kind: machine, check: builtin/request-contract}
+  - {id: validation, phase: ai_accept, kind: machine, when: changes_code, check: builtin/validation-receipts}
+  - {id: ui, phase: ai_accept, kind: machine, when: changes_visible_ui, check: builtin/ui-evidence}
+  - {id: runtime, phase: ai_accept, kind: machine, when: changes_runtime, check: builtin/runtime-evidence}
+  - {id: review, phase: ai_accept, kind: judgment, check: builtin/criteria-review}
+guidance: "Record boundary/compatibility decisions and implementation slices in the contract; use native planning when useful. No fixed document set is required."

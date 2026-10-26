@@ -6,6 +6,8 @@
 
 | 文档 | 用途 |
 | --- | --- |
+| [Codex Skill + 知识包模式](codex-skill-mode.md) | 2.0：总 Skill、可选 workflow、任务证据链与知识维护 |
+| [2.0 发布说明](releases/v2.0.0.md) | 新能力、兼容方式、验证范围与安装入口 |
 | [AI 安装指南](agent-setup.md) | 在线安装、安全升级、环境检查与验收 |
 | [Agent 使用手册](agent-guide.md) | 命令、工作流、知识包、验证、FAQ 与贡献检查 |
 | [本地安装与知识包挂载](local-install-and-knowledge-mount.md) | 本地 bundle、校验和、多知识包组合安装 |

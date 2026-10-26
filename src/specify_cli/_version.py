@@ -129,6 +129,13 @@ def self_check(
     installed = _get_installed_version()
     tag, failure_reason = _fetch_latest_release_tag()
     project_root = resolve_project_root(project_dir)
+    from .codex_runtime.packs import is_project as is_codex_skill_project
+    if is_codex_skill_project(project_root):
+        from .codex_runtime.packs import doctor
+        from .codex_runtime.cli import emit
+        emit(lambda: {**doctor(project_root), "installed_version": installed,
+                      "remote": {"latest_tag": tag, "failure_reason": failure_reason}})
+        return
     project_status = build_project_status(project_root, target_version=installed)
 
     if json_output:
