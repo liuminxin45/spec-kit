@@ -2222,7 +2222,7 @@ def test_completion_scripts_keep_spec_branch_by_default():
 
 def test_workspace_template_defines_spec_persistence_policy():
     workspace_template = read_text("templates/workspace-template.yml")
-    readme = read_text("README.md")
+    readme = read_text("docs/agent-guide.md")
 
     assert "spec_persistence:" in workspace_template
     assert 'model: "flow-back"' in workspace_template
@@ -3233,7 +3233,7 @@ def test_init_is_codex_only_without_ai_selector():
 
 
 def test_open_source_readme_documents_pack_and_generated_knowledge_starts():
-    readme = read_text("README.md")
+    readme = read_text("docs/agent-guide.md")
 
     assert "specify init --here --knowledge-pack <pack-dir>" in readme
     assert "--knowledge-pack-apply-profiles" in readme
@@ -3253,7 +3253,7 @@ def test_open_source_readme_documents_pack_and_generated_knowledge_starts():
 
 
 def test_local_distribution_documentation_is_ai_actionable():
-    readme = read_text("README.md")
+    readme = read_text("docs/agent-guide.md")
     guide = read_text("docs/local-install-and-knowledge-mount.md")
     builder = read_text("scripts/powershell/build-local-distribution.ps1")
     installer = read_text("scripts/powershell/install-local-bundle.ps1")
