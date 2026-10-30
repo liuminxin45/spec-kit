@@ -2,15 +2,12 @@
 
 用户把首页安装指令交给你，即授权你在当前目标项目安装或安全升级 Spec Kit，并完成下面的验证。目标是让用户无需学习安装命令。安装后工作流面向 Codex；其他具备终端和文件能力的 Agent 也可以完成安装工作。
 
-本指南使用最新正式 Release。源码与命令发生差异时，读取所选 tag 的实际源码和 `--help`，报告差异，不猜测参数。
+本指南默认使用最新正式 Release；用户明确指定 tag 时使用该正式 Release。源码与命令发生差异时，读取所选 tag 的实际源码和 `--help`，报告差异，不猜测参数。
 
-2.0 的可选总 Skill/知识包模式见 [Codex Skill 模式](codex-skill-mode.md)。
-所选版本的 `init --help` 支持 `--mode codex-skill`，且用户选择该模式时，首次
-安装使用 `specify init --here --mode codex-skill --no-git --json`，通过
-`specify pack doctor --json` 与 `specify context --json` 检查，并以 `$speckit`
-开始任务；不执行下面的 legacy 集成安装/检查步骤。已有新模式项目用
-`specify upgrade --project-dir <目标> --dry-run --json` 预览，再执行不带 dry-run
-的升级。若最新正式版本尚未包含新模式，明确告知，不能把 main 冒充正式版。
+**首次安装统一使用 2.0 `codex-skill` 模式，任务入口为 `$speckit`。**
+CLI 省略 `--mode` 仍默认 legacy；安装新版 CLI 不等于项目已启用新模式。
+已有项目先识别模式，再安全升级，不自动迁移、不混装两套入口。
+2.0 使用与知识包操作见 [Codex Skill 模式](codex-skill-mode.md)。
 
 ## 1. 确认环境与目标
 
@@ -19,11 +16,15 @@
 - 检查 `pwsh --version`、`git --version`、`uv --version` 和可用 Python。用户目录中的工具可能尚未加入 PATH，先查已有安装。
 - 缺少依赖时，使用该工具官方安装方式或现有包管理器，在当前用户权限内补齐；需要管理员权限或无法联网时，说明具体阻塞和最小操作。
 - 记录 Git 状态、已有 `.specify`、`AGENTS.md`、`.agents` 和 `ai`。已有开发改动保留，不切分支、不清理、不 stash。
-- `.specify/spec-kit.lock.yml` 或 `.specify/integrations/speckit.manifest.json` 存在时按升级处理。只有一个损坏或不完整的 `.specify` 目录时先检查，不能直接覆盖初始化。
+- 写入前识别模式：`.specify/config.yml` 中 `mode: codex-skill`、`.specify/packs.lock.json` 与 `.agents/skills/speckit/SKILL.md` 属于 2.0；`.specify/spec-kit.lock.yml`、`.specify/integrations/speckit.manifest.json` 或旧版 AGENTS 管理区域属于 legacy。
+- 标记缺失、损坏、互相冲突或发现两套入口时先检查并报告，不猜模式、不覆盖初始化。只有普通业务文件、没有 Spec Kit 资产的项目才按首次安装处理。
 
 ## 2. 选择并安装正式版本
 
 查询 `https://api.github.com/repos/liuminxin45/spec-kit/releases/latest`，记录 `tag_name` 和发布地址，确认不是 draft 或 prerelease。可用 GitHub CLI、HTTP 或 Agent 自带的网络工具。
+
+用户指定 tag 时，将下面两处 `releases/latest` 替换为 `releases/tags/<指定tag>`，
+并核对返回的 `tag_name` 与指定值一致，仍须排除 draft/prerelease。
 
 如果无法查询 Release，不静默改用 main。先用可用的网络方式重试；仍不可用则报告阻塞，或按用户明确指定的 tag 安装。
 
@@ -49,21 +50,82 @@ if ($LASTEXITCODE -ne 0) { throw 'CLI verification failed' }
 
 ## 3. 初始化或安全升级
 
-### 首次安装
+### 首次安装：2.0 总 Skill
 
-先检查所选版本的 `specify init --help`。在目标项目目录执行：
+先检查所选版本的 `specify init --help`，确认支持 `--mode codex-skill`。
+若所选正式版不支持，报告版本阻塞，不静默退回 legacy，也不把 main 冒充正式版。
+在目标项目目录执行，每条命令检查退出码，失败就停止后续步骤：
 
 ```powershell
 Set-Location -LiteralPath $projectPath
-specify init --here --no-git --ignore-agent-tools
+specify init --here --mode codex-skill --no-git --json
 ```
 
-- `--no-git` 保留现有 Git 设置，也避免为用户自动创建仓库。
-- `--ignore-agent-tools` 兼容使用 Codex 桌面应用、没有独立 Codex CLI 的情况；不改变 Codex-only 集成。
-- 在写入前备份可能受影响的已有文件。非空目录确认可以在完成冲突检查后由 Agent 应答；不为跳过提示而使用 `--force`。
-- 保留用户的 `AGENTS.md` 内容、已有技能与项目知识。初始化会添加 Spec Kit 管理区域和资源；发生无法安全合并的冲突时说明具体文件，不覆盖自定义内容。
+初始化添加总 Skill、短 AGENTS 管理区域、配置、锁文件和通用包，不生成旧版
+`ai/` 模板、阶段 skills 或产品源码。`--no-git` 明确保留现有 Git 设置；
+该模式不要求独立 Codex CLI，无需 legacy 的 `--ignore-agent-tools`。
+写入前备份受影响文件，保留用户 AGENTS 区域外的规则、技能与项目知识。
+不使用 `--force` 绕过冲突；非空业务目录不等于已经安装过 Spec Kit。
 
-### 已有项目
+### 已有 2.0 项目：保留模式升级
+
+安装并核对目标 CLI 版本后，先预览，再执行不带 `--force` 的升级：
+
+```powershell
+specify upgrade --project-dir $projectPath --dry-run --json
+specify upgrade --project-dir $projectPath --json
+```
+
+逐条检查退出码和 JSON 状态，预览有阻塞时不执行写入。该分支使用已安装 CLI
+的总 Skill 与内置包，不接受 legacy 的 `--source`，也不运行
+`specify integration upgrade codex`。保留自定义受管文件并报告冲突，
+不删除用户知识、任务历史或现有技能。
+
+已有 legacy 项目转到[兼容与迁移](#6-legacy-兼容与迁移)，不运行上面的初始化命令。
+
+## 4. 验证 2.0 安装结果
+
+核对 `.specify/config.yml` 的 `mode: codex-skill`、`.specify/packs.lock.json`、
+`.agents/skills/speckit/SKILL.md` 与 `AGENTS.md` 管理区域。从目标目录执行：
+
+```powershell
+Set-Location -LiteralPath $projectPath
+specify pack doctor --json
+specify context --json
+```
+
+每条命令同时检查退出码与 JSON。首次安装应均为 `status: ok`；doctor 的
+`mode` 应为 `codex-skill`，`runtime_version` 与所选 CLI 版本一致；context
+应返回内置 workflow/knowledge 候选。`warning`、`blocked`、定制文件或未完成
+事务必须列出并处理，不能仅凭退出码 0 宣称通过。重新确认没有混入旧入口。
+不要用 legacy 的 integration/self check 或旧上下文校验脚本代替这些检查。
+
+安装完成不代表项目产品测试或运行验收通过。不自动提交、推送、创建任务或发布
+项目；不自动挂载项目知识包。需要项目知识时按用户选择参照
+[2.0 使用说明](codex-skill-mode.md)。
+
+## 5. 向用户交付
+
+用用户的语言简洁报告：版本与 tag、目标路径、实际模式、初始化或升级、
+检查结果、保留的定制及剩余阻塞。检查未通过时继续处理可修复问题，无法处理的
+给出具体原因。建议重新打开目标项目中的 Codex 对话以加载技能。
+
+2.0 `codex-skill` 项目给出可复制的第一条任务：
+
+```text
+$speckit 修复登录失败时提示不明确的问题，先核实原因，完成后给出验证结果。
+```
+
+保留 legacy 的项目只给出下节对应入口，并明确尚未迁移到 2.0 新模式。
+用户不需要先阅读完整手册，按实际模式加载对应章节。
+
+## 6. legacy 兼容与迁移
+
+本节仅供已有 legacy 项目维护或用户明确要求兼容模式时使用，不作为新用户安装路径。
+CLI 默认值仍为 legacy；两套入口不是别名，不能混装，也不要为清理旧入口而删除
+活动项目的 AGENTS、skills、配置、知识或历史状态。
+
+### 原模式安全升级
 
 先预览，再执行不带 `--force` 的升级：
 
@@ -81,7 +143,7 @@ specify integration upgrade codex --project-dir $projectPath
 
 每条命令检查退出码；失败就停止依赖步骤。保留 `.specify/workspace.yml`、repository map、项目知识、自定义受管文件和历史工作流快照。覆盖自定义受管文件需要用户对具体冲突的明确授权。不要执行尚未实现的 `specify self upgrade`。
 
-## 4. 验证安装结果
+### legacy 验证
 
 检查生成的 `AGENTS.md` 管理区域、`.agents/skills/speckit-specify/SKILL.md`、`.agents/spec-kit/skills/`、`.specify/` 与 `ai/`。
 
@@ -98,16 +160,33 @@ specify self check --project-dir $projectPath --json
 
 前三项应为 `status: ok`。最后核对 CLI、项目资产和 Codex integration 版本一致且为本次选择的版本，无 outdated 或 missing 项。`self check` 的 `customized` 可以表示保留了用户定制，应列出差异及影响，不能改写成完全一致。版本查询等网络故障应单独披露，不冒充安装校验通过。
 
-安装完成不代表项目产品测试或运行验收通过。不自动提交、推送、创建任务或发布项目；不自动挂载项目知识包。需要知识包时按用户选择参照 [Agent 使用手册](agent-guide.md) 和 [本地安装指南](local-install-and-knowledge-mount.md)。
-
-## 5. 向用户交付
-
-用用户的语言简洁报告：安装版本与 tag、目标路径、初始化或升级、检查结果、保留的定制及剩余阻塞。检查未通过时继续处理可修复问题，无法处理的给出具体原因。
-
-建议重新打开目标项目中的 Codex 对话以加载新技能，然后给出可复制的第一条任务：
+验证通过后，重新打开 Codex 对话，legacy 项目继续使用：
 
 ```text
-$speckit-specify 描述你要实现的功能或修复的问题，完成后给出验证结果。
+$speckit-specify 修复登录失败时提示不明确的问题，先核实原因，完成后给出验证结果。
 ```
 
-用户不需要先阅读完整手册。仅在下一项工作需要时加载 [Agent 使用手册](agent-guide.md) 中对应章节。
+仅当用户明确要求新建 legacy 项目时，在完成第 1、2 节检查后执行：
+
+```powershell
+Set-Location -LiteralPath $projectPath
+specify init --here --mode legacy --no-git --ignore-agent-tools
+```
+
+逐条检查退出码，按本节 legacy 检查验收。写入前备份，非空目录完成冲突检查后
+才可应答确认，不使用 `--force` 覆盖用户内容。
+
+### 计划迁移到单一入口
+
+在旧项目目录先做只读预览：
+
+```powershell
+Set-Location -LiteralPath $projectPath
+specify pack migration-plan --json
+```
+
+该命令只输出计划，不执行迁移。先在隔离目录试装新模式、导入并核验旧知识，
+再由用户明确决定如何迁移项目规则和处理旧 AGENTS/skills。切换完成后只保留
+与新模式匹配的入口；当前版本不自动改写活动 legacy 项目。
+详见 [2.0 模式与知识导入](codex-skill-mode.md) 和
+[legacy 使用手册](agent-guide.md)。

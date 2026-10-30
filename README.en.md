@@ -25,11 +25,12 @@ For developers and teams who want AI changes they can assess and accept.
 
 ## One Skill, composable project knowledge
 
-Version 2.0 adds an opt-in **Codex + `$speckit` + packs** mode.
+New projects should use the version 2.0 **Codex + `$speckit` + packs** mode.
 Load project maps, debugging guides, design assets, requirements and workflows
 when needed; keep requests, clarification and actual acceptance evidence together.
 After installing version 2.0, use
-`specify init --here --mode codex-skill`. Existing projects retain their workflow.
+`specify init --here --mode codex-skill` explicitly: omitting `--mode` still selects legacy.
+The setup instruction below selects 2.0 for first-time setup and preserves existing project modes.
 See the [new mode guide](docs/codex-skill-mode.md).
 
 ## Quick start
@@ -37,20 +38,20 @@ See the [new mode guide](docs/codex-skill-mode.md).
 Open an agent in your **target project directory** and paste this sentence:
 
 ```text
-Read https://raw.githubusercontent.com/liuminxin45/spec-kit/main/docs/agent-setup.md and follow it to install or safely upgrade Spec Kit in this project, run the checks, and show me how to start.
+Read https://raw.githubusercontent.com/liuminxin45/spec-kit/main/docs/agent-setup.md and follow it to install or safely upgrade Spec Kit in this project, explicitly use --mode codex-skill for first-time setup, preserve the mode of existing projects, run mode-specific checks, and show the matching task entry.
 ```
 
 An agent with terminal and file access can perform setup. The installed workflow targets **Codex**. The supported environment is **Windows with PowerShell 7**, Python 3.11+, Git, and uv. The guide checks prerequisites and preserves existing project configuration. Detailed operating docs are currently in Chinese; your agent can follow them in your language.
 
 ## After setup
 
-Invoke the entry skill in Codex and describe the work:
+After 2.0 setup and checks, invoke the main Skill in Codex:
 
 ```text
-$speckit-specify Fix the unclear error message after a failed login. Verify the cause first and report the validation results.
+$speckit Fix the unclear error message after a failed login. Verify the cause first and report the validation results.
 ```
 
-Use it for features, fixes, refactoring, migrations, or validation alone. Codex selects the workflow based on scope and risk.
+Use it for features, fixes, refactoring, migrations, or validation alone. Codex selects the workflow based on scope and risk. Existing legacy projects retain their entry; see [compatibility and migration](docs/agent-setup.md#6-legacy-兼容与迁移).
 
 ## What can it verify?
 
@@ -61,8 +62,8 @@ Tests, builds, logs, and runtime inspection can support acceptance. CDP-accessib
 | Task | Guide |
 | --- | --- |
 | Install, upgrade, and check a project | [Agent setup](docs/agent-setup.md) |
-| Look up commands, workflows, and knowledge packs | [Agent manual](docs/agent-guide.md) |
-| Distribute local bundles and knowledge packs | [Local installation](docs/local-install-and-knowledge-mount.md) |
+| Look up 2.0 commands, workflows, packs, and acceptance | [2.0 guide](docs/codex-skill-mode.md) |
+| Maintain an existing legacy project | [Compatibility and migration](docs/agent-setup.md#6-legacy-兼容与迁移) |
 | Explore documentation and contribute | [Documentation index](docs/README.md) |
 
 If this helps your work, **Star the repository** to help others find it. [Issues](https://github.com/liuminxin45/spec-kit/issues) and pull requests are welcome; include your version, expected behavior, and reproduction steps when reporting a problem.
