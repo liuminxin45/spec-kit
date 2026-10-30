@@ -1,8 +1,9 @@
 # Codex Skill + 知识包模式
 
-这是 Spec Kit 2.0 提供的可选模式。Codex 负责开发；一个 `$speckit` 总 Skill
+这是 Spec Kit 2.0 推荐给新项目的模式。Codex 负责开发；一个 `$speckit` 总 Skill
 负责发现项目知识、选择 workflow、记录需求与澄清、检查证据并交付。
-旧版初始化默认值和已有项目保持兼容，不自动迁移 UF 或其他工作区。
+CLI 省略 `--mode` 仍默认 legacy；已有项目保留原模式，不自动迁移。
+首次安装与安全升级按 [AI 安装指南](agent-setup.md) 执行，不混装旧入口。
 
 ## 开始
 
@@ -21,7 +22,7 @@ specify context --json
 重新打开项目中的 Codex 对话后：
 
 ```text
-$speckit 修复导出 CSV 时中文列名乱码的问题。先查明原因，完成后实际验证。
+$speckit 修复登录失败时提示不明确的问题，先核实原因，完成后给出验证结果。
 ```
 
 总 Skill 按需加载自己的 references，候选知识只显示元数据。不会预加载

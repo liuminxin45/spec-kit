@@ -1,5 +1,9 @@
 # Spec Kit 与知识包本地安装指南（AI 使用）
 
+本页描述 legacy 模式的本地安装与知识包挂载。首次安装请使用
+[AI 安装指南](agent-setup.md)；2.0 知识包操作见
+[Codex Skill 模式](codex-skill-mode.md)，不要混用两套包格式和入口。
+
 本产物用于在不访问 Spec Kit 源码仓库的情况下安装 `specify-cli`，并可把调用方显式
 选择的知识包挂载到目标工作区。Spec Kit 不内置任何项目名称、仓库名称、pack id 或
 产品事实。安装不会执行知识 promotion，不会提交或推送代码，也不会执行知识包中的脚本。

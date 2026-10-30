@@ -25,34 +25,35 @@ Spec-driven AI coding for Codex — from intent to verified delivery.
 
 适合想把 AI 编程从“改完了”推进到“可验收”的个人开发者和团队。
 
-## 新方向：一个 Skill，按需组合项目知识
+## 一个 Skill，按需组合项目知识
 
-2.0 提供可选的 **Codex + `$speckit` + 知识包** 模式：项目地图、
+新项目推荐使用 2.0 的 **Codex + `$speckit` + 知识包** 模式：项目地图、
 调试方法、设计稿、强制要求和 workflow 都可以独立维护、按需加载。
 AI 直接做开发，工具负责保存需求与澄清、检查门禁和关联真实验收证据。
 
-安装 2.0 后，通过 `specify init --here --mode codex-skill`
-启用。已有项目保留原流程；[新模式说明](docs/codex-skill-mode.md)包含使用与迁移方式。
+安装时须显式指定 `--mode codex-skill`；省略参数仍会进入 legacy。
+下方安装指令已要求新项目启用 2.0，已有项目安全升级并保留原模式；
+[安装指南](docs/agent-setup.md)说明兼容与迁移边界。
 
 ## 一句话安装
 
 在**目标项目目录**打开你的 Agent，复制下面这一句：
 
 ```text
-请读取 https://raw.githubusercontent.com/liuminxin45/spec-kit/main/docs/agent-setup.md，按指南在当前项目安装或安全升级 Spec Kit，完成自检并告诉我如何开始。
+请读取 https://raw.githubusercontent.com/liuminxin45/spec-kit/main/docs/agent-setup.md，按指南在当前项目安装或安全升级 Spec Kit：首次安装显式使用 --mode codex-skill，已有项目保留原模式；按实际模式完成自检并给出对应任务入口。
 ```
 
 具备终端和文件访问能力的 Agent 可以按指南完成安装；安装后的工作流面向 **Codex**。当前支持的使用环境是 **Windows + PowerShell 7**，需要 Python 3.11+、Git 和 uv；指南会先检查环境，并保留已有项目配置。
 
 ## 装好后怎么用
 
-在 Codex 中调用入口 skill，并说清你要做的事：
+新项目完成 2.0 安装和自检后，在 Codex 中调用总 Skill：
 
 ```text
-$speckit-specify 修复登录失败时提示不明确的问题，先核实原因，完成后给出验证结果。
+$speckit 修复登录失败时提示不明确的问题，先核实原因，完成后给出验证结果。
 ```
 
-也可以用于新功能、重构、迁移或只做验证。AI 会根据风险选择流程，你不用先学会整套命令。
+也可以用于新功能、重构、迁移或只做验证。AI 会根据风险选择流程，你不用先学会整套命令。已有 legacy 项目继续使用原模式，见[兼容与迁移](docs/agent-setup.md#6-legacy-兼容与迁移)。
 
 ## 能验证到什么程度
 
@@ -63,8 +64,8 @@ $speckit-specify 修复登录失败时提示不明确的问题，先核实原因
 | 想做什么 | 文档 |
 | --- | --- |
 | 让 Agent 安装、升级并自检 | [AI 安装指南](docs/agent-setup.md) |
-| 查命令、流程、知识包与排障 | [Agent 使用手册](docs/agent-guide.md) |
-| 分发本地安装包和知识包 | [本地安装与知识包挂载](docs/local-install-and-knowledge-mount.md) |
+| 查 2.0 命令、流程、知识包与验收 | [2.0 使用说明](docs/codex-skill-mode.md) |
+| 维护已有旧模式项目 | [legacy 兼容与迁移](docs/agent-setup.md#6-legacy-兼容与迁移) |
 | 查更多资料或参与改进 | [文档目录](docs/README.md) |
 
 如果它对你有用，欢迎点一个 **Star**，让更多开发者发现它。遇到问题或有改进想法，欢迎[提交 Issue](https://github.com/liuminxin45/spec-kit/issues) 或 PR；反馈时附上版本、预期行为和复现步骤会很有帮助。
